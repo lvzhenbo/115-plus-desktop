@@ -20,6 +20,7 @@ export default defineConfig(async () => ({
       imports: [
         'vue',
         'vue-router',
+        'pinia',
         {
           'naive-ui': [
             'useDialog',

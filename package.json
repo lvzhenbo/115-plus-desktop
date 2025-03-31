@@ -16,13 +16,16 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.4.0",
-    "@tauri-apps/plugin-http": "~2",
+    "@tauri-apps/plugin-http": "^2.4.2",
     "@tauri-apps/plugin-opener": "^2.2.6",
-    "@tauri-apps/plugin-window-state": "~2",
+    "@tauri-apps/plugin-store": "^2.2.0",
+    "@tauri-apps/plugin-window-state": "^2.2.1",
     "@vueuse/core": "^13.0.0",
     "alova": "^3.2.10",
     "filesize": "^10.1.6",
     "naive-ui": "^2.41.0",
+    "pinia": "^3.0.1",
+    "pinia-plugin-persistedstate": "^4.2.0",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"
   },
@@ -44,13 +47,18 @@
     "npm-run-all2": "^7.0.2",
     "prettier": "^3.5.3",
     "tailwindcss": "^4.0.17",
-    "typescript": "~5.8.2",
+    "typescript": "^5.8.2",
     "unplugin-auto-import": "^19.1.2",
     "unplugin-vue-components": "^28.4.1",
-    "vite": "^6.2.3",
+    "vite": "^6.2.4",
     "vite-plugin-vue-devtools": "^7.7.2",
     "vue-eslint-parser": "^10.1.1",
     "vue-tsc": "^2.2.8"
   },
-  "packageManager": "pnpm@10.6.3+sha512.bb45e34d50a9a76e858a95837301bfb6bd6d35aea2c5d52094fa497a467c43f5c440103ce2511e9e0a2f89c3d6071baac3358fc68ac6fb75e2ceb3d2736065e6"
+  "packageManager": "pnpm@10.7.0+sha512.6b865ad4b62a1d9842b61d674a393903b871d9244954f652b8842c2b553c72176b278f64c463e52d40fff8aba385c235c8c9ecf5cc7de4fd78b8bb6d49633ab6",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
 }

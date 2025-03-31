@@ -6,7 +6,12 @@
     "window-state:default",
     {
       "identifier": "http:default",
-      "allow": [{ "url": "https://*.115.com" }]
-    }
+      "allow": [
+        {
+          "url": "https://*.115.com"
+        }
+      ]
+    },
+    "store:default"
   ]
 }
