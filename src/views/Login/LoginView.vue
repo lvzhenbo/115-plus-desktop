@@ -88,7 +88,7 @@
   const getQrCodeData = async () => {
     const res = await authDeviceCode({
       client_id: clientId,
-      code_challenge: `$code_verifier = ${codeVerifier.value};$code_challenge = ${codeChallenge.value};`,
+      code_challenge: codeChallenge.value,
       code_challenge_method: 'sha256',
     });
     qrCodeData.value = res.data;
