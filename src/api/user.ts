@@ -1,5 +1,5 @@
 import { alovaInst, type ResponseData } from '@/utils/http/alova';
-import { loginBaseUrl, qrcodeBaseUrl } from './config';
+import { loginBaseUrl, openBaseUrl, qrcodeBaseUrl } from './config';
 import type {
   AuthDeviceCodeRequestData,
   AuthDeviceCodeResponseData,
@@ -7,6 +7,8 @@ import type {
   DeviceCodeToTokenResponseData,
   QrCodeStatusRequestParams,
   QrCodeStatusResponseData,
+  RefreshTokenRequestData,
+  UserInfoResponseData,
 } from './types/user';
 
 export const authDeviceCode = (data: AuthDeviceCodeRequestData) =>
@@ -17,6 +19,9 @@ export const authDeviceCode = (data: AuthDeviceCodeRequestData) =>
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
+      meta: {
+        authRole: null,
+      },
     },
   );
 
@@ -24,6 +29,9 @@ export const qrCodeStatus = (params: QrCodeStatusRequestParams) =>
   alovaInst.Get<ResponseData<QrCodeStatusResponseData>>(`${qrcodeBaseUrl}/get/status/`, {
     params,
     cacheFor: null,
+    meta: {
+      authRole: null,
+    },
   });
 
 export const deviceCodeToToken = (data: DeviceCodeToTokenRequestData) =>
@@ -34,5 +42,25 @@ export const deviceCodeToToken = (data: DeviceCodeToTokenRequestData) =>
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
+      meta: {
+        authRole: 'login',
+      },
     },
   );
+
+export const refreshToken = (data: RefreshTokenRequestData) =>
+  alovaInst.Post<ResponseData<DeviceCodeToTokenResponseData>>(
+    `${loginBaseUrl}/open/refreshToken`,
+    data,
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      meta: {
+        authRole: 'refreshToken',
+      },
+    },
+  );
+
+export const userInfo = () =>
+  alovaInst.Get<ResponseData<UserInfoResponseData>>(`${openBaseUrl}/open/user/info`);

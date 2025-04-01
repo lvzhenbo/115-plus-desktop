@@ -1,6 +1,11 @@
 import { createAlova } from 'alova';
 import adapterFetch from './tauriHttpAdapter';
 import { useMessage } from '@/composables/useDiscreteApi';
+import { createServerTokenAuthentication } from 'alova/client';
+import { useUserStoreWithOut } from '@/store/user';
+import type { DeviceCodeToTokenResponseData } from '@/api/types/user';
+import router from '@/router';
+import { refreshToken } from '@/api/user';
 
 export interface ResponseData<T> {
   state: number;
@@ -12,50 +17,79 @@ export interface ResponseData<T> {
 }
 
 const message = useMessage();
+const userStore = useUserStoreWithOut();
+
+const { onAuthRequired, onResponseRefreshToken } = createServerTokenAuthentication({
+  refreshTokenOnSuccess: {
+    isExpired: async (response, _method) => {
+      const json: ResponseData<unknown> = await response.clone().json();
+      return json.code === 40140125 || json.code === 40140121;
+    },
+    handler: async (_response, _method) => {
+      try {
+        const res = await refreshToken({
+          refresh_token: userStore.refreshToken,
+        });
+        userStore.accessToken = res.data.access_token;
+        userStore.refreshToken = res.data.refresh_token;
+        userStore.expiresIn = res.data.expires_in;
+      } catch (error) {
+        message.error('登录失效，请重新登录');
+        userStore.clearToken();
+        router.replace({
+          name: 'Login',
+        });
+        console.error(error);
+        throw error;
+      }
+    },
+  },
+  assignToken: (method) => {
+    method.config.headers.Authorization = `Bearer ${userStore.accessToken}`;
+  },
+  login: async (response, _method) => {
+    const json: ResponseData<DeviceCodeToTokenResponseData> = await response.clone().json();
+    userStore.accessToken = json.data.access_token;
+    userStore.refreshToken = json.data.refresh_token;
+    userStore.expiresIn = json.data.expires_in;
+  },
+});
 
 export const alovaInst = createAlova({
   requestAdapter: adapterFetch(),
   timeout: 40000,
-  beforeRequest(method) {
+  beforeRequest: onAuthRequired((method) => {
     console.log(method);
-  },
-  responded: {
-    // 请求成功的拦截器
-    // 当使用 `alova/fetch` 请求适配器时，第一个参数接收Response对象
-    // 第二个参数为当前请求的method实例，你可以用它同步请求前后的配置信息
+  }),
+  responded: onResponseRefreshToken({
     onSuccess: async (response, _method) => {
       if (response.status >= 400) {
         throw new Error(response.statusText);
       }
-      const json: ResponseData<unknown> = await response.json();
+      const json: ResponseData<unknown> = await response.clone().json();
       console.log(json);
 
       if (!json.state) {
-        // 抛出错误或返回reject状态的Promise实例时，此请求将抛出错误
         if (json.code === 40199002) {
           message.error('二维码已失效，请重新扫码');
+        } else if (json.code === 40140116 || json.code === 40140119) {
+          message.error('登录失效，请重新登录');
+          userStore.clearToken();
+          router.replace({
+            name: 'Login',
+          });
         } else {
           message.error(json.message);
         }
         throw json;
       }
-
-      // 解析的响应数据将传给method实例的transform钩子函数，这些函数将在后续讲解
       return json;
     },
-
-    // 请求失败的拦截器
-    // 请求错误时将会进入该拦截器。
-    // 第二个参数为当前请求的method实例，你可以用它同步请求前后的配置信息
     onError: (err, _method) => {
       message.error(JSON.stringify(err));
     },
-
-    // 请求完成的拦截器
-    // 当你需要在请求不论是成功、失败、还是命中缓存都需要执行的逻辑时，可以在创建alova实例时指定全局的`onComplete`拦截器，例如关闭请求 loading 状态。
-    // 接收当前请求的method实例
     onComplete: async (_method) => {
       // 处理请求完成逻辑
     },
-  },
+  }),
 });

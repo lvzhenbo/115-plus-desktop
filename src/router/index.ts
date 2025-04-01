@@ -1,3 +1,4 @@
+import { useUserStore } from '@/store/user';
 import { createRouter, createWebHistory } from 'vue-router';
 
 const router = createRouter({
@@ -14,6 +15,15 @@ const router = createRouter({
       component: () => import('@/views/Login/LoginView.vue'),
     },
   ],
+});
+
+router.beforeEach((to, _from, next) => {
+  const userStore = useUserStore();
+  if (to.name !== 'Login' && !userStore.accessToken) {
+    next({ name: 'Login' });
+  } else {
+    next();
+  }
 });
 
 export default router;

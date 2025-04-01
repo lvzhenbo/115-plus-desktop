@@ -54,7 +54,8 @@
 
 <script setup lang="ts">
   import type { AuthDeviceCodeResponseData } from '@/api/types/user';
-  import { authDeviceCode, deviceCodeToToken, qrCodeStatus } from '@/api/user';
+  import { authDeviceCode, deviceCodeToToken, qrCodeStatus, userInfo } from '@/api/user';
+  import { useUserStore } from '@/store/user';
 
   const themeVars = useThemeVars();
   const codeVerifier = ref('');
@@ -69,6 +70,9 @@
   const isQrCodeExpired = ref(false);
   const isScanSuccess = ref(false);
   const isCencel = ref(false);
+  const userStore = useUserStore();
+  const message = useMessage();
+  const router = useRouter();
 
   onMounted(async () => {
     init();
@@ -104,16 +108,13 @@
         time: qrCodeData.value.time,
       });
       if (!res.data.status) {
-        setTimeout(() => {
-          getQrCodeStatus();
-        }, 500);
+        getQrCodeStatus();
       } else if (res.data.status === 1) {
         isScanSuccess.value = true;
-        setTimeout(() => {
-          getQrCodeStatus();
-        }, 500);
+        getQrCodeStatus();
       } else if (res.data.status === 2) {
-        getToken();
+        await getToken();
+        await getUserInfo();
       } else {
         isCencel.value = true;
       }
@@ -126,10 +127,19 @@
   };
 
   const getToken = async () => {
-    const _res = await deviceCodeToToken({
+    await deviceCodeToToken({
       uid: qrCodeData.value.uid,
       code_verifier: codeVerifier.value,
     });
+  };
+
+  const getUserInfo = async () => {
+    try {
+      const res = await userInfo();
+      userStore.userInfo = res.data;
+      message.success('登录成功！');
+      router.replace({ name: 'Home' });
+    } catch (_error) {}
   };
 
   const generateRandomString = (length: number) => {

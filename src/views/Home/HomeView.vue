@@ -1,9 +1,9 @@
 <template>
-  <div>
+  <NLayout content-class="min-h-screen">
     <RouterLink to="/login">
       <NButton>Login</NButton>
     </RouterLink>
-  </div>
+  </NLayout>
 </template>
 
 <script setup lang="ts"></script>

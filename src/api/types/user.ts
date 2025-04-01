@@ -40,3 +40,39 @@ export interface DeviceCodeToTokenResponseData {
   refresh_token: string;
   expires_in: number;
 }
+
+export interface RefreshTokenRequestData {
+  refresh_token: string;
+}
+
+export interface UserInfoResponseData {
+  user_id: number;
+  user_name: string;
+  user_face_s: string;
+  user_face_m: string;
+  user_face_l: string;
+  rt_space_info: RtSpaceInfo;
+  vip_info: VipInfo;
+}
+
+export interface RtSpaceInfo {
+  all_total: All;
+  all_remain: All;
+  all_use: All;
+}
+
+export interface All {
+  size: number;
+  size_format: string;
+}
+
+export interface VipInfo {
+  expire: number;
+  level_name: string;
+  tp_rights: TpRights;
+}
+
+export interface TpRights {
+  is_tp_rights: number;
+  tp_rights_time: number;
+}
