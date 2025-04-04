@@ -1,5 +1,6 @@
 import type { UserInfoResponseData } from '@/api/types/user';
 import store from '.';
+import router from '@/router';
 
 export const useUserStore = defineStore(
   'user',
@@ -9,17 +10,22 @@ export const useUserStore = defineStore(
     const expiresIn = ref(0);
     const userInfo = ref<UserInfoResponseData | null>(null);
 
-    const clearToken = () => {
+    const logout = () => {
       accessToken.value = '';
       refreshToken.value = '';
       expiresIn.value = 0;
+      userInfo.value = null;
+      router.replace({
+        name: 'Login',
+      });
     };
+
     return {
       accessToken,
       refreshToken,
       expiresIn,
       userInfo,
-      clearToken,
+      logout,
     };
   },
   {

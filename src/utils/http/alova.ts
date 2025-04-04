@@ -4,16 +4,15 @@ import { useMessage } from '@/composables/useDiscreteApi';
 import { createServerTokenAuthentication } from 'alova/client';
 import { useUserStoreWithOut } from '@/store/user';
 import type { DeviceCodeToTokenResponseData } from '@/api/types/user';
-import router from '@/router';
 import { refreshToken } from '@/api/user';
 
 export interface ResponseData<T> {
-  state: number;
+  state: 0 | 1 | boolean;
   code: number;
   message: string;
   data: T;
-  error: string;
-  errno: number;
+  error?: string;
+  errno?: number;
 }
 
 const message = useMessage();
@@ -35,10 +34,7 @@ const { onAuthRequired, onResponseRefreshToken } = createServerTokenAuthenticati
         userStore.expiresIn = res.data.expires_in;
       } catch (error) {
         message.error('登录失效，请重新登录');
-        userStore.clearToken();
-        router.replace({
-          name: 'Login',
-        });
+        userStore.logout();
         console.error(error);
         throw error;
       }
@@ -74,10 +70,7 @@ export const alovaInst = createAlova({
           message.error('二维码已失效，请重新扫码');
         } else if (json.code === 40140116 || json.code === 40140119) {
           message.error('登录失效，请重新登录');
-          userStore.clearToken();
-          router.replace({
-            name: 'Login',
-          });
+          userStore.logout();
         } else {
           message.error(json.message);
         }
