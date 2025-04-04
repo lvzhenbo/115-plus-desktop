@@ -63,4 +63,6 @@ export const refreshToken = (data: RefreshTokenRequestData) =>
   );
 
 export const userInfo = () =>
-  alovaInst.Get<ResponseData<UserInfoResponseData>>(`${openBaseUrl}/open/user/info`);
+  alovaInst.Get<ResponseData<UserInfoResponseData>>(`${openBaseUrl}/open/user/info`, {
+    cacheFor: null,
+  });
