@@ -27,16 +27,33 @@
       class="h-[calc(100vh-90px)]"
       @update:page="handlePageChange"
     />
+    <NDropdown
+      placement="bottom-start"
+      trigger="manual"
+      :x="x"
+      :y="y"
+      :options="options"
+      :show="showDropdown"
+      :on-clickoutside="onClickoutside"
+      @select="handleSelect"
+    />
   </div>
 </template>
 
 <script setup lang="tsx">
-  import { type DataTableInst, type DataTableColumns, type PaginationProps } from 'naive-ui';
+  import {
+    type DataTableInst,
+    type DataTableColumns,
+    type PaginationProps,
+    type DropdownOption,
+    NIcon,
+  } from 'naive-ui';
   import { filesize } from 'filesize';
   import { fileList } from '@/api/file';
   import type { FileListRequestParams, MyFile, Path } from '@/api/types/file';
   import { format } from 'date-fns';
   import type { HTMLAttributes } from 'vue';
+  import { FolderOpenOutlined, InfoCircleOutlined, ReloadOutlined } from '@vicons/antd';
 
   const tableRef = ref<DataTableInst | null>(null);
   const columns: DataTableColumns<MyFile> = [
@@ -188,6 +205,39 @@
   });
   const path = ref<Path[]>([]);
   const forderTemp = ref(new Map<string, number>());
+  const showDropdown = ref(false);
+  const x = ref(0);
+  const y = ref(0);
+  const options: DropdownOption[] = [
+    {
+      label: '打开',
+      key: 'open',
+      icon: () => (
+        <NIcon>
+          <FolderOpenOutlined />
+        </NIcon>
+      ),
+    },
+    {
+      label: '刷新',
+      key: 'reload',
+      icon: () => (
+        <NIcon>
+          <ReloadOutlined />
+        </NIcon>
+      ),
+    },
+    {
+      label: '详情',
+      key: 'details',
+      icon: () => (
+        <NIcon>
+          <InfoCircleOutlined />
+        </NIcon>
+      ),
+    },
+  ];
+  const selectFile = ref<MyFile | null>(null);
 
   onMounted(async () => {
     getFileList();
@@ -208,14 +258,38 @@
 
   const rowProps = (row: MyFile): HTMLAttributes => {
     return {
-      onDblclick: () => {
-        if (row.fc === '0') {
-          params.cid = row.fid;
-          pagination.page = forderTemp.value.get(row.fid) || 1;
-          getFileList();
+      onClick(e) {
+        if ((e.target as HTMLElement).className !== 'n-checkbox-box__border') {
+          if (checkedRowKeys.value.includes(row.fid)) {
+            checkedRowKeys.value = checkedRowKeys.value.filter((item) => item !== row.fid);
+          } else {
+            checkedRowKeys.value.push(row.fid);
+          }
         }
       },
+      onDblclick: () => {
+        selectFile.value = row;
+        handleOpen();
+      },
+      onContextmenu: (e: MouseEvent) => {
+        selectFile.value = row;
+        e.preventDefault();
+        showDropdown.value = false;
+        nextTick().then(() => {
+          showDropdown.value = true;
+          x.value = e.clientX;
+          y.value = e.clientY;
+        });
+      },
     };
+  };
+
+  const handleOpen = () => {
+    if (selectFile.value && selectFile.value.fc === '0') {
+      params.cid = selectFile.value.fid;
+      pagination.page = forderTemp.value.get(selectFile.value.fid) || 1;
+      getFileList();
+    }
   };
 
   const handleToFolder = (cid: string) => {
@@ -227,6 +301,23 @@
   const handlePageChange = (page: number) => {
     pagination.page = page;
     getFileList();
+  };
+
+  const onClickoutside = () => {
+    showDropdown.value = false;
+  };
+  const handleSelect = (key: string) => {
+    showDropdown.value = false;
+    switch (key) {
+      case 'open':
+        handleOpen();
+        break;
+      case 'reload':
+        getFileList();
+        break;
+      default:
+        break;
+    }
   };
 </script>
 

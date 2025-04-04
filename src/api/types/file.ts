@@ -13,6 +13,10 @@ export interface FileListRequestParams {
   star?: number;
   cur?: number;
   show_dir?: number;
+  /**
+   * 是否不显示文件，1：不显示，0：显示
+   */
+  nf?: number;
 }
 
 export interface FileListResponseData extends ResponseData<MyFile[]> {
