@@ -5,14 +5,14 @@
         {{ fileDetailData?.file_category === '0' ? '文件夹' : '文件' }}
       </NDescriptionsItem>
       <NDescriptionsItem label="大小"> {{ fileDetailData?.size }} </NDescriptionsItem>
-      <NDescriptionsItem label="SHA1" v-if="fileDetailData?.file_category === '1'">
+      <NDescriptionsItem v-if="fileDetailData?.file_category === '1'" label="SHA1">
         {{ fileDetailData?.sha1 }}
         <NButton
+          v-if="isSupported"
           type="primary"
           secondary
           size="tiny"
           @click="copy(fileDetailData?.sha1)"
-          v-if="isSupported"
         >
           <template #icon>
             <NIcon>
@@ -22,10 +22,10 @@
           {{ copied ? '已复制' : '复制' }}
         </NButton>
       </NDescriptionsItem>
-      <NDescriptionsItem label="包含" v-if="fileDetailData?.file_category === '0'">
+      <NDescriptionsItem v-if="fileDetailData?.file_category === '0'" label="包含">
         {{ fileDetailData?.count }} 个文件， {{ fileDetailData?.folder_count }} 个文件夹
       </NDescriptionsItem>
-      <NDescriptionsItem label="音视频时长" v-if="fileDetailData?.play_long">
+      <NDescriptionsItem v-if="fileDetailData?.play_long" label="音视频时长">
         {{ formatSeconds(fileDetailData.play_long) }}
       </NDescriptionsItem>
       <NDescriptionsItem label="创建时间">

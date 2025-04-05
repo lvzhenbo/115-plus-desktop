@@ -25,6 +25,7 @@ export default defineConfigWithVueTs(
   },
   vueTsConfigs.recommended,
   {
+    extends: [...pluginVue.configs['flat/recommended']],
     name: 'app/vue-files',
     files: ['**/*.vue'],
     languageOptions: {
@@ -32,9 +33,6 @@ export default defineConfigWithVueTs(
       parserOptions: {
         ecmaVersion: 'latest',
       },
-    },
-    rules: {
-      ...pluginVue.configs['flat/recommended'].rules,
     },
   },
   {

@@ -16,7 +16,7 @@
               <div class="w-8.5">
                 <NAvatar round :src="userStore.userInfo?.user_face_l" bordered />
               </div>
-              <div class="pl-2 line-clamp-1 font-bold" v-if="!collapsed">
+              <div v-if="!collapsed" class="pl-2 line-clamp-1 font-bold">
                 {{ userStore.userInfo?.user_name }}
               </div>
             </div>
@@ -50,10 +50,10 @@
         </template>
       </NPopover>
       <NMenu
+        v-model:value="selectMenu"
         :collapsed-width="66"
         :collapsed-icon-size="22"
         :options="menuOptions"
-        v-model:value="selectMenu"
       />
     </NLayoutSider>
     <NLayout>

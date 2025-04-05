@@ -15,13 +15,13 @@
     </NBreadcrumb>
     <NDataTable
       ref="tableRef"
+      v-model:checked-row-keys="checkedRowKeys"
       remote
       flex-height
       :columns
       :data
       :pagination
       :row-key="(row: MyFile) => row.fid"
-      v-model:checked-row-keys="checkedRowKeys"
       :loading
       :row-props
       class="h-[calc(100vh-90px)]"
