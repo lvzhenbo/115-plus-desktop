@@ -37,6 +37,7 @@
       :on-clickoutside="onClickoutside"
       @select="handleSelect"
     />
+    <DetailModal v-model:show="detailModalShow" :file-detail-data />
   </div>
 </template>
 
@@ -49,11 +50,12 @@
     NIcon,
   } from 'naive-ui';
   import { filesize } from 'filesize';
-  import { fileList } from '@/api/file';
-  import type { FileListRequestParams, MyFile, Path } from '@/api/types/file';
+  import { fileDetail, fileList } from '@/api/file';
+  import type { FileDeatil, FileListRequestParams, MyFile, Path } from '@/api/types/file';
   import { format } from 'date-fns';
   import type { HTMLAttributes } from 'vue';
   import { FolderOpenOutlined, InfoCircleOutlined, ReloadOutlined } from '@vicons/antd';
+  import DetailModal from './components/DetailModal/DetailModal.vue';
 
   const tableRef = ref<DataTableInst | null>(null);
   const columns: DataTableColumns<MyFile> = [
@@ -205,38 +207,6 @@
   });
   const path = ref<Path[]>([]);
   const forderTemp = ref(new Map<string, number>());
-  const showDropdown = ref(false);
-  const x = ref(0);
-  const y = ref(0);
-  const options: DropdownOption[] = [
-    {
-      label: '打开',
-      key: 'open',
-      icon: () => (
-        <NIcon>
-          <FolderOpenOutlined />
-        </NIcon>
-      ),
-    },
-    {
-      label: '刷新',
-      key: 'reload',
-      icon: () => (
-        <NIcon>
-          <ReloadOutlined />
-        </NIcon>
-      ),
-    },
-    {
-      label: '详情',
-      key: 'details',
-      icon: () => (
-        <NIcon>
-          <InfoCircleOutlined />
-        </NIcon>
-      ),
-    },
-  ];
   const selectFile = ref<MyFile | null>(null);
 
   onMounted(async () => {
@@ -253,6 +223,7 @@
     data.value = res.data;
     pagination.itemCount = res.count;
     path.value = res.path;
+    checkedRowKeys.value = [];
     loading.value = false;
   };
 
@@ -303,10 +274,46 @@
     getFileList();
   };
 
+  const showDropdown = ref(false);
+  const x = ref(0);
+  const y = ref(0);
+  const options: DropdownOption[] = [
+    {
+      label: '打开',
+      key: 'open',
+      icon: () => (
+        <NIcon>
+          <FolderOpenOutlined />
+        </NIcon>
+      ),
+    },
+    {
+      label: '刷新',
+      key: 'reload',
+      icon: () => (
+        <NIcon>
+          <ReloadOutlined />
+        </NIcon>
+      ),
+    },
+    {
+      label: '详情',
+      key: 'detail',
+      icon: () => (
+        <NIcon>
+          <InfoCircleOutlined />
+        </NIcon>
+      ),
+    },
+  ];
+  const detailModalShow = ref(false);
+  const fileDetailData = ref<FileDeatil | null>(null);
+
   const onClickoutside = () => {
     showDropdown.value = false;
   };
-  const handleSelect = (key: string) => {
+
+  const handleSelect = async (key: string) => {
     showDropdown.value = false;
     switch (key) {
       case 'open':
@@ -315,9 +322,20 @@
       case 'reload':
         getFileList();
         break;
+      case 'detail':
+        await getFileDetail();
+        detailModalShow.value = true;
+        break;
       default:
         break;
     }
+  };
+
+  const getFileDetail = async () => {
+    const res = await fileDetail({
+      file_id: selectFile.value!.fid,
+    });
+    fileDetailData.value = res.data;
   };
 </script>
 

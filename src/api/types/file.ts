@@ -245,3 +245,75 @@ export interface FileLabel {
    */
   create_time: number;
 }
+
+export interface FileDeatil {
+  /**
+   * 包含文件总数量
+   */
+  count: string;
+  /**
+   * 文件(夹)总大小
+   */
+  size: string;
+  /**
+   * 包含文件夹总数量
+   */
+  folder_count: string;
+  /**
+   * 视频时长；-1：正在统计，其他数值为视频时长的数值(单位秒)
+   */
+  play_long: number;
+  /**
+   * 是否开启展示视频时长
+   */
+  show_play_long: number;
+  /**
+   * 上传时间
+   */
+  ptime: string;
+  /**
+   * 修改时间
+   */
+  utime: string;
+  /**
+   * 文件名
+   */
+  file_name: string;
+  /**
+   * 文件提取码
+   */
+  pick_code: string;
+  /**
+   * sha1值
+   */
+  sha1: string;
+  /**
+   * 文件(夹)ID
+   */
+  file_id: string;
+  /**
+   * 是否星标
+   */
+  is_mark: string;
+  /**
+   * 文件(夹)最近打开时间
+   */
+  open_time: number;
+  /**
+   * 文件属性；1：文件；0：文件夹
+   */
+  file_category: string;
+  /**
+   * 文件(夹)所在的路径
+   */
+  paths: {
+    /**
+     * 父目录ID
+     */
+    file_id: string;
+    /**
+     * 父目录名称
+     */
+    file_name: string;
+  }[];
+}
