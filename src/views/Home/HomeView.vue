@@ -1,5 +1,5 @@
 <template>
-  <div class="p-4">
+  <div class="p-6">
     <NBreadcrumb class="mb-1">
       <NBreadcrumbItem v-for="item in path" :key="item.cid" @click="handleToFolder(item.cid)">
         <NEllipsis
@@ -24,7 +24,7 @@
       :row-key="(row: MyFile) => row.fid"
       :loading
       :row-props
-      class="h-[calc(100vh-90px)]"
+      class="h-[calc(100vh-110px)]"
       @update:page="handlePageChange"
     />
     <NDropdown
@@ -38,6 +38,12 @@
       @select="handleSelect"
     />
     <DetailModal v-model:show="detailModalShow" :file-detail-data />
+    <FolderModal
+      v-model:show="folderModalShow"
+      :type="folderModalType"
+      :ids
+      @success="getFileList"
+    />
   </div>
 </template>
 
@@ -54,8 +60,15 @@
   import type { FileDeatil, FileListRequestParams, MyFile, Path } from '@/api/types/file';
   import { format } from 'date-fns';
   import type { HTMLAttributes } from 'vue';
-  import { FolderOpenOutlined, InfoCircleOutlined, ReloadOutlined } from '@vicons/antd';
+  import {
+    FolderOpenOutlined,
+    InfoCircleOutlined,
+    ReloadOutlined,
+    CopyOutlined,
+  } from '@vicons/antd';
+  import { DriveFileMoveOutlined } from '@vicons/material';
   import DetailModal from './components/DetailModal/DetailModal.vue';
+  import FolderModal from './components/FolderModal/FolderModal.vue';
 
   const tableRef = ref<DataTableInst | null>(null);
   const columns: DataTableColumns<MyFile> = [
@@ -105,91 +118,6 @@
         return row.uet ? format(new Date(row.uet * 1000), 'yyyy-MM-dd HH:mm:ss') : '';
       },
     },
-    // {
-    //   title: '操作',
-    //   key: 'action',
-    //   width: 150,
-    //   render: (row) => {
-    //     return (
-    //       <NSpace>
-    //         {row.file_id ? (
-    //           <NButton
-    //             text
-    //             onClick={() =>
-    //               GM_openInTab(`https://115.com/?cid=${row.file_id}&offset=0&tab=&mode=wangpan`, {
-    //                 setParent: settings?.openNewTab.setParent,
-    //               })
-    //             }
-    //           >
-    //             {{
-    //               icon: () => (
-    //                 <NIcon>
-    //                   <FolderOutlined />
-    //                 </NIcon>
-    //               ),
-    //             }}
-    //           </NButton>
-    //         ) : null}
-    //         <NButton
-    //           text
-    //           onClick={async () => {
-    //             await copy(row.url);
-    //             message.success('复制成功！');
-    //           }}
-    //         >
-    //           {{
-    //             icon: () => (
-    //               <NIcon>
-    //                 <CopyOutlined />
-    //               </NIcon>
-    //             ),
-    //           }}
-    //         </NButton>
-    //         <NButton
-    //           text
-    //           onClick={() => {
-    //             dialog.warning({
-    //               title: '信息提示',
-    //               content: () => (
-    //                 <div
-    //                   style={{
-    //                     display: 'flex',
-    //                     flexDirection: 'column',
-    //                     alignItems: 'center',
-    //                   }}
-    //                 >
-    //                   <div
-    //                     style={{
-    //                       marginBottom: '10px',
-    //                     }}
-    //                   >
-    //                     是否确认删除该下载任务？
-    //                   </div>
-    //                   <NCheckbox v-model:checked={flag.value} checked-value={1} unchecked-value={0}>
-    //                     删除源文件
-    //                   </NCheckbox>
-    //                 </div>
-    //               ),
-    //               positiveText: '确定',
-    //               negativeText: '取消',
-    //               onPositiveClick: () => {
-    //                 handleDelete(row.info_hash);
-    //               },
-    //             });
-    //           }}
-    //         >
-    //           {{
-    //             icon: () => (
-    //               <NIcon>
-    //                 <DeleteOutlined />
-    //               </NIcon>
-    //             ),
-    //           }}
-    //         </NButton>
-    //       </NSpace>
-    //     );
-    //   },
-    // },
   ];
   const pagination = reactive<PaginationProps>({
     page: 1,
@@ -208,6 +136,7 @@
   const path = ref<Path[]>([]);
   const forderTemp = ref(new Map<string, number>());
   const selectFile = ref<MyFile | null>(null);
+  const ids = ref<string>('');
 
   onMounted(async () => {
     getFileList();
@@ -297,6 +226,24 @@
       ),
     },
     {
+      label: '复制到',
+      key: 'copy',
+      icon: () => (
+        <NIcon>
+          <CopyOutlined />
+        </NIcon>
+      ),
+    },
+    {
+      label: '移动到',
+      key: 'move',
+      icon: () => (
+        <NIcon>
+          <DriveFileMoveOutlined />
+        </NIcon>
+      ),
+    },
+    {
       label: '详情',
       key: 'detail',
       icon: () => (
@@ -308,6 +255,8 @@
   ];
   const detailModalShow = ref(false);
   const fileDetailData = ref<FileDeatil | null>(null);
+  const folderModalShow = ref(false);
+  const folderModalType = ref<'copy' | 'move'>('copy');
 
   const onClickoutside = () => {
     showDropdown.value = false;
@@ -321,6 +270,18 @@
         break;
       case 'reload':
         getFileList();
+        break;
+      case 'copy':
+        if (!selectFile.value) return;
+        ids.value = selectFile.value.fid;
+        folderModalType.value = 'copy';
+        folderModalShow.value = true;
+        break;
+      case 'move':
+        if (!selectFile.value) return;
+        ids.value = selectFile.value.fid;
+        folderModalType.value = 'move';
+        folderModalShow.value = true;
         break;
       case 'detail':
         await getFileDetail();

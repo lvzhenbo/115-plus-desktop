@@ -12,7 +12,8 @@
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .gitignore",
     "format": "prettier --write src/",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev"
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.4.1",
@@ -21,12 +22,13 @@
     "@tauri-apps/plugin-store": "^2.2.0",
     "@tauri-apps/plugin-window-state": "^2.2.2",
     "@vicons/antd": "^0.13.0",
-    "@vueuse/core": "^13.0.0",
+    "@vicons/material": "^0.13.0",
+    "@vueuse/core": "^13.1.0",
     "alova": "^3.2.10",
     "date-fns": "^4.1.0",
     "filesize": "^10.1.6",
     "naive-ui": "^2.41.0",
-    "pinia": "^3.0.1",
+    "pinia": "^3.0.2",
     "pinia-plugin-persistedstate": "^4.2.0",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"
