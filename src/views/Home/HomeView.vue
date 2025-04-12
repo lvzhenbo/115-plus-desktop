@@ -55,9 +55,10 @@
     type PaginationProps,
     type DropdownOption,
     NIcon,
+    NText,
   } from 'naive-ui';
   import { filesize } from 'filesize';
-  import { fileDetail, fileList } from '@/api/file';
+  import { deleteFile, fileDetail, fileList } from '@/api/file';
   import type { FileDeatil, FileListRequestParams, MyFile, Path } from '@/api/types/file';
   import { format } from 'date-fns';
   import type { HTMLAttributes } from 'vue';
@@ -66,12 +67,16 @@
     InfoCircleOutlined,
     ReloadOutlined,
     CopyOutlined,
+    DeleteOutlined,
   } from '@vicons/antd';
   import { DriveFileMoveOutlined, DriveFileRenameOutlineOutlined } from '@vicons/material';
   import DetailModal from './components/DetailModal/DetailModal.vue';
   import FolderModal from './components/FolderModal/FolderModal.vue';
   import RenameModal from './components/RenameModal/RenameModal.vue';
 
+  const themeVars = useThemeVars();
+  const dialog = useDialog();
+  const message = useMessage();
   const tableRef = ref<DataTableInst | null>(null);
   const columns: DataTableColumns<MyFile> = [
     {
@@ -263,6 +268,15 @@
         </NIcon>
       ),
     },
+    {
+      label: () => <NText type="error">删除</NText>,
+      key: 'delete',
+      icon: () => (
+        <NIcon color={themeVars.value.errorColor}>
+          <DeleteOutlined />
+        </NIcon>
+      ),
+    },
   ];
   const detailModalShow = ref(false);
   const fileDetailData = ref<FileDeatil | null>(null);
@@ -302,6 +316,23 @@
       case 'detail':
         await getFileDetail();
         detailModalShow.value = true;
+        break;
+      case 'delete':
+        if (!selectFile.value) return;
+        dialog.warning({
+          title: '确认要删除选中的文件到回收站？',
+          content: '删除的文件可在30天内从回收站还原，回收站仍占用网盘的空间容量哦，请及时清理。',
+          positiveText: '确定',
+          negativeText: '取消',
+          draggable: true,
+          onPositiveClick: async () => {
+            await deleteFile({
+              file_ids: selectFile.value!.fid,
+            });
+            message.success('删除成功');
+            getFileList();
+          },
+        });
         break;
       default:
         break;

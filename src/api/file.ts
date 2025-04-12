@@ -48,3 +48,11 @@ export const updateFile = (data: { file_id: string; file_name: string }) =>
     },
     cacheFor: null,
   });
+
+export const deleteFile = (data: { file_ids: string }) =>
+  alovaInst.Post<ResponseData<unknown>>(`${openBaseUrl}/open/ufile/delete`, data, {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    cacheFor: null,
+  });
