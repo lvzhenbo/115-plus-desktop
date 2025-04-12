@@ -40,3 +40,11 @@ export const moveFile = (data: { file_ids: string; to_cid: string }) =>
     },
     cacheFor: null,
   });
+
+export const updateFile = (data: { file_id: string; file_name: string }) =>
+  alovaInst.Post<ResponseData<unknown>>(`${openBaseUrl}/open/ufile/update`, data, {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    cacheFor: null,
+  });

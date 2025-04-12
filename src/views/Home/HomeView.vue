@@ -44,6 +44,7 @@
       :ids
       @success="getFileList"
     />
+    <RenameModal v-model:show="renameModalShow" :file="selectFile" @success="getFileList" />
   </div>
 </template>
 
@@ -66,9 +67,10 @@
     ReloadOutlined,
     CopyOutlined,
   } from '@vicons/antd';
-  import { DriveFileMoveOutlined } from '@vicons/material';
+  import { DriveFileMoveOutlined, DriveFileRenameOutlineOutlined } from '@vicons/material';
   import DetailModal from './components/DetailModal/DetailModal.vue';
   import FolderModal from './components/FolderModal/FolderModal.vue';
+  import RenameModal from './components/RenameModal/RenameModal.vue';
 
   const tableRef = ref<DataTableInst | null>(null);
   const columns: DataTableColumns<MyFile> = [
@@ -244,6 +246,15 @@
       ),
     },
     {
+      label: '重命名',
+      key: 'rename',
+      icon: () => (
+        <NIcon>
+          <DriveFileRenameOutlineOutlined />
+        </NIcon>
+      ),
+    },
+    {
       label: '详情',
       key: 'detail',
       icon: () => (
@@ -257,6 +268,7 @@
   const fileDetailData = ref<FileDeatil | null>(null);
   const folderModalShow = ref(false);
   const folderModalType = ref<'copy' | 'move'>('copy');
+  const renameModalShow = ref(false);
 
   const onClickoutside = () => {
     showDropdown.value = false;
@@ -282,6 +294,10 @@
         ids.value = selectFile.value.fid;
         folderModalType.value = 'move';
         folderModalShow.value = true;
+        break;
+      case 'rename':
+        if (!selectFile.value) return;
+        renameModalShow.value = true;
         break;
       case 'detail':
         await getFileDetail();
