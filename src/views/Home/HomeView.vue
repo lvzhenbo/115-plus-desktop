@@ -149,6 +149,10 @@
     getFileList();
   });
 
+  onActivated(() => {
+    getFileList();
+  });
+
   const getFileList = async () => {
     if (params.cid) forderTemp.value.set(params.cid, pagination.page!);
     params.offset = (pagination.page! - 1) * pagination.pageSize!;

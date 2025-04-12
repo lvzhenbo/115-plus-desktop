@@ -317,3 +317,27 @@ export interface FileDeatil {
     file_name: string;
   }[];
 }
+
+export type RecycleBinListResponseData = {
+  offset: number;
+  limit: number;
+  count: string;
+  rb_pass: number;
+} & Record<string, RecycleBinFile>;
+
+export interface RecycleBinFile {
+  id: string;
+  file_name: string;
+  /**
+   * 类型（1：文件，2：目录
+   */
+  type: string;
+  file_size: string;
+  dtime: string;
+  thumb_url: string;
+  status: string;
+  cid: string;
+  parent_name: string;
+  pick_code: string;
+  ico: string;
+}

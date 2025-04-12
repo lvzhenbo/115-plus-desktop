@@ -59,7 +59,11 @@
     <NLayout>
       <NLayoutHeader bordered> 颐和园路 </NLayoutHeader>
       <NLayoutContent>
-        <RouterView />
+        <RouterView v-slot="{ Component }">
+          <KeepAlive>
+            <component :is="Component" />
+          </KeepAlive>
+        </RouterView>
       </NLayoutContent>
     </NLayout>
   </NLayout>
@@ -80,6 +84,15 @@
     {
       label: () => <RouterLink to="/home">我的文件</RouterLink>,
       key: 'Home',
+      icon: () => (
+        <NIcon>
+          <CloudServerOutlined />
+        </NIcon>
+      ),
+    },
+    {
+      label: () => <RouterLink to="/recycleBin">回收站</RouterLink>,
+      key: 'RecycleBin',
       icon: () => (
         <NIcon>
           <CloudServerOutlined />
