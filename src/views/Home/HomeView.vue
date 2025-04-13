@@ -74,6 +74,7 @@
   import FolderModal from './components/FolderModal/FolderModal.vue';
   import RenameModal from './components/RenameModal/RenameModal.vue';
   import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+  import { emit, listen } from '@tauri-apps/api/event';
 
   const themeVars = useThemeVars();
   const dialog = useDialog();
@@ -145,6 +146,9 @@
   const forderTemp = ref(new Map<string, number>());
   const selectFile = ref<MyFile | null>(null);
   const ids = ref<string>('');
+  const unlisten = listen('get-video-list', () => {
+    emit('add-video-list', selectFile.value);
+  });
 
   onMounted(async () => {
     getFileList();
@@ -152,6 +156,10 @@
 
   onActivated(() => {
     getFileList();
+  });
+
+  onUnmounted(() => {
+    unlisten.then((f) => f());
   });
 
   const getFileList = async () => {

@@ -18,20 +18,18 @@
           @seeked="handleSeeked"
           @canplay="handleCanPlay"
         ></video>
-
         <!-- 视频加载中 -->
         <div
           v-if="loading || seeking"
           class="absolute inset-0 flex flex-col justify-center items-center gap-4 bg-black/70 text-white z-10"
         >
           <NSpin size="large" />
-          <span>{{ seeking ? '正在定位...' : '加载中...' }}</span>
+          <span>加载中...</span>
         </div>
-
         <!-- 视频控制条 -->
         <div
           v-show="controlsVisible"
-          class="absolute bottom-0 left-0 w-full px-4 py-2 bg-gradient-to-t from-black/80 to-transparent transition-opacity duration-300 z-20"
+          class="absolute bottom-0 left-0 w-full px-4 py-2 bg-gradient-to-t from-black/80 to-transparent transition duration-300 z-20"
           @mouseenter="showControls"
           @mouseleave="hideControlsDelayed"
         >
@@ -50,30 +48,28 @@
               {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
             </div>
           </div>
-
-          <div class="flex items-center gap-2 flex-wrap md:flex-nowrap">
-            <NButton quaternary circle @click="togglePlay">
-              <template #icon>
-                <NIcon size="24" class="text-white">
-                  <PauseCircleOutlined v-if="playing" />
-                  <PlayCircleOutlined v-else />
-                </NIcon>
-              </template>
-            </NButton>
-
-            <NButton quaternary circle @click="skipBackward">
-              <template #icon>
-                <NIcon size="24" class="text-white"><StepBackwardOutlined /></NIcon>
-              </template>
-            </NButton>
-
-            <NButton quaternary circle @click="skipForward">
-              <template #icon>
-                <NIcon size="24" class="text-white"><StepForwardOutlined /></NIcon>
-              </template>
-            </NButton>
-
-            <div class="flex items-center w-auto md:w-40">
+          <!-- 控制栏 -->
+          <div class="flex items-center">
+            <!-- 控制栏左侧 -->
+            <div class="flex items-center gap-2">
+              <NButton quaternary circle @click="togglePlay">
+                <template #icon>
+                  <NIcon size="24" class="text-white">
+                    <PauseCircleOutlined v-if="playing" />
+                    <PlayCircleOutlined v-else />
+                  </NIcon>
+                </template>
+              </NButton>
+              <NButton quaternary circle @click="skipBackward">
+                <template #icon>
+                  <NIcon size="24" class="text-white"><StepBackwardOutlined /></NIcon>
+                </template>
+              </NButton>
+              <NButton quaternary circle @click="skipForward">
+                <template #icon>
+                  <NIcon size="24" class="text-white"><StepForwardOutlined /></NIcon>
+                </template>
+              </NButton>
               <NButton quaternary circle @click="toggleMute">
                 <template #icon>
                   <NIcon size="24" class="text-white">
@@ -84,99 +80,62 @@
               </NButton>
               <NSlider
                 v-model:value="volumeLevel"
-                class="w-15 md:w-[100px] ml-2"
+                class="w-30! ml-2"
                 :min="0"
                 :max="100"
                 @update:value="changeVolume"
               />
             </div>
-
-            <!-- 分辨率选择 -->
-            <NPopover
-              v-if="resolutions.length > 0"
-              trigger="click"
-              placement="top"
-              :show="showResolutionMenu"
-              @update:show="showResolutionMenu = $event"
-            >
-              <template #trigger>
-                <NButton quaternary circle @click="showResolutionMenu = true">
-                  <template #icon>
-                    <NIcon size="24" class="text-white"><SettingOutlined /></NIcon>
-                  </template>
-                </NButton>
-              </template>
-              <div class="p-2 min-w-[140px]">
-                <div class="mb-2 text-sm font-bold">选择画质</div>
-                <NRadioGroup
-                  v-model:value="currentResolutionLabel"
-                  @update:value="changeResolution"
-                >
-                  <div class="space-y-2">
-                    <NRadio
-                      v-for="res in resolutions"
-                      :key="res.height"
-                      :value="res.label"
-                      :disabled="res.label === currentResolution?.label"
-                    >
-                      {{ res.label }}
-                    </NRadio>
-                  </div>
-                </NRadioGroup>
-              </div>
-            </NPopover>
-
-            <!-- 播放速度选择 -->
-            <NPopover
-              trigger="click"
-              placement="top"
-              :show="showSpeedMenu"
-              @update:show="showSpeedMenu = $event"
-            >
-              <template #trigger>
-                <NButton quaternary circle @click="showSpeedMenu = true">
-                  <template #icon>
-                    <NIcon size="24" class="text-white"><DashboardOutlined /></NIcon>
-                  </template>
-                </NButton>
-              </template>
-              <div class="p-2 min-w-[140px]">
-                <div class="mb-2 text-sm font-bold">选择播放速度</div>
-                <NRadioGroup
-                  v-model:value="currentPlaybackSpeed"
-                  @update:value="changePlaybackSpeed"
-                >
-                  <div class="space-y-2">
-                    <NRadio v-for="speed in playbackSpeeds" :key="speed" :value="speed">
-                      {{ speed }}x
-                    </NRadio>
-                  </div>
-                </NRadioGroup>
-              </div>
-            </NPopover>
-
-            <NButton quaternary circle class="hidden md:flex" @click="toggleFullscreen">
-              <template #icon>
-                <NIcon size="24" class="text-white">
-                  <FullscreenExitOutlined v-if="isFullscreen" />
-                  <FullscreenOutlined v-else />
-                </NIcon>
-              </template>
-            </NButton>
-
-            <NInput
-              v-model:value="videoUrl"
-              class="w-full md:w-[360px] md:ml-auto mt-2 md:mt-0"
-              type="text"
-              placeholder="输入m3u8视频URL"
-            >
-              <template #suffix>
-                <NButton quaternary @click="loadVideo">
-                  <template #icon><CaretRightOutlined /></template>
-                  播放
-                </NButton>
-              </template>
-            </NInput>
+            <!-- 控制栏右侧 -->
+            <div class="flex items-center ml-auto gap-2">
+              <!-- 分辨率选择 -->
+              <NPopover
+                v-if="resolutions.length > 0"
+                trigger="click"
+                placement="top"
+                :show="showResolutionMenu"
+                @update:show="showResolutionMenu = $event"
+              >
+                <template #trigger>
+                  <NButton quaternary circle @click="showResolutionMenu = true">
+                    <template #icon>
+                      <NIcon size="24" class="text-white"><SettingOutlined /></NIcon>
+                    </template>
+                  </NButton>
+                </template>
+                <div class="p-2 min-w-[140px]">
+                  <div class="mb-2 text-sm font-bold">选择画质</div>
+                  <NRadioGroup
+                    v-model:value="currentResolutionLabel"
+                    @update:value="changeResolution"
+                  >
+                    <div class="space-y-2">
+                      <NRadio
+                        v-for="res in resolutions"
+                        :key="res.height"
+                        :value="res.label"
+                        :disabled="res.label === currentResolution?.label"
+                      >
+                        {{ res.label }}
+                      </NRadio>
+                    </div>
+                  </NRadioGroup>
+                </div>
+              </NPopover>
+              <!-- 播放速度选择 -->
+              <NDropdown trigger="hover" :options="playbackSpeeds" @select="changePlaybackSpeed">
+                <NButton quaternary circle> {{ currentPlaybackSpeed }}x </NButton>
+              </NDropdown>
+              <!-- 全屏切换 -->
+              <NButton quaternary circle class="hidden md:flex" @click="toggleFullscreen">
+                <template #icon>
+                  <NIcon size="24" class="text-white">
+                    <FullscreenExitOutlined v-if="isFullscreen" />
+                    <FullscreenOutlined v-else />
+                  </NIcon>
+                </template>
+              </NButton>
+            </div>
           </div>
         </div>
       </div>
@@ -185,7 +144,6 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onBeforeUnmount } from 'vue';
   import Hls from 'hls.js';
   import { Window } from '@tauri-apps/api/window';
   import {
@@ -196,11 +154,13 @@
     SoundOutlined,
     FullscreenOutlined,
     FullscreenExitOutlined,
-    CaretRightOutlined,
     SettingOutlined,
-    DashboardOutlined,
   } from '@vicons/antd';
-  import { useMessage } from 'naive-ui';
+  import { emit, listen } from '@tauri-apps/api/event';
+  import type { MyFile } from '@/api/types/file';
+  import { videoPlayUrl } from '@/api/video';
+  import { fileList } from '@/api/file';
+  import { type DropdownOption } from 'naive-ui';
 
   interface Resolution {
     height: number;
@@ -214,7 +174,6 @@
   const message = useMessage();
   const videoRef = ref<HTMLVideoElement | null>(null);
   const videoContainer = ref<HTMLElement | null>(null);
-  const videoUrl = ref<string>(''); // m3u8视频URL
   const playing = ref<boolean>(false);
   const currentTime = ref<number>(0);
   const duration = ref<number>(0);
@@ -230,11 +189,71 @@
   const currentResolution = ref<Resolution | null>(null); // 当前选择的分辨率
   const currentResolutionLabel = ref<string>(''); // 当前选择的分辨率标签
   const showResolutionMenu = ref<boolean>(false); // 是否显示分辨率菜单
-  const playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 5]; // 播放速度选项
+  const playbackSpeeds: DropdownOption[] = [
+    { label: '0.5x', key: 0.5 },
+    { label: '0.75x', key: 0.75 },
+    { label: '1x', key: 1 },
+    { label: '1.25x', key: 1.25 },
+    { label: '1.5x', key: 1.5 },
+    { label: '2x', key: 2 },
+    { label: '3x', key: 3 },
+    { label: '4x', key: 4 },
+    { label: '5x', key: 5 },
+  ];
   const currentPlaybackSpeed = ref<number>(1); // 当前播放速度，默认1倍速
-  const showSpeedMenu = ref<boolean>(false); // 是否显示播放速度菜单
   let hls: Hls | null = null;
-  let checkFullscreenInterval: number | null = null; // 添加全屏状态检测的定时器引用
+  const file = ref<MyFile | null>(null);
+  const files = ref<MyFile[]>([]);
+  const unlisten = listen('add-video-list', async (event) => {
+    file.value = event.payload as MyFile;
+    if (!file.value.pc) return;
+    const res = await videoPlayUrl({
+      pick_code: file.value?.pc,
+    });
+    loadVideo(res.data.video_url[0].url);
+    const res2 = await fileList({
+      cid: '0',
+      show_dir: 0,
+      offset: 0,
+      type: 4,
+      limit: 1150,
+    });
+    files.value = res2.data;
+  });
+
+  onMounted(async () => {
+    emit('get-video-list');
+
+    if (videoRef.value) {
+      // 设置初始音量
+      videoRef.value.volume = volumeLevel.value / 100;
+      // 设置初始播放速度
+      videoRef.value.playbackRate = currentPlaybackSpeed.value;
+    }
+
+    // 添加鼠标移动事件监听器
+    if (videoContainer.value) {
+      videoContainer.value.addEventListener('mousemove', handleMouseMove);
+    }
+  });
+
+  onBeforeUnmount(() => {
+    // 销毁HLS实例
+    if (hls) {
+      hls.destroy();
+    }
+
+    // 移除事件监听器
+    if (videoContainer.value) {
+      videoContainer.value.removeEventListener('mousemove', handleMouseMove);
+    }
+
+    if (controlsTimeout.value) {
+      clearTimeout(controlsTimeout.value);
+    }
+
+    unlisten.then((f) => f());
+  });
 
   // 计算视频进度百分比
   const updateProgress = () => {
@@ -252,12 +271,7 @@
   };
 
   // 加载视频
-  const loadVideo = () => {
-    if (!videoUrl.value) {
-      message.warning('请输入有效的视频URL');
-      return;
-    }
-
+  const loadVideo = (url: string) => {
     if (!videoRef.value) return;
 
     loading.value = true;
@@ -271,7 +285,7 @@
     // 使用HLS.js加载m3u8视频
     if (Hls.isSupported()) {
       hls = new Hls();
-      hls.loadSource(videoUrl.value);
+      hls.loadSource(url);
       hls.attachMedia(videoRef.value);
 
       hls.on(Hls.Events.MANIFEST_PARSED, (_event, _data) => {
@@ -352,7 +366,7 @@
       });
     } else if (videoRef.value.canPlayType('application/vnd.apple.mpegurl')) {
       // 对于原生支持HLS的浏览器（如Safari）
-      videoRef.value.src = videoUrl.value;
+      videoRef.value.src = url;
       videoRef.value.addEventListener('loadedmetadata', () => {
         loading.value = false;
         videoRef.value?.play().catch(() => {
@@ -375,7 +389,7 @@
   // 播放/暂停切换
   const togglePlay = () => {
     if (!videoRef.value) return;
-
+    if (!file.value) return;
     if (videoRef.value.paused) {
       videoRef.value.play();
     } else {
@@ -494,11 +508,6 @@
     hideControlsDelayed();
   };
 
-  // 监听全屏变更事件
-  const handleFullscreenChange = () => {
-    isFullscreen.value = !!document.fullscreenElement;
-  };
-
   // 视频等待事件
   const handleWaiting = () => {
     loading.value = true;
@@ -536,71 +545,6 @@
       currentPlaybackSpeed.value = speed;
     }
   };
-
-  onMounted(async () => {
-    if (videoRef.value) {
-      // 设置初始音量
-      videoRef.value.volume = volumeLevel.value / 100;
-      // 设置初始播放速度
-      videoRef.value.playbackRate = currentPlaybackSpeed.value;
-    }
-
-    // 添加鼠标移动事件监听器
-    if (videoContainer.value) {
-      videoContainer.value.addEventListener('mousemove', handleMouseMove);
-    }
-
-    // 添加全屏事件监听器
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-
-    // 初始化和监听 Tauri 窗口全屏状态
-    try {
-      // 获取当前应用的窗口实例
-      const currentWindow = Window.getCurrent();
-
-      // 初始化时同步全屏状态
-      isFullscreen.value = await currentWindow.isFullscreen();
-
-      // 由于 Tauri 2.x 没有 onFullscreenChange 事件，
-      // 我们使用一个轮询来检测全屏状态变化
-      checkFullscreenInterval = setInterval(async () => {
-        try {
-          const fullscreenState = await currentWindow.isFullscreen();
-          if (isFullscreen.value !== fullscreenState) {
-            isFullscreen.value = fullscreenState;
-          }
-        } catch (e) {
-          console.error('检查全屏状态失败:', e);
-        }
-      }, 1000); // 每秒检查一次
-    } catch (err) {
-      console.error('无法监听 Tauri 窗口全屏状态:', err);
-    }
-  });
-
-  onBeforeUnmount(() => {
-    // 销毁HLS实例
-    if (hls) {
-      hls.destroy();
-    }
-
-    // 移除事件监听器
-    if (videoContainer.value) {
-      videoContainer.value.removeEventListener('mousemove', handleMouseMove);
-    }
-
-    document.removeEventListener('fullscreenchange', handleFullscreenChange);
-
-    // 清除全屏状态检测的定时器
-    if (checkFullscreenInterval !== null) {
-      clearInterval(checkFullscreenInterval);
-      checkFullscreenInterval = null;
-    }
-
-    if (controlsTimeout.value) {
-      clearTimeout(controlsTimeout.value);
-    }
-  });
 </script>
 
 <style scoped></style>
