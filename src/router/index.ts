@@ -27,6 +27,11 @@ const router = createRouter({
       name: 'Login',
       component: () => import('@/views/Login/LoginView.vue'),
     },
+    {
+      path: '/videoPlayer',
+      name: 'VideoPlayer',
+      component: () => import('@/views/VideoPlayer/VideoPlayer.vue'),
+    },
   ],
 });
 

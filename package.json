@@ -27,6 +27,7 @@
     "alova": "^3.2.10",
     "date-fns": "^4.1.0",
     "filesize": "^10.1.6",
+    "hls.js": "^1.6.2",
     "naive-ui": "^2.41.0",
     "pinia": "^3.0.2",
     "pinia-plugin-persistedstate": "^4.2.0",

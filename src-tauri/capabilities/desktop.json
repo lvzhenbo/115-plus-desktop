@@ -1,7 +1,7 @@
 {
   "identifier": "desktop-capability",
   "platforms": ["macOS", "windows", "linux"],
-  "windows": ["main"],
+  "windows": ["main", "video-player"],
   "permissions": [
     "window-state:default",
     {
@@ -12,6 +12,9 @@
         }
       ]
     },
-    "store:default"
+    "store:default",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen",
+    "core:webview:allow-create-webview-window"
   ]
 }

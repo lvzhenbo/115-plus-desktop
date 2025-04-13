@@ -73,6 +73,7 @@
   import DetailModal from './components/DetailModal/DetailModal.vue';
   import FolderModal from './components/FolderModal/FolderModal.vue';
   import RenameModal from './components/RenameModal/RenameModal.vue';
+  import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 
   const themeVars = useThemeVars();
   const dialog = useDialog();
@@ -196,10 +197,33 @@
   };
 
   const handleOpen = () => {
-    if (selectFile.value && selectFile.value.fc === '0') {
+    if (!selectFile.value) return;
+    if (selectFile.value.fc === '0') {
       params.cid = selectFile.value.fid;
       pagination.page = forderTemp.value.get(selectFile.value.fid) || 1;
       getFileList();
+    } else if (selectFile.value.isv) {
+      // 创建一个新的窗口实例
+      const videoPlayerWindow = new WebviewWindow('video-player', {
+        url: '/videoPlayer',
+        title: selectFile.value!.fn,
+        width: 1280,
+        height: 720,
+        minWidth: 1280,
+        minHeight: 720,
+        center: true,
+      });
+
+      // 监听窗口创建完成事件
+      videoPlayerWindow.once('tauri://created', () => {
+        // 窗口创建后，可以在这里传递参数
+      });
+
+      // 捕获可能的错误
+      videoPlayerWindow.once('tauri://error', (e) => {
+        console.error('窗口创建失败', e);
+        message.error('视频窗口创建失败');
+      });
     }
   };
 
