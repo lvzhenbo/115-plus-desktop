@@ -4,11 +4,15 @@
       <div
         ref="videoContainer"
         class="relative w-full h-full bg-black overflow-hidden flex justify-center items-center"
+        @mousemove="handleMouseMove"
+        @mouseleave="hideControlsDelayed"
       >
         <video
           ref="videoRef"
           class="w-full h-full object-contain cursor-pointer"
-          @click="togglePlay"
+          :class="{ 'cursor-none!': !controlsVisible && playing }"
+          @click="handleClick"
+          @dblclick="toggleFullscreen"
           @play="playing = true"
           @pause="playing = false"
           @timeupdate="updateProgress"
@@ -161,6 +165,7 @@
   import { videoPlayUrl } from '@/api/video';
   import { fileList } from '@/api/file';
   import { type DropdownOption } from 'naive-ui';
+  import CustomLoader from './customLoader';
 
   interface Resolution {
     height: number;
@@ -284,7 +289,11 @@
 
     // 使用HLS.js加载m3u8视频
     if (Hls.isSupported()) {
-      hls = new Hls();
+      hls = new Hls({
+        loader: CustomLoader,
+        debug: false,
+        enableWorker: false,
+      });
       hls.loadSource(url);
       hls.attachMedia(videoRef.value);
 
@@ -386,7 +395,6 @@
     }
   };
 
-  // 播放/暂停切换
   const togglePlay = () => {
     if (!videoRef.value) return;
     if (!file.value) return;
@@ -395,6 +403,22 @@
     } else {
       videoRef.value.pause();
     }
+  };
+
+  // 单击事件处理
+  const handleClick = () => {
+    if (!videoRef.value) return;
+    if (!file.value) return;
+
+    // 延迟执行播放/暂停切换，避免与双击冲突
+    setTimeout(() => {
+      if (!videoRef.value) return;
+      if (videoRef.value.paused) {
+        videoRef.value.play();
+      } else {
+        videoRef.value.pause();
+      }
+    }, 200);
   };
 
   // 调整进度条位置

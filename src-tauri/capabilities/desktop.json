@@ -9,6 +9,9 @@
       "allow": [
         {
           "url": "https://*.115.com"
+        },
+        {
+          "url": "http://*.115.com"
         }
       ]
     },
