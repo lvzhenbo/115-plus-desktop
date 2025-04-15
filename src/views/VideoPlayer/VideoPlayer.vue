@@ -51,6 +51,11 @@
           <div class="flex items-center">
             <!-- 控制栏左侧 -->
             <div class="flex items-center gap-2">
+              <NButton quaternary circle>
+                <template #icon>
+                  <NIcon size="24" class="text-white"><StepBackwardOutlined /></NIcon>
+                </template>
+              </NButton>
               <NButton quaternary circle @click="toggle">
                 <template #icon>
                   <NIcon size="24" class="text-white">
@@ -59,12 +64,7 @@
                   </NIcon>
                 </template>
               </NButton>
-              <NButton quaternary circle @click="skipBackward">
-                <template #icon>
-                  <NIcon size="24" class="text-white"><StepBackwardOutlined /></NIcon>
-                </template>
-              </NButton>
-              <NButton quaternary circle @click="skipForward">
+              <NButton quaternary circle>
                 <template #icon>
                   <NIcon size="24" class="text-white"><StepForwardOutlined /></NIcon>
                 </template>
@@ -145,7 +145,7 @@
 <script setup lang="ts">
   import Hls from 'hls.js';
   import { Window } from '@tauri-apps/api/window';
-  import { useMediaControls, useTimeoutFn } from '@vueuse/core';
+  import { useMediaControls, useTimeoutFn, useMagicKeys } from '@vueuse/core';
   import {
     PlayCircleOutlined,
     PauseCircleOutlined,
@@ -215,14 +215,7 @@
       pick_code: file.value?.pc,
     });
     loadVideo(res.data.video_url[res.data.video_url.length - 1].url);
-    const res2 = await fileList({
-      cid: '0',
-      show_dir: 0,
-      offset: 0,
-      type: 4,
-      limit: 1150,
-    });
-    files.value = res2.data;
+    getFileList(0);
   });
 
   onMounted(async () => {
@@ -243,11 +236,26 @@
     unlisten.then((f) => f());
   });
 
-  // 使用正确的 useTimeout API 实现
-  const controlsTimeoutDuration = ref(3000);
   const { start: startControlsHideTimer, stop: stopControlsHideTimer } = useTimeoutFn(() => {
     controlsVisible.value = false;
-  }, controlsTimeoutDuration);
+  }, 3000);
+
+  const getFileList = async (offset: number) => {
+    const res = await fileList({
+      cid: '0',
+      show_dir: 0,
+      offset,
+      type: 4,
+      limit: 1150,
+    });
+    if (offset === 0) {
+      files.value = [];
+    }
+    files.value = [...files.value, ...res.data];
+    if (files.value.length < res.count) {
+      getFileList(offset + 1150);
+    }
+  };
 
   // 格式化时间为 HH:MM:SS 格式，始终显示小时部分
   const formatTime = (time: number): string => {
@@ -431,18 +439,6 @@
     muted.value = !muted.value;
   };
 
-  // 前进10秒
-  const skipForward = () => {
-    if (!videoRef.value) return;
-    seek(currentTime.value + 10);
-  };
-
-  // 后退10秒
-  const skipBackward = () => {
-    if (!videoRef.value) return;
-    seek(currentTime.value - 10);
-  };
-
   // 显示控制条
   const showControls = () => {
     controlsVisible.value = true;
@@ -499,6 +495,54 @@
     hideControlsDelayed();
   };
   useEventListener(videoContainer, 'mousemove', handleMouseMove);
+
+  // 为键盘快捷键添加累加功能相关变量
+  const keyPressInterval = 300; // 按键检测间隔，单位毫秒
+  const arrowLeftCount = ref(0); // 左键按下次数
+  const arrowRightCount = ref(0); // 右键按下次数
+  const skipSeconds = 5; // 基础跳转秒数
+
+  const { start: resetArrowLeftCount } = useTimeoutFn(() => {
+    if (arrowLeftCount.value > 0) {
+      // 累加后退时间 = 基础跳转秒数 × 按键次数
+      seek(currentTime.value - skipSeconds * arrowLeftCount.value);
+      arrowLeftCount.value = 0;
+    }
+  }, keyPressInterval);
+
+  const { start: resetArrowRightCount } = useTimeoutFn(() => {
+    if (arrowRightCount.value > 0) {
+      // 累加前进时间 = 基础跳转秒数 × 按键次数
+      seek(currentTime.value + skipSeconds * arrowRightCount.value);
+      arrowRightCount.value = 0;
+    }
+  }, keyPressInterval);
+
+  // 使用useMagicKeys实现键盘快捷键控制
+  const { escape, arrowLeft, arrowRight } = useMagicKeys();
+
+  // 监听Esc键退出全屏
+  watch(escape, (pressed) => {
+    if (pressed && isFullscreen.value) {
+      toggleFullscreen();
+    }
+  });
+
+  // 监听左方向键后退累加
+  watch(arrowLeft, (pressed) => {
+    if (pressed && videoRef.value) {
+      arrowLeftCount.value++;
+      resetArrowLeftCount();
+    }
+  });
+
+  // 监听右方向键前进累加
+  watch(arrowRight, (pressed) => {
+    if (pressed && videoRef.value) {
+      arrowRightCount.value++;
+      resetArrowRightCount();
+    }
+  });
 
   // 切换分辨率
   const changeResolution = (label: string) => {
