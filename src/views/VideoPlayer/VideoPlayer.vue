@@ -13,18 +13,10 @@
           :class="{ 'cursor-none!': !controlsVisible && playing }"
           @click="handleClick"
           @dblclick="toggleFullscreen"
-          @play="playing = true"
-          @pause="playing = false"
-          @timeupdate="updateProgress"
-          @loadedmetadata="onVideoLoaded"
-          @waiting="handleWaiting"
-          @seeking="handleSeeking"
-          @seeked="handleSeeked"
-          @canplay="handleCanPlay"
         ></video>
         <!-- 视频加载中 -->
         <div
-          v-if="loading || seeking"
+          v-if="waiting || seeking"
           class="absolute inset-0 flex flex-col justify-center items-center gap-4 bg-black/70 text-white z-10"
         >
           <NSpin size="large" />
@@ -38,7 +30,10 @@
           @mouseleave="hideControlsDelayed"
         >
           <div class="flex items-center mb-2">
-            <div class="flex-1 h-1.5 bg-white/30 rounded cursor-pointer relative" @click="seek">
+            <div
+              class="flex-1 h-1.5 bg-white/30 rounded cursor-pointer relative"
+              @click="handleSeek"
+            >
               <div
                 class="h-full bg-[#18a058] rounded absolute top-0 left-0"
                 :style="{ width: `${progress}%` }"
@@ -56,7 +51,7 @@
           <div class="flex items-center">
             <!-- 控制栏左侧 -->
             <div class="flex items-center gap-2">
-              <NButton quaternary circle @click="togglePlay">
+              <NButton quaternary circle @click="toggle">
                 <template #icon>
                   <NIcon size="24" class="text-white">
                     <PauseCircleOutlined v-if="playing" />
@@ -77,7 +72,7 @@
               <NButton quaternary circle @click="toggleMute">
                 <template #icon>
                   <NIcon size="24" class="text-white">
-                    <SoundOutlined v-if="!isMuted" />
+                    <SoundOutlined v-if="!muted" />
                     <SoundOutlined v-else />
                   </NIcon>
                 </template>
@@ -128,7 +123,7 @@
               </NPopover>
               <!-- 播放速度选择 -->
               <NDropdown trigger="hover" :options="playbackSpeeds" @select="changePlaybackSpeed">
-                <NButton quaternary circle> {{ currentPlaybackSpeed }}x </NButton>
+                <NButton quaternary circle> {{ rate }}x </NButton>
               </NDropdown>
               <!-- 全屏切换 -->
               <NButton quaternary circle class="hidden md:flex" @click="toggleFullscreen">
@@ -150,6 +145,7 @@
 <script setup lang="ts">
   import Hls from 'hls.js';
   import { Window } from '@tauri-apps/api/window';
+  import { useMediaControls, useTimeoutFn } from '@vueuse/core';
   import {
     PlayCircleOutlined,
     PauseCircleOutlined,
@@ -177,45 +173,48 @@
   }
 
   const message = useMessage();
-  const videoRef = ref<HTMLVideoElement | null>(null);
   const videoContainer = ref<HTMLElement | null>(null);
-  const playing = ref<boolean>(false);
-  const currentTime = ref<number>(0);
-  const duration = ref<number>(0);
-  const progress = ref<number>(0);
-  const volumeLevel = ref<number>(100);
-  const isMuted = ref<boolean>(false);
-  const loading = ref<boolean>(false);
-  const seeking = ref<boolean>(false); // 是否正在seek中（调整进度）
+  const videoRef = ref<HTMLVideoElement | null>(null);
+  const { playing, currentTime, duration, volume, muted, rate, seeking, waiting } =
+    useMediaControls(videoRef);
   const controlsVisible = ref<boolean>(true);
-  const controlsTimeout = ref<number | null>(null);
   const isFullscreen = ref<boolean>(false);
   const resolutions = ref<Resolution[]>([]); // 可用的分辨率列表
   const currentResolution = ref<Resolution | null>(null); // 当前选择的分辨率
   const currentResolutionLabel = ref<string>(''); // 当前选择的分辨率标签
   const showResolutionMenu = ref<boolean>(false); // 是否显示分辨率菜单
   const playbackSpeeds: DropdownOption[] = [
-    { label: '0.5x', key: 0.5 },
-    { label: '0.75x', key: 0.75 },
-    { label: '1x', key: 1 },
-    { label: '1.25x', key: 1.25 },
-    { label: '1.5x', key: 1.5 },
-    { label: '2x', key: 2 },
-    { label: '3x', key: 3 },
-    { label: '4x', key: 4 },
     { label: '5x', key: 5 },
+    { label: '4x', key: 4 },
+    { label: '3x', key: 3 },
+    { label: '2x', key: 2 },
+    { label: '1.5x', key: 1.5 },
+    { label: '1.25x', key: 1.25 },
+    { label: '1x', key: 1 },
+    { label: '0.75x', key: 0.75 },
+    { label: '0.5x', key: 0.5 },
   ];
-  const currentPlaybackSpeed = ref<number>(1); // 当前播放速度，默认1倍速
   let hls: Hls | null = null;
   const file = ref<MyFile | null>(null);
   const files = ref<MyFile[]>([]);
+  // 计算进度百分比
+  const progress = computed(() => {
+    return (currentTime.value / duration.value) * 100 || 0;
+  });
+  // 音量百分比
+  const volumeLevel = computed({
+    get: () => Math.round(volume.value * 100),
+    set: (val: number) => {
+      volume.value = val / 100;
+    },
+  });
   const unlisten = listen('add-video-list', async (event) => {
     file.value = event.payload as MyFile;
     if (!file.value.pc) return;
     const res = await videoPlayUrl({
       pick_code: file.value?.pc,
     });
-    loadVideo(res.data.video_url[0].url);
+    loadVideo(res.data.video_url[res.data.video_url.length - 1].url);
     const res2 = await fileList({
       cid: '0',
       show_dir: 0,
@@ -229,16 +228,9 @@
   onMounted(async () => {
     emit('get-video-list');
 
+    // 设置初始播放速度
     if (videoRef.value) {
-      // 设置初始音量
-      videoRef.value.volume = volumeLevel.value / 100;
-      // 设置初始播放速度
-      videoRef.value.playbackRate = currentPlaybackSpeed.value;
-    }
-
-    // 添加鼠标移动事件监听器
-    if (videoContainer.value) {
-      videoContainer.value.addEventListener('mousemove', handleMouseMove);
+      rate.value = 1;
     }
   });
 
@@ -248,38 +240,29 @@
       hls.destroy();
     }
 
-    // 移除事件监听器
-    if (videoContainer.value) {
-      videoContainer.value.removeEventListener('mousemove', handleMouseMove);
-    }
-
-    if (controlsTimeout.value) {
-      clearTimeout(controlsTimeout.value);
-    }
-
     unlisten.then((f) => f());
   });
 
-  // 计算视频进度百分比
-  const updateProgress = () => {
-    if (videoRef.value) {
-      currentTime.value = videoRef.value.currentTime;
-      progress.value = (currentTime.value / duration.value) * 100 || 0;
-    }
-  };
+  // 使用正确的 useTimeout API 实现
+  const controlsTimeoutDuration = ref(3000);
+  const { start: startControlsHideTimer, stop: stopControlsHideTimer } = useTimeoutFn(() => {
+    controlsVisible.value = false;
+  }, controlsTimeoutDuration);
 
-  // 格式化时间为 MM:SS 格式
+  // 格式化时间为 HH:MM:SS 格式，始终显示小时部分
   const formatTime = (time: number): string => {
-    const minutes = Math.floor(time / 60);
+    const hours = Math.floor(time / 3600);
+    const minutes = Math.floor((time % 3600) / 60);
     const seconds = Math.floor(time % 60);
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
   // 加载视频
   const loadVideo = (url: string) => {
     if (!videoRef.value) return;
 
-    loading.value = true;
+    waiting.value = true;
 
     // 清理现有HLS实例
     if (hls) {
@@ -298,7 +281,7 @@
       hls.attachMedia(videoRef.value);
 
       hls.on(Hls.Events.MANIFEST_PARSED, (_event, _data) => {
-        loading.value = false;
+        waiting.value = false;
 
         // 获取可用分辨率列表
         const levels = hls?.levels || [];
@@ -339,11 +322,10 @@
           }
         }
 
-        if (videoRef.value) {
-          videoRef.value.play().catch(() => {
-            message.warning('自动播放失败，请点击播放按钮手动播放');
-          });
-        }
+        // 尝试自动播放
+        play().catch(() => {
+          message.warning('自动播放失败，请点击播放按钮手动播放');
+        });
       });
 
       hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
@@ -368,7 +350,7 @@
               break;
             default:
               message.error('无法加载视频，请检查URL是否正确');
-              loading.value = false;
+              waiting.value = false;
               break;
           }
         }
@@ -377,52 +359,57 @@
       // 对于原生支持HLS的浏览器（如Safari）
       videoRef.value.src = url;
       videoRef.value.addEventListener('loadedmetadata', () => {
-        loading.value = false;
-        videoRef.value?.play().catch(() => {
+        waiting.value = false;
+        play().catch(() => {
           message.warning('自动播放失败，请点击播放按钮手动播放');
         });
       });
     } else {
       message.error('您的浏览器不支持HLS视频播放');
-      loading.value = false;
+      waiting.value = false;
     }
   };
 
-  // 视频加载完成
-  const onVideoLoaded = () => {
-    if (videoRef.value) {
-      duration.value = videoRef.value.duration;
-    }
+  // 播放、暂停和视频操作功能
+  const play = () => {
+    if (!videoRef.value) return Promise.reject('No video element');
+    return videoRef.value.play();
   };
 
-  const togglePlay = () => {
+  const pause = () => {
     if (!videoRef.value) return;
-    if (!file.value) return;
-    if (videoRef.value.paused) {
-      videoRef.value.play();
+    videoRef.value.pause();
+  };
+
+  const toggle = () => {
+    if (playing.value) {
+      pause();
     } else {
-      videoRef.value.pause();
+      play().catch((err) => {
+        console.error('播放失败:', err);
+        message.warning('播放失败，请重试');
+      });
     }
+  };
+
+  const seek = (time: number) => {
+    if (!videoRef.value) return;
+    videoRef.value.currentTime = time;
   };
 
   // 单击事件处理
   const handleClick = () => {
-    if (!videoRef.value) return;
-    if (!file.value) return;
+    if (!videoRef.value || !file.value) return;
 
     // 延迟执行播放/暂停切换，避免与双击冲突
     setTimeout(() => {
       if (!videoRef.value) return;
-      if (videoRef.value.paused) {
-        videoRef.value.play();
-      } else {
-        videoRef.value.pause();
-      }
+      toggle();
     }, 200);
   };
 
-  // 调整进度条位置
-  const seek = (e: MouseEvent) => {
+  // 拖动进度条调整位置
+  const handleSeek = (e: MouseEvent) => {
     if (!videoRef.value) return;
 
     const progressBar = e.currentTarget as HTMLElement;
@@ -430,62 +417,42 @@
     const clickPosition = (e.clientX - rect.left) / rect.width;
     const newTime = clickPosition * duration.value;
 
-    videoRef.value.currentTime = newTime;
+    seek(newTime);
   };
 
   // 调整音量
   const changeVolume = (val: number) => {
-    if (!videoRef.value) return;
-
     volumeLevel.value = val;
-    videoRef.value.volume = val / 100;
-    isMuted.value = val === 0;
+    muted.value = val === 0;
   };
 
   // 静音切换
   const toggleMute = () => {
-    if (!videoRef.value) return;
-
-    if (isMuted.value) {
-      isMuted.value = false;
-      videoRef.value.volume = volumeLevel.value / 100;
-    } else {
-      isMuted.value = true;
-      videoRef.value.volume = 0;
-    }
+    muted.value = !muted.value;
   };
 
   // 前进10秒
   const skipForward = () => {
     if (!videoRef.value) return;
-    videoRef.value.currentTime += 10;
+    seek(currentTime.value + 10);
   };
 
   // 后退10秒
   const skipBackward = () => {
     if (!videoRef.value) return;
-    videoRef.value.currentTime -= 10;
+    seek(currentTime.value - 10);
   };
 
   // 显示控制条
   const showControls = () => {
     controlsVisible.value = true;
-
-    if (controlsTimeout.value) {
-      clearTimeout(controlsTimeout.value);
-      controlsTimeout.value = null;
-    }
+    stopControlsHideTimer();
   };
 
   // 延迟隐藏控制条
   const hideControlsDelayed = () => {
-    if (controlsTimeout.value) {
-      clearTimeout(controlsTimeout.value);
-    }
-
-    controlsTimeout.value = window.setTimeout(() => {
-      controlsVisible.value = false;
-    }, 3000);
+    stopControlsHideTimer();
+    startControlsHideTimer();
   };
 
   // 全屏切换
@@ -531,26 +498,7 @@
     showControls();
     hideControlsDelayed();
   };
-
-  // 视频等待事件
-  const handleWaiting = () => {
-    loading.value = true;
-  };
-
-  // 视频搜寻事件
-  const handleSeeking = () => {
-    seeking.value = true;
-  };
-
-  // 视频搜寻完成事件
-  const handleSeeked = () => {
-    seeking.value = false;
-  };
-
-  // 视频可以播放事件
-  const handleCanPlay = () => {
-    loading.value = false;
-  };
+  useEventListener(videoContainer, 'mousemove', handleMouseMove);
 
   // 切换分辨率
   const changeResolution = (label: string) => {
@@ -565,8 +513,8 @@
   // 切换播放速度
   const changePlaybackSpeed = (speed: number) => {
     if (videoRef.value) {
+      rate.value = speed;
       videoRef.value.playbackRate = speed;
-      currentPlaybackSpeed.value = speed;
     }
   };
 </script>
