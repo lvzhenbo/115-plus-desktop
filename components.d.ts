@@ -32,6 +32,7 @@ declare module 'vue' {
     NModal: typeof import('naive-ui')['NModal']
     NNotificationProvider: typeof import('naive-ui')['NNotificationProvider']
     NPopover: typeof import('naive-ui')['NPopover']
+    NPopselect: typeof import('naive-ui')['NPopselect']
     NProgress: typeof import('naive-ui')['NProgress']
     NQrCode: typeof import('naive-ui')['NQrCode']
     NRadio: typeof import('naive-ui')['NRadio']
@@ -39,6 +40,7 @@ declare module 'vue' {
     NSlider: typeof import('naive-ui')['NSlider']
     NSpace: typeof import('naive-ui')['NSpace']
     NSpin: typeof import('naive-ui')['NSpin']
+    NTooltip: typeof import('naive-ui')['NTooltip']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
   }

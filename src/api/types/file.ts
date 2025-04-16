@@ -11,6 +11,9 @@ export interface FileListRequestParams {
   custom_order?: number;
   stdir?: number;
   star?: number;
+  /**
+   * 是否只显示当前文件夹内文件，1：只显示当前文件夹内文件，0：显示所有文件
+   */
   cur?: number;
   show_dir?: number;
   /**
