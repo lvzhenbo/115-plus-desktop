@@ -18,6 +18,7 @@
     "store:default",
     "core:window:allow-set-fullscreen",
     "core:window:allow-is-fullscreen",
+    "core:window:allow-set-focus",
     "core:webview:allow-create-webview-window",
     "core:event:allow-listen",
     "core:event:allow-unlisten",

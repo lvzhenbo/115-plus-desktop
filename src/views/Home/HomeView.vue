@@ -204,34 +204,46 @@
     };
   };
 
-  const handleOpen = () => {
+  const handleOpen = async () => {
     if (!selectFile.value) return;
     if (selectFile.value.fc === '0') {
       params.cid = selectFile.value.fid;
       pagination.page = forderTemp.value.get(selectFile.value.fid) || 1;
       getFileList();
     } else if (selectFile.value.isv) {
-      // 创建一个新的窗口实例
-      const videoPlayerWindow = new WebviewWindow('video-player', {
-        url: '/videoPlayer',
-        title: selectFile.value!.fn,
-        width: 1280,
-        height: 720,
-        minWidth: 1280,
-        minHeight: 720,
-        center: true,
-      });
+      try {
+        const existingWindow = await WebviewWindow.getByLabel('video-player');
+        if (existingWindow) {
+          // 如果窗口已存在，则发送事件
+          emit('add-video-list', selectFile.value);
+          // 尝试使窗口获得焦点
+          await existingWindow.setFocus();
+        } else {
+          // 创建一个新的窗口实例
+          const videoPlayerWindow = new WebviewWindow('video-player', {
+            url: '/videoPlayer',
+            title: selectFile.value!.fn,
+            width: 1280,
+            height: 720,
+            minWidth: 1280,
+            minHeight: 720,
+            center: true,
+          });
 
-      // 监听窗口创建完成事件
-      videoPlayerWindow.once('tauri://created', () => {
-        // 窗口创建后，可以在这里传递参数
-      });
+          // 监听窗口创建完成事件
+          videoPlayerWindow.once('tauri://created', () => {
+            // 窗口创建后，可以在这里传递参数
+          });
 
-      // 捕获可能的错误
-      videoPlayerWindow.once('tauri://error', (e) => {
-        console.error('窗口创建失败', e);
-        message.error('视频窗口创建失败');
-      });
+          // 捕获可能的错误
+          videoPlayerWindow.once('tauri://error', (e) => {
+            console.error('窗口创建失败', e);
+            message.error('视频窗口创建失败');
+          });
+        }
+      } catch (e) {
+        console.error(e);
+      }
     }
   };
 
