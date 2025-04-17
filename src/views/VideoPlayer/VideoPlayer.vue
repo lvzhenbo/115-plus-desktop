@@ -189,6 +189,7 @@
   const file = ref<MyFile | null>(null);
   const files = ref<MyFile[]>([]);
   const videoUrlList = ref<VideoURL[]>([]);
+  const historyTime = ref<number>(0);
   // 计算进度百分比
   const progress = computed(() => {
     return (currentTime.value / duration.value) * 100 || 0;
@@ -250,7 +251,7 @@
     const res = await videoHistory({
       pick_code: file.value.pc,
     });
-    currentTime.value = res.data.time;
+    historyTime.value = res.data.time;
   };
 
   const { pause, resume } = useIntervalFn(
@@ -380,6 +381,10 @@
         if (seekTime) {
           seek(seekTime);
         }
+        if (videoRef.value) {
+          videoRef.value.playbackRate = rate.value;
+          videoRef.value.currentTime = seekTime || historyTime.value;
+        }
       });
 
       // hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
@@ -417,6 +422,10 @@
         playing.value = true;
         if (seekTime) {
           seek(seekTime);
+        }
+        if (videoRef.value) {
+          videoRef.value.playbackRate = rate.value;
+          videoRef.value.currentTime = seekTime || historyTime.value;
         }
       });
     } else {
