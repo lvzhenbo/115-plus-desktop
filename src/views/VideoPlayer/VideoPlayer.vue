@@ -141,7 +141,7 @@
   } from '@vicons/antd';
   import { emit, listen } from '@tauri-apps/api/event';
   import type { MyFile } from '@/api/types/file';
-  import { videoPlayUrl } from '@/api/video';
+  import { saveVideoHistory, videoHistory, videoPlayUrl } from '@/api/video';
   import { fileList } from '@/api/file';
   import { type SelectOption } from 'naive-ui';
   import CustomLoader from './customLoader';
@@ -161,9 +161,12 @@
   const videoContainer = ref<HTMLElement | null>(null);
   const videoRef = ref<HTMLVideoElement | null>(null);
   const progressBarRef = ref<HTMLElement | null>(null);
-  const { playing, currentTime, duration, volume, muted, rate, seeking, waiting } =
+  const { playing, currentTime, duration, volume, muted, rate, seeking, waiting, ended } =
     useMediaControls(videoRef);
   const controlsVisible = ref<boolean>(true);
+  const { start: startControlsHideTimer, stop: stopControlsHideTimer } = useTimeoutFn(() => {
+    controlsVisible.value = false;
+  }, 3000);
   const isFullscreen = ref<boolean>(false);
   const resolutions = ref<SelectOption[]>([]);
   const currentResolution = ref<number>(0);
@@ -201,19 +204,10 @@
       volume.value = val / 100;
     },
   });
-  const unlisten = listen('add-video-list', async (event) => {
+  const unlisten = listen('set-video-list', async (event) => {
     file.value = event.payload as MyFile;
-    if (!file.value.pc) return;
-    const res = await videoPlayUrl({
-      pick_code: file.value?.pc,
-    });
-    videoUrlList.value = res.data.video_url;
-    resolutions.value = res.data.video_url.map((item) => {
-      return {
-        label: item.title,
-        value: item.definition_n,
-      };
-    });
+    await getVideoPlayUrl();
+    await getVideoHistory();
     // 查找最高分辨率，根据 definition_n 进行排序
     const highestResolution = videoUrlList.value.reduce((prev, current) => {
       return prev.definition_n > current.definition_n ? prev : current;
@@ -241,9 +235,58 @@
     unlisten.then((f) => f());
   });
 
-  const { start: startControlsHideTimer, stop: stopControlsHideTimer } = useTimeoutFn(() => {
-    controlsVisible.value = false;
-  }, 3000);
+  const getVideoPlayUrl = async () => {
+    if (!file.value) return;
+    const res = await videoPlayUrl({
+      pick_code: file.value.pc,
+    });
+    videoUrlList.value = res.data.video_url;
+    resolutions.value = res.data.video_url.map((item) => {
+      return {
+        label: item.title,
+        value: item.definition_n,
+      };
+    });
+  };
+
+  const getVideoHistory = async () => {
+    if (!file.value) return;
+    const res = await videoHistory({
+      pick_code: file.value.pc,
+    });
+    currentTime.value = res.data.time;
+  };
+
+  const { pause, resume } = useIntervalFn(
+    () => {
+      if (!videoRef.value) return;
+      if (!file.value) return;
+      saveVideoHistory({
+        pick_code: file.value.pc,
+        time: currentTime.value,
+      }).send();
+    },
+    5000,
+    { immediate: false },
+  );
+
+  watch(playing, (val) => {
+    if (val) {
+      resume();
+    } else {
+      pause();
+    }
+  });
+
+  watch(ended, (val) => {
+    if (val) {
+      if (!file.value) return;
+      saveVideoHistory({
+        pick_code: file.value.pc,
+        watch_end: 1,
+      }).send();
+    }
+  });
 
   const getFileList = async (offset: number) => {
     const res = await fileList({

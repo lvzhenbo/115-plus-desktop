@@ -44,3 +44,12 @@ export interface VideoURL {
    */
   definition_n: number;
 }
+
+export interface VideoHistoryResponseData {
+  add_time: number;
+  file_id: string;
+  file_name: string;
+  hash: string;
+  pick_code: string;
+  time: number;
+}

@@ -147,7 +147,7 @@
   const selectFile = ref<MyFile | null>(null);
   const ids = ref<string>('');
   const unlisten = listen('get-video-list', () => {
-    emit('add-video-list', selectFile.value);
+    emit('set-video-list', selectFile.value);
   });
 
   onMounted(async () => {
@@ -215,7 +215,7 @@
         const existingWindow = await WebviewWindow.getByLabel('video-player');
         if (existingWindow) {
           // 如果窗口已存在，则发送事件
-          emit('add-video-list', selectFile.value);
+          emit('set-video-list', selectFile.value);
           // 尝试使窗口获得焦点
           await existingWindow.setFocus();
         } else {
