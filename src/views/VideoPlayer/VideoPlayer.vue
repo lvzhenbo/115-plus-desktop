@@ -95,11 +95,7 @@
             <!-- 控制栏右侧 -->
             <div class="flex items-center ml-auto gap-2">
               <!-- 分辨率选择 -->
-              <NPopselect
-                v-model:value="currentResolution"
-                :options="resolutions"
-                @update:value="changeResolution"
-              >
+              <NPopselect v-model:value="currentResolution" :options="resolutions">
                 <NButton quaternary round> {{ currentResolutionLabel }} </NButton>
               </NPopselect>
               <!-- 播放速度选择 -->
@@ -316,7 +312,7 @@
   };
 
   // 加载视频
-  const loadVideo = (url: string) => {
+  const loadVideo = (url: string, seekTime?: number) => {
     if (!videoRef.value) return;
 
     waiting.value = true;
@@ -381,6 +377,9 @@
 
         // 尝试自动播放
         playing.value = true;
+        if (seekTime) {
+          seek(seekTime);
+        }
       });
 
       // hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
@@ -416,6 +415,9 @@
       videoRef.value.addEventListener('loadedmetadata', () => {
         waiting.value = false;
         playing.value = true;
+        if (seekTime) {
+          seek(seekTime);
+        }
       });
     } else {
       message.error('您的浏览器不支持HLS视频播放');
@@ -561,6 +563,10 @@
     muted.value = !muted.value;
   };
 
+  watch(currentResolution, (val) => {
+    changeResolution(val);
+  });
+
   // 切换分辨率
   const changeResolution = (value: number) => {
     // const resolution = resolutions.value.find((res) => res.label === label);
@@ -571,8 +577,11 @@
     // }
     const resolution = videoUrlList.value.find((res) => res.definition_n === value);
     if (resolution) {
-      loadVideo(resolution.url);
-      currentResolution.value = resolution.definition_n;
+      // 保存当前播放进度和播放状态
+      const currentPlaybackTime = currentTime.value;
+
+      // 加载新的视频源，同时传递当前播放进度
+      loadVideo(resolution.url, currentPlaybackTime);
     }
   };
 
