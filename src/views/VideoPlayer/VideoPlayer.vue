@@ -106,6 +106,12 @@
               >
                 <NButton quaternary circle> {{ rate }}x </NButton>
               </NPopselect>
+              <!-- 播放列表 -->
+              <NButton quaternary circle @click="videoListShow = !videoListShow">
+                <template #icon>
+                  <NIcon size="24" class="text-white"><UnorderedListOutlined /></NIcon>
+                </template>
+              </NButton>
               <!-- 全屏切换 -->
               <NButton quaternary circle class="hidden md:flex" @click="toggleFullscreen">
                 <template #icon>
@@ -120,6 +126,12 @@
         </div>
       </div>
     </div>
+    <VideoListDrawer
+      v-model:show="videoListShow"
+      v-model:pick-code="pickCode"
+      :video-list
+      @update:pick-code="handleChangeVideo"
+    />
   </div>
 </template>
 
@@ -134,6 +146,7 @@
     SoundOutlined,
     FullscreenOutlined,
     FullscreenExitOutlined,
+    UnorderedListOutlined,
   } from '@vicons/antd';
   import { emit, listen } from '@tauri-apps/api/event';
   import type { MyFile } from '@/api/types/file';
@@ -142,6 +155,7 @@
   import { type SelectOption } from 'naive-ui';
   import CustomLoader from './customLoader';
   import type { VideoURL } from '@/api/types/video';
+  import VideoListDrawer from './components/VideoListDrawer/VideoListDrawer.vue';
 
   // interface Resolution {
   //   height: number;
@@ -187,9 +201,11 @@
   ];
   let hls: Hls | null = null;
   const file = ref<MyFile | null>(null);
-  const files = ref<MyFile[]>([]);
+  const pickCode = ref<string>('');
+  const videoList = ref<MyFile[]>([]);
   const videoUrlList = ref<VideoURL[]>([]);
   const historyTime = ref<number>(0);
+  const videoListShow = ref<boolean>(false);
   // 计算进度百分比
   const progress = computed(() => {
     return (currentTime.value / duration.value) * 100 || 0;
@@ -203,6 +219,7 @@
   });
   const unlisten = listen('set-video-list', async (event) => {
     file.value = event.payload as MyFile;
+    pickCode.value = file.value.pc;
     await getVideoPlayUrl();
     await getVideoHistory();
     // 查找最高分辨率，根据 definition_n 进行排序
@@ -231,6 +248,22 @@
 
     unlisten.then((f) => f());
   });
+
+  const handleChangeVideo = async (value: string) => {
+    if (!videoRef.value) return;
+    const selectedFile = videoList.value.find((item) => item.pc === value);
+    if (selectedFile) {
+      file.value = selectedFile;
+      pickCode.value = selectedFile.pc;
+      await getVideoPlayUrl();
+      await getVideoHistory();
+      const highestResolution = videoUrlList.value.reduce((prev, current) => {
+        return prev.definition_n > current.definition_n ? prev : current;
+      });
+      currentResolution.value = highestResolution.definition_n;
+      loadVideo(highestResolution.url);
+    }
+  };
 
   const getVideoPlayUrl = async () => {
     if (!file.value) return;
@@ -295,10 +328,10 @@
       cur: 1,
     });
     if (offset === 0) {
-      files.value = [];
+      videoList.value = [];
     }
-    files.value = [...files.value, ...res.data];
-    if (files.value.length < res.count) {
+    videoList.value = [...videoList.value, ...res.data];
+    if (videoList.value.length < res.count) {
       getFileList(offset + 1150);
     }
   };
