@@ -58,7 +58,7 @@
           <div class="flex items-center">
             <!-- 控制栏左侧 -->
             <div class="flex items-center gap-2">
-              <NButton quaternary circle>
+              <NButton quaternary circle :disabled="!videoList.length" @click="handlePreviousVideo">
                 <template #icon>
                   <NIcon size="24" class="text-white"><StepBackwardOutlined /></NIcon>
                 </template>
@@ -71,7 +71,7 @@
                   </NIcon>
                 </template>
               </NButton>
-              <NButton quaternary circle>
+              <NButton quaternary circle :disabled="!videoList.length" @click="handleNextVideo">
                 <template #icon>
                   <NIcon size="24" class="text-white"><StepForwardOutlined /></NIcon>
                 </template>
@@ -107,7 +107,12 @@
                 <NButton quaternary circle> {{ rate }}x </NButton>
               </NPopselect>
               <!-- 播放列表 -->
-              <NButton quaternary circle @click="videoListShow = !videoListShow">
+              <NButton
+                quaternary
+                circle
+                :disabled="!videoList.length"
+                @click="videoListShow = !videoListShow"
+              >
                 <template #icon>
                   <NIcon size="24" class="text-white"><UnorderedListOutlined /></NIcon>
                 </template>
@@ -670,6 +675,42 @@
         document.exitFullscreen();
         isFullscreen.value = false;
       }
+    }
+  };
+
+  const handleNextVideo = async () => {
+    const nextVideoIndex = videoList.value.findIndex((item) => item.pc === file.value?.pc) + 1;
+    if (nextVideoIndex < videoList.value.length) {
+      const nextVideo = videoList.value[nextVideoIndex];
+      file.value = nextVideo;
+      pickCode.value = nextVideo.pc;
+      await getVideoPlayUrl();
+      await getVideoHistory();
+      const highestResolution = videoUrlList.value.reduce((prev, current) => {
+        return prev.definition_n > current.definition_n ? prev : current;
+      });
+      currentResolution.value = highestResolution.definition_n;
+      loadVideo(highestResolution.url);
+    } else {
+      message.warning('没有更多视频了');
+    }
+  };
+
+  const handlePreviousVideo = async () => {
+    const previousVideoIndex = videoList.value.findIndex((item) => item.pc === file.value?.pc) - 1;
+    if (previousVideoIndex >= 0) {
+      const previousVideo = videoList.value[previousVideoIndex];
+      file.value = previousVideo;
+      pickCode.value = previousVideo.pc;
+      await getVideoPlayUrl();
+      await getVideoHistory();
+      const highestResolution = videoUrlList.value.reduce((prev, current) => {
+        return prev.definition_n > current.definition_n ? prev : current;
+      });
+      currentResolution.value = highestResolution.definition_n;
+      loadVideo(highestResolution.url);
+    } else {
+      message.warning('没有更多视频了');
     }
   };
 </script>
