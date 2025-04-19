@@ -129,6 +129,7 @@
             </NButton>
             <NButton
               text
+              type="error"
               onClick={() => {
                 dialog.warning({
                   title: '是否确认删除该下载任务？',

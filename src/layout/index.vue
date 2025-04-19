@@ -71,7 +71,7 @@
     <NLayout>
       <NLayoutHeader bordered>
         <div class="px-6 py-3">
-          <NButton>
+          <NButton type="primary" @click="offlineDownloadShow = true">
             <template #icon>
               <NIcon>
                 <LinkOutlined />
@@ -90,6 +90,7 @@
       </NLayoutContent>
     </NLayout>
   </NLayout>
+  <OfflineDownloadModal v-model:show="offlineDownloadShow" />
 </template>
 
 <script setup lang="tsx">
@@ -103,6 +104,7 @@
     LinkOutlined,
   } from '@vicons/antd';
   import { RouterLink } from 'vue-router';
+  import OfflineDownloadModal from './components/OfflineDownloadModal/OfflineDownloadModal.vue';
 
   const route = useRoute();
   const userStore = useUserStore();
@@ -148,6 +150,7 @@
       return 0;
     }
   });
+  const offlineDownloadShow = ref(false);
 
   watch(
     () => route.name,

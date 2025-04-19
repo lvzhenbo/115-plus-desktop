@@ -68,3 +68,57 @@ export interface Task {
    */
   can_appeal: number;
 }
+
+export interface QuotaInfoResponseData {
+  /**
+   * 配额类型
+   */
+  package?: Package[];
+  /**
+   * 用户总配额数量
+   */
+  count: number;
+  /**
+   * 用户总剩余配额数量
+   */
+  surplus?: number;
+  max_size?: number;
+  /**
+   * 用户总已用配额数量
+   */
+  used: number;
+}
+
+export interface Package {
+  /**
+   * 该类型剩余配额
+   */
+  surplus: number;
+  /**
+   * 该类型已用配额
+   */
+  used: number;
+  /**
+   * 该类型总配额
+   */
+  count: number;
+  /**
+   * 该类型配额名称
+   */
+  name: string;
+  /**
+   * 该类型明细项过期信息
+   */
+  expire_info: ExpireInfo[] | null;
+}
+
+export interface ExpireInfo {
+  /**
+   * 明细项剩余配额
+   */
+  surplus: number;
+  /**
+   * 明细项过期时间
+   */
+  expire_time: number;
+}
