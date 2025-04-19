@@ -25,6 +25,11 @@ const router = createRouter({
           name: 'CloudDownload',
           component: () => import('@/views/CloudDownload/CloudDownload.vue'),
         },
+        {
+          path: 'userInfo',
+          name: 'UserInfo',
+          component: () => import('@/views/UserInfo/UserInfo.vue'),
+        },
       ],
     },
     {

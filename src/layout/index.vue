@@ -11,16 +11,28 @@
     >
       <NPopover placement="right-start" class="w-96">
         <template #trigger>
-          <div class="cursor-pointer transition duration-300 px-4 py-2 user-info">
+          <NEl
+            class="cursor-pointer transition duration-300 px-4 py-2 hover:bg-(--hover-color) rounded-(--border-radius)"
+            :class="
+              selectMenu === 'UserInfo'
+                ? 'bg-(--primary-color)/10! dark:bg-(--primary-color)/15!'
+                : ''
+            "
+            @click="$router.push('/userInfo')"
+          >
             <div class="flex items-center">
               <div class="w-8.5">
                 <NAvatar round :src="userStore.userInfo?.user_face_l" bordered />
               </div>
-              <div v-if="!collapsed" class="pl-2 line-clamp-1 font-bold">
+              <div
+                v-if="!collapsed"
+                class="pl-2 line-clamp-1 font-bold"
+                :class="selectMenu === 'UserInfo' ? 'text-(--primary-color)' : ''"
+              >
                 {{ userStore.userInfo?.user_name }}
               </div>
             </div>
-          </div>
+          </NEl>
         </template>
         <template #header>
           <div class="flex items-center">
@@ -93,7 +105,6 @@
   import { RouterLink } from 'vue-router';
 
   const route = useRoute();
-  const themeVars = useThemeVars();
   const userStore = useUserStore();
   const collapsed = ref(false);
   const menuOptions: MenuOption[] = [
@@ -157,9 +168,4 @@
   };
 </script>
 
-<style scoped>
-  .user-info:hover {
-    background-color: v-bind('themeVars.hoverColor');
-    border-radius: v-bind('themeVars.borderRadius');
-  }
-</style>
+<style scoped></style>
