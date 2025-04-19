@@ -41,14 +41,14 @@
               @mouseenter="showTooltip = true"
               @mouseleave="showTooltip = false"
             >
-              <div
-                class="h-full bg-[#18a058] rounded absolute top-0 left-0"
+              <NEl
+                class="h-full bg-(--primary-color) rounded absolute top-0 left-0"
                 :style="{ width: `${progress}%` }"
-              ></div>
-              <div
-                class="h-4 w-4 rounded-full bg-[#18a058] absolute top-1/2 -translate-y-1/2 -ml-2"
+              ></NEl>
+              <NEl
+                class="h-4 w-4 rounded-full bg-(--primary-color) absolute top-1/2 -translate-y-1/2 -ml-2"
                 :style="{ left: `${progress}%` }"
-              ></div>
+              ></NEl>
             </div>
             <div class="ml-4 text-white text-sm min-w-[100px] md:min-w-[100px] text-right">
               {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
