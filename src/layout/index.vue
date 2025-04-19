@@ -102,6 +102,7 @@
     DeleteOutlined,
     CloudDownloadOutlined,
     LinkOutlined,
+    SettingOutlined,
   } from '@vicons/antd';
   import { RouterLink } from 'vue-router';
   import OfflineDownloadModal from './components/OfflineDownloadModal/OfflineDownloadModal.vue';
@@ -134,6 +135,15 @@
       icon: () => (
         <NIcon>
           <CloudDownloadOutlined />
+        </NIcon>
+      ),
+    },
+    {
+      label: () => <RouterLink to="/setting">设置</RouterLink>,
+      key: 'Setting',
+      icon: () => (
+        <NIcon>
+          <SettingOutlined />
         </NIcon>
       ),
     },

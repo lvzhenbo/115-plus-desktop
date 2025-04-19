@@ -40,7 +40,9 @@
     type PaginationProps,
   } from 'naive-ui';
   import { ReloadOutlined, CopyOutlined, DeleteOutlined, FolderOutlined } from '@vicons/antd';
+  import { useSettingStore } from '@/store/setting';
 
+  const settingStore = useSettingStore();
   const router = useRouter();
   const message = useMessage();
   const dialog = useDialog();
@@ -131,6 +133,7 @@
               text
               type="error"
               onClick={() => {
+                flag.value = settingStore.cloudDownloadSetting.deleteSourceFile ? 1 : 0;
                 dialog.warning({
                   title: '是否确认删除该下载任务？',
                   content: () => (

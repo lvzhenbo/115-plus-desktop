@@ -162,6 +162,7 @@
   import CustomLoader from './customLoader';
   import type { VideoURL } from '@/api/types/video';
   import VideoListDrawer from './components/VideoListDrawer/VideoListDrawer.vue';
+  import { useSettingStore } from '@/store/setting';
 
   // interface Resolution {
   //   height: number;
@@ -172,6 +173,7 @@
   //   label: string;
   // }
 
+  const settingStore = useSettingStore();
   const { height } = useWindowSize();
   const message = useMessage();
   const videoContainer = ref<HTMLElement | null>(null);
@@ -233,10 +235,8 @@
   onMounted(async () => {
     emit('get-video-list');
 
-    // 设置初始播放速度
-    if (videoRef.value) {
-      rate.value = 1;
-    }
+    rate.value = settingStore.videoPlayerSetting.defaultRate;
+    volume.value = settingStore.videoPlayerSetting.defaultVolume;
   });
 
   onBeforeUnmount(() => {
@@ -274,6 +274,7 @@
 
   const getVideoHistory = async () => {
     if (!file.value) return;
+    if (!settingStore.videoPlayerSetting.isHistory) return;
     const res = await videoHistory({
       pick_code: file.value.pc,
     });
@@ -284,6 +285,7 @@
     () => {
       if (!videoRef.value) return;
       if (!file.value) return;
+      if (!settingStore.videoPlayerSetting.isHistory) return;
       saveVideoHistory({
         pick_code: file.value.pc,
         time: currentTime.value,
@@ -304,6 +306,7 @@
   watch(ended, (val) => {
     if (val) {
       if (!file.value) return;
+      if (!settingStore.videoPlayerSetting.isHistory) return;
       saveVideoHistory({
         pick_code: file.value.pc,
         watch_end: 1,
@@ -403,7 +406,9 @@
         // }
 
         // 尝试自动播放
-        playing.value = true;
+        if (settingStore.videoPlayerSetting.autoPlay) {
+          playing.value = true;
+        }
         if (seekTime) {
           seek(seekTime);
         }
