@@ -79,8 +79,9 @@
               <NButton quaternary circle @click="toggleMute">
                 <template #icon>
                   <NIcon size="24" class="text-white">
-                    <SoundOutlined v-if="!muted" />
-                    <SoundOutlined v-else />
+                    <VolumeMuteFilled v-if="muted" />
+                    <VolumeUpFilled v-else-if="volumeLevel > 50" />
+                    <VolumeDownFilled v-else />
                   </NIcon>
                 </template>
               </NButton>
@@ -148,11 +149,11 @@
     PauseCircleOutlined,
     StepBackwardOutlined,
     StepForwardOutlined,
-    SoundOutlined,
     FullscreenOutlined,
     FullscreenExitOutlined,
     UnorderedListOutlined,
   } from '@vicons/antd';
+  import { VolumeDownFilled, VolumeMuteFilled, VolumeUpFilled } from '@vicons/material';
   import { emit, listen } from '@tauri-apps/api/event';
   import type { MyFile } from '@/api/types/file';
   import { saveVideoHistory, videoHistory, videoPlayUrl } from '@/api/video';
