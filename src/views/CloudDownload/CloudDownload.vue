@@ -19,7 +19,7 @@
       :pagination
       :row-key="(row: Task) => row.info_hash"
       :loading
-      class="h-[calc(100vh-130px)]"
+      class="h-[calc(100vh-157px)]"
       @update:page="handlePageChange"
     />
   </div>

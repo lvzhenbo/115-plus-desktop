@@ -32,7 +32,7 @@
       :pagination
       :row-key="(row: RecycleBinFile) => row.id"
       :loading
-      class="h-[calc(100vh-130px)]"
+      class="h-[calc(100vh-157px)]"
       @update:page="handlePageChange"
     />
   </div>

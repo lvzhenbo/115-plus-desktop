@@ -24,7 +24,7 @@
       :row-key="(row: MyFile) => row.fid"
       :loading
       :row-props
-      class="h-[calc(100vh-110px)]"
+      class="h-[calc(100vh-137px)]"
       @update:page="handlePageChange"
     />
     <NDropdown

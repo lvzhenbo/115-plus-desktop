@@ -57,7 +57,18 @@
       />
     </NLayoutSider>
     <NLayout>
-      <NLayoutHeader bordered> 颐和园路 </NLayoutHeader>
+      <NLayoutHeader bordered>
+        <div class="px-6 py-3">
+          <NButton>
+            <template #icon>
+              <NIcon>
+                <LinkOutlined />
+              </NIcon>
+            </template>
+            离线下载
+          </NButton>
+        </div>
+      </NLayoutHeader>
       <NLayoutContent>
         <RouterView v-slot="{ Component }">
           <KeepAlive>
@@ -73,7 +84,12 @@
   import { userInfo } from '@/api/user';
   import { useUserStore } from '@/store/user';
   import { type MenuOption, NIcon } from 'naive-ui';
-  import { CloudServerOutlined, DeleteOutlined, CloudDownloadOutlined } from '@vicons/antd';
+  import {
+    CloudServerOutlined,
+    DeleteOutlined,
+    CloudDownloadOutlined,
+    LinkOutlined,
+  } from '@vicons/antd';
   import { RouterLink } from 'vue-router';
 
   const route = useRoute();
