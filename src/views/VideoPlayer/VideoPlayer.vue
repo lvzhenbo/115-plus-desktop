@@ -225,14 +225,7 @@
   const unlisten = listen('set-video-list', async (event) => {
     file.value = event.payload as MyFile;
     pickCode.value = file.value.pc;
-    await getVideoPlayUrl();
-    await getVideoHistory();
-    // 查找最高分辨率，根据 definition_n 进行排序
-    const highestResolution = videoUrlList.value.reduce((prev, current) => {
-      return prev.definition_n > current.definition_n ? prev : current;
-    });
-    currentResolution.value = highestResolution.definition_n;
-    loadVideo(highestResolution.url);
+    await changeVideoUrl();
     getFileList(0);
   });
 
@@ -260,13 +253,7 @@
     if (selectedFile) {
       file.value = selectedFile;
       pickCode.value = selectedFile.pc;
-      await getVideoPlayUrl();
-      await getVideoHistory();
-      const highestResolution = videoUrlList.value.reduce((prev, current) => {
-        return prev.definition_n > current.definition_n ? prev : current;
-      });
-      currentResolution.value = highestResolution.definition_n;
-      loadVideo(highestResolution.url);
+      await changeVideoUrl();
     }
   };
 
@@ -684,15 +671,9 @@
       const nextVideo = videoList.value[nextVideoIndex];
       file.value = nextVideo;
       pickCode.value = nextVideo.pc;
-      await getVideoPlayUrl();
-      await getVideoHistory();
-      const highestResolution = videoUrlList.value.reduce((prev, current) => {
-        return prev.definition_n > current.definition_n ? prev : current;
-      });
-      currentResolution.value = highestResolution.definition_n;
-      loadVideo(highestResolution.url);
+      await changeVideoUrl();
     } else {
-      message.warning('没有更多视频了');
+      message.warning('已经是最后一个视频了');
     }
   };
 
@@ -702,16 +683,20 @@
       const previousVideo = videoList.value[previousVideoIndex];
       file.value = previousVideo;
       pickCode.value = previousVideo.pc;
-      await getVideoPlayUrl();
-      await getVideoHistory();
-      const highestResolution = videoUrlList.value.reduce((prev, current) => {
-        return prev.definition_n > current.definition_n ? prev : current;
-      });
-      currentResolution.value = highestResolution.definition_n;
-      loadVideo(highestResolution.url);
+      await changeVideoUrl();
     } else {
-      message.warning('没有更多视频了');
+      message.warning('已经是第一个视频了');
     }
+  };
+
+  const changeVideoUrl = async () => {
+    await getVideoPlayUrl();
+    await getVideoHistory();
+    const highestResolution = videoUrlList.value.reduce((prev, current) => {
+      return prev.definition_n > current.definition_n ? prev : current;
+    });
+    currentResolution.value = highestResolution.definition_n;
+    loadVideo(highestResolution.url);
   };
 </script>
 
