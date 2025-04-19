@@ -73,7 +73,7 @@
   import { userInfo } from '@/api/user';
   import { useUserStore } from '@/store/user';
   import { type MenuOption, NIcon } from 'naive-ui';
-  import { CloudServerOutlined } from '@vicons/antd';
+  import { CloudServerOutlined, DeleteOutlined, CloudDownloadOutlined } from '@vicons/antd';
   import { RouterLink } from 'vue-router';
 
   const route = useRoute();
@@ -95,7 +95,16 @@
       key: 'RecycleBin',
       icon: () => (
         <NIcon>
-          <CloudServerOutlined />
+          <DeleteOutlined />
+        </NIcon>
+      ),
+    },
+    {
+      label: () => <RouterLink to="/cloudDownload">云下载</RouterLink>,
+      key: 'CloudDownload',
+      icon: () => (
+        <NIcon>
+          <CloudDownloadOutlined />
         </NIcon>
       ),
     },
@@ -112,6 +121,13 @@
       return 0;
     }
   });
+
+  watch(
+    () => route.name,
+    (newVal) => {
+      selectMenu.value = newVal as string;
+    },
+  );
 
   onMounted(() => {
     getUserInfo();

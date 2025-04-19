@@ -20,6 +20,11 @@ const router = createRouter({
           name: 'RecycleBin',
           component: () => import('@/views/RecycleBin/RecycleBin.vue'),
         },
+        {
+          path: 'cloudDownload',
+          name: 'CloudDownload',
+          component: () => import('@/views/CloudDownload/CloudDownload.vue'),
+        },
       ],
     },
     {

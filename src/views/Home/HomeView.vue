@@ -76,6 +76,7 @@
   import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { emit, listen } from '@tauri-apps/api/event';
 
+  const route = useRoute();
   const themeVars = useThemeVars();
   const dialog = useDialog();
   const message = useMessage();
@@ -155,6 +156,10 @@
   });
 
   onActivated(() => {
+    if (route.query.fid) {
+      params.cid = route.query.fid.toString();
+      pagination.page = forderTemp.value.get(params.cid) || 1;
+    }
     getFileList();
   });
 
