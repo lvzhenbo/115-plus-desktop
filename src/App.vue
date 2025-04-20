@@ -1,16 +1,16 @@
 <script setup lang="ts">
-  // const greetMsg = ref('');
-  // const name = ref('');
-
-  // async function greet() {
-  //   // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-  //   greetMsg.value = await invoke('greet', { name: name.value });
-  // }
   import { zhCN, dateZhCN, useOsTheme, darkTheme, lightTheme } from 'naive-ui';
+  import { useSettingStore } from './store/setting';
 
+  const settingStore = useSettingStore();
   const osThemeRef = useOsTheme();
   const theme = computed(() => {
     return osThemeRef.value === 'dark' ? darkTheme : lightTheme;
+  });
+
+  onMounted(async () => {
+    const port: string = await invoke('get_port');
+    settingStore.downloadSetting.aria2Port = Number(port);
   });
 </script>
 

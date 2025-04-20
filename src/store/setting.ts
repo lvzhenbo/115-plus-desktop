@@ -12,9 +12,14 @@ export const useSettingStore = defineStore(
       deleteSourceFile: true,
     });
 
+    const downloadSetting = ref({
+      aria2Port: 6800,
+    });
+
     return {
       videoPlayerSetting,
       cloudDownloadSetting,
+      downloadSetting,
     };
   },
   {
