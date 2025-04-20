@@ -8,6 +8,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    FolderModal: typeof import('./src/components/FolderModal/FolderModal.vue')['default']
     NAvatar: typeof import('naive-ui')['NAvatar']
     NBreadcrumb: typeof import('naive-ui')['NBreadcrumb']
     NBreadcrumbItem: typeof import('naive-ui')['NBreadcrumbItem']
@@ -23,10 +24,13 @@ declare module 'vue' {
     NDropdown: typeof import('naive-ui')['NDropdown']
     NEl: typeof import('naive-ui')['NEl']
     NEllipsis: typeof import('naive-ui')['NEllipsis']
+    NewFolderModal: typeof import('./src/components/NewFolderModal/NewFolderModal.vue')['default']
     NForm: typeof import('naive-ui')['NForm']
     NFormItem: typeof import('naive-ui')['NFormItem']
     NIcon: typeof import('naive-ui')['NIcon']
     NInput: typeof import('naive-ui')['NInput']
+    NInputGroup: typeof import('naive-ui')['NInputGroup']
+    NInputGroupLabel: typeof import('naive-ui')['NInputGroupLabel']
     NLayout: typeof import('naive-ui')['NLayout']
     NLayoutContent: typeof import('naive-ui')['NLayoutContent']
     NLayoutHeader: typeof import('naive-ui')['NLayoutHeader']

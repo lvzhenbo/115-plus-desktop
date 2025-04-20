@@ -1,10 +1,5 @@
 <template>
-  <NModal
-    v-model:show="show"
-    preset="card"
-    class="w-250!"
-    :title="`打开要${type === 'copy' ? '复制到' : '移动到'}的目标文件夹`"
-  >
+  <NModal v-model:show="show" preset="card" class="w-250!" title="选择要保存的目标文件夹">
     <NBreadcrumb class="mb-1">
       <NBreadcrumbItem v-for="item in path" :key="item.cid" @click="handleToFolder(item.cid)">
         <NEllipsis
@@ -33,9 +28,7 @@
     <template #action>
       <NSpace justify="space-between">
         <NButton @click="newFolderShow = true">新建文件夹</NButton>
-        <NButton type="primary" @click="handleSubmit"
-          >{{ type === 'copy' ? '复制到' : '移动到' }}这里</NButton
-        >
+        <NButton type="primary" @click="handleSubmit">保存到这里</NButton>
       </NSpace>
     </template>
   </NModal>
@@ -43,7 +36,7 @@
 </template>
 
 <script setup lang="ts">
-  import { copyFile, fileList, moveFile } from '@/api/file';
+  import { fileList } from '@/api/file';
   import type { FileListRequestParams, MyFile, Path } from '@/api/types/file';
   import { useUserStore } from '@/store/user';
   import { format } from 'date-fns';
@@ -55,13 +48,11 @@
     default: false,
   });
 
-  const props = defineProps<{
-    type: 'copy' | 'move';
-    ids: string;
+  const emits = defineEmits<{
+    select: [cid: string];
   }>();
 
-  const emits = defineEmits(['success']);
-
+  const userStore = useUserStore();
   const columns: DataTableColumns<MyFile> = [
     {
       title: '文件夹名',
@@ -98,13 +89,12 @@
   });
   const path = ref<Path[]>([]);
   const count = ref(0);
-  const userStore = useUserStore();
   const newFolderShow = ref(false);
   const message = useMessage();
 
   watch(show, (val) => {
     if (val) {
-      params.cid = userStore.getLatestFolder(props.type);
+      params.cid = userStore.getLatestFolder('save');
       getFileList();
     } else {
       data.value = [];
@@ -121,7 +111,6 @@
     path.value = res.path;
     count.value = res.count;
     loading.value = false;
-    userStore.setLatestFolder(props.type, params.cid!);
   };
 
   const handleToFolder = (cid: string) => {
@@ -158,19 +147,11 @@
 
   const handleSubmit = async () => {
     try {
-      if (props.type === 'copy') {
-        await copyFile({
-          file_id: props.ids,
-          pid: params.cid!,
-        });
-      } else {
-        await moveFile({
-          file_ids: props.ids,
-          to_cid: params.cid!,
-        });
+      if (!params.cid) {
+        message.error('请选择文件夹');
+        return;
       }
-      message.success(props.type === 'copy' ? '复制成功' : '移动成功');
-      emits('success');
+      emits('select', params.cid);
       show.value = false;
     } catch (error) {
       console.error(error);
