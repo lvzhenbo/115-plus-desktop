@@ -90,9 +90,9 @@ fn stop_aria2_service() -> Result<(), String> {
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
-fn get_port() -> String {
+fn get_port() -> u16 {
     let port = ARIA2_PORT.lock().unwrap();
-    port.to_string()
+    *port
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

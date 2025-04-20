@@ -9,8 +9,8 @@
   });
 
   onMounted(async () => {
-    const port: string = await invoke('get_port');
-    settingStore.downloadSetting.aria2Port = Number(port);
+    const port: number = await invoke('get_port');
+    settingStore.downloadSetting.aria2Port = port;
   });
 </script>
 
