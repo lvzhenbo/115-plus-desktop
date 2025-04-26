@@ -1,3 +1,5 @@
+import store from '.';
+
 export const useSettingStore = defineStore(
   'setting',
   () => {
@@ -26,3 +28,7 @@ export const useSettingStore = defineStore(
     persist: true,
   },
 );
+
+export function useSettingStoreWithOut() {
+  return useSettingStore(store);
+}

@@ -1,5 +1,15 @@
 <template>
-  <div class="p-6">
+  <div class="px-6 py-3">
+    <NSpace class="mb-1">
+      <NButton type="primary" :loading="loading" @click="getFileList">
+        <template #icon>
+          <NIcon>
+            <ReloadOutlined />
+          </NIcon>
+        </template>
+        刷新
+      </NButton>
+    </NSpace>
     <NBreadcrumb class="mb-1">
       <NBreadcrumbItem v-for="item in path" :key="item.cid" @click="handleToFolder(item.cid)">
         <NEllipsis
@@ -24,7 +34,7 @@
       :row-key="(row: MyFile) => row.fid"
       :loading
       :row-props
-      class="h-[calc(100vh-137px)]"
+      class="h-[calc(100vh-151px)]"
       @update:page="handlePageChange"
     />
     <NDropdown

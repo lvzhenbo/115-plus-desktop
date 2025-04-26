@@ -106,6 +106,8 @@
   } from '@vicons/antd';
   import { RouterLink } from 'vue-router';
   import OfflineDownloadModal from './components/OfflineDownloadModal/OfflineDownloadModal.vue';
+  import { getVersion } from '@/api/aria2';
+  import { useSettingStore } from '@/store/setting';
 
   const route = useRoute();
   const userStore = useUserStore();
@@ -160,7 +162,18 @@
       return 0;
     }
   });
+  const message = useMessage();
+  const settingStore = useSettingStore();
   const offlineDownloadShow = ref(false);
+  const { open } = useWebSocket(
+    `ws://localhost:${settingStore.downloadSetting.aria2Port}/jsonrpc`,
+    {
+      immediate: false,
+      onConnected() {
+        message.success('aria2服务连接成功！');
+      },
+    },
+  );
 
   watch(
     () => route.name,
@@ -171,6 +184,7 @@
 
   onMounted(() => {
     getUserInfo();
+    getAria2Version();
   });
 
   const getUserInfo = async () => {
@@ -178,6 +192,16 @@
       const res = await userInfo();
       userStore.userInfo = res.data;
     } catch (_error) {}
+  };
+
+  const getAria2Version = async () => {
+    try {
+      await getVersion();
+      open();
+    } catch (error) {
+      message.error('aria2服务连接失败');
+      console.error(error);
+    }
   };
 </script>
 

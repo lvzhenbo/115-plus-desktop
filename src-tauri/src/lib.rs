@@ -116,7 +116,7 @@ pub fn run() {
         .on_window_event(|app_handle, event| {
             // 当最后一个窗口关闭时，关闭 aria2c
             if let tauri::WindowEvent::Destroyed = event {
-                if app_handle.webview_windows().len() <= 1 {
+                if app_handle.webview_windows().len() < 1 {
                     if let Err(e) = stop_aria2_service() {
                         eprintln!("关闭 aria2c 服务失败: {}", e);
                     }

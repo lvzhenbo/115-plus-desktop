@@ -1,10 +1,12 @@
 import { createAlova } from 'alova';
-import adapterFetch from './tauriHttpAdapter';
+import adapterTauriFetch from './tauriHttpAdapter';
 import { useMessage } from '@/composables/useDiscreteApi';
 import { createServerTokenAuthentication } from 'alova/client';
 import { useUserStoreWithOut } from '@/store/user';
 import type { DeviceCodeToTokenResponseData } from '@/api/types/user';
 import { refreshToken } from '@/api/user';
+import adapterFetch from 'alova/fetch';
+import { useSettingStoreWithOut } from '@/store/setting';
 
 export interface ResponseData<T> {
   state: 0 | 1 | boolean;
@@ -17,6 +19,7 @@ export interface ResponseData<T> {
 
 const message = useMessage();
 const userStore = useUserStoreWithOut();
+const settingStore = useSettingStoreWithOut();
 
 const { onAuthRequired, onResponseRefreshToken } = createServerTokenAuthentication({
   refreshTokenOnSuccess: {
@@ -52,7 +55,7 @@ const { onAuthRequired, onResponseRefreshToken } = createServerTokenAuthenticati
 });
 
 export const alovaInst = createAlova({
-  requestAdapter: adapterFetch(),
+  requestAdapter: adapterTauriFetch(),
   timeout: 40000,
   beforeRequest: onAuthRequired((method) => {
     console.log(method);
@@ -85,4 +88,19 @@ export const alovaInst = createAlova({
       // 处理请求完成逻辑
     },
   }),
+});
+
+export const aria2Server = createAlova({
+  requestAdapter: adapterFetch(),
+  baseURL: `http://localhost:${settingStore.downloadSetting.aria2Port}`,
+  timeout: 40000,
+  responded: {
+    onSuccess: async (response, _method) => {
+      if (response.status !== 200) {
+        throw new Error(response.statusText);
+      }
+      const json: ResponseData<unknown> = await response.clone().json();
+      return json;
+    },
+  },
 });

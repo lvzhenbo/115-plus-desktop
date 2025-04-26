@@ -8,7 +8,7 @@
               v-model:value="settingStore.videoPlayerSetting.defaultVolume"
               :step="0.01"
               :max="1"
-              :format-tooltip="(v) => `${(v * 100).toFixed(0)}%`"
+              :format-tooltip
             />
           </NFormItem>
           <NFormItem label="默认播放速度" path="videoPlayerSetting.defaultRate">
@@ -50,8 +50,11 @@
 
 <script setup lang="ts">
   import { useSettingStore } from '@/store/setting';
+  import type { SliderProps } from 'naive-ui';
 
   const settingStore = useSettingStore();
+
+  const formatTooltip: SliderProps['formatTooltip'] = (v) => `${(v * 100).toFixed(0)}%`;
 </script>
 
 <style scoped></style>
