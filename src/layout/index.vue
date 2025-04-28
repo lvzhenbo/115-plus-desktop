@@ -108,6 +108,7 @@
   import OfflineDownloadModal from './components/OfflineDownloadModal/OfflineDownloadModal.vue';
   import { getVersion } from '@/api/aria2';
   import { useSettingStore } from '@/store/setting';
+  import { downloadDir } from '@tauri-apps/api/path';
 
   const route = useRoute();
   const userStore = useUserStore();
@@ -182,9 +183,14 @@
     },
   );
 
-  onMounted(() => {
+  onMounted(async () => {
+    const port: number = await invoke('get_port');
+    settingStore.downloadSetting.aria2Port = port;
     getUserInfo();
     getAria2Version();
+    if (!settingStore.downloadSetting.downloadPath) {
+      settingStore.downloadSetting.downloadPath = await downloadDir();
+    }
   });
 
   const getUserInfo = async () => {

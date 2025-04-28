@@ -2,6 +2,7 @@ import { alovaInst, type ResponseData } from '@/utils/http/alova';
 import { openBaseUrl } from './config';
 import type {
   FileDeatil,
+  FileDownloadUrlResponseData,
   FileListRequestParams,
   FileListResponseData,
   RecycleBinListResponseData,
@@ -35,7 +36,6 @@ export const addFolder = (data: { file_name: string; pid: string }) =>
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      cacheFor: null,
     },
   );
 
@@ -47,7 +47,6 @@ export const copyFile = (data: { file_id: string; pid: string; nodupli?: '0' | '
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    cacheFor: null,
   });
 
 /**
@@ -58,7 +57,6 @@ export const moveFile = (data: { file_ids: string; to_cid: string }) =>
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    cacheFor: null,
   });
 
 /**
@@ -69,7 +67,6 @@ export const updateFile = (data: { file_id: string; file_name: string }) =>
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    cacheFor: null,
   });
 
 /**
@@ -80,7 +77,6 @@ export const deleteFile = (data: { file_ids: string }) =>
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    cacheFor: null,
   });
 
 /**
@@ -100,7 +96,6 @@ export const revertFile = (data: { tid: string }) =>
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    cacheFor: null,
   });
 
 /**
@@ -111,5 +106,18 @@ export const deleteRecycleBinFile = (data?: { tid?: string }) =>
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    cacheFor: null,
   });
+
+/**
+ * 获取文件下载地址
+ */
+export const fileDownloadUrl = (data: { pick_code: string }) =>
+  alovaInst.Post<ResponseData<FileDownloadUrlResponseData>>(
+    `${openBaseUrl}/open/ufile/downurl`,
+    data,
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    },
+  );

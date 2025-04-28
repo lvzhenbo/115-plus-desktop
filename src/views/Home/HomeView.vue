@@ -68,7 +68,7 @@
     NText,
   } from 'naive-ui';
   import { filesize } from 'filesize';
-  import { deleteFile, fileDetail, fileList } from '@/api/file';
+  import { deleteFile, fileDetail, fileList, fileDownloadUrl } from '@/api/file';
   import type { FileDeatil, FileListRequestParams, MyFile, Path } from '@/api/types/file';
   import { format } from 'date-fns';
   import type { HTMLAttributes } from 'vue';
@@ -78,6 +78,7 @@
     ReloadOutlined,
     CopyOutlined,
     DeleteOutlined,
+    DownloadOutlined,
   } from '@vicons/antd';
   import { DriveFileMoveOutlined, DriveFileRenameOutlineOutlined } from '@vicons/material';
   import DetailModal from './components/DetailModal/DetailModal.vue';
@@ -85,6 +86,7 @@
   import RenameModal from './components/RenameModal/RenameModal.vue';
   import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { emit, listen } from '@tauri-apps/api/event';
+  import { addUri } from '@/api/aria2';
 
   const route = useRoute();
   const themeVars = useThemeVars();
@@ -287,6 +289,15 @@
       ),
     },
     {
+      label: '下载',
+      key: 'download',
+      icon: () => (
+        <NIcon>
+          <DownloadOutlined />
+        </NIcon>
+      ),
+    },
+    {
       label: '刷新',
       key: 'reload',
       icon: () => (
@@ -357,6 +368,9 @@
       case 'open':
         handleOpen();
         break;
+      case 'download':
+        handleDownload();
+        break;
       case 'reload':
         getFileList();
         break;
@@ -407,6 +421,20 @@
       file_id: selectFile.value!.fid,
     });
     fileDetailData.value = res.data;
+  };
+
+  const handleDownload = async () => {
+    if (!selectFile.value) return;
+    if (selectFile.value.fc === '1') {
+      const res = await fileDownloadUrl({
+        pick_code: selectFile.value.pc,
+      });
+      const res1 = await addUri(
+        res.data[selectFile.value.fid].url.url,
+        res.data[selectFile.value.fid].file_name,
+      );
+      console.log(res1);
+    }
   };
 </script>
 

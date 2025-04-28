@@ -344,3 +344,15 @@ export interface RecycleBinFile {
   pick_code: string;
   ico: string;
 }
+
+export interface FileDownloadUrlResponseData {
+  [key: string]: {
+    file_name: string;
+    file_size: number;
+    pick_code: string;
+    sha1: string;
+    url: {
+      url: string;
+    };
+  };
+}

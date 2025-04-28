@@ -44,6 +44,16 @@
           </NFormItem>
         </NForm>
       </NTabPane>
+      <NTabPane name="downloadSetting" tab="下载设置">
+        <NForm label-placement="left" label-width="auto" :show-feedback="false">
+          <NFormItem label="下载目录" path="downloadSetting.downloadPath">
+            <NInputGroup>
+              <NInput v-model:value="settingStore.downloadSetting.downloadPath" readonly />
+              <NButton type="primary" @click="selectDownloadDirectory"> 选择下载目录 </NButton>
+            </NInputGroup>
+          </NFormItem>
+        </NForm>
+      </NTabPane>
     </NTabs>
   </div>
 </template>
@@ -51,10 +61,21 @@
 <script setup lang="ts">
   import { useSettingStore } from '@/store/setting';
   import type { SliderProps } from 'naive-ui';
+  import { open } from '@tauri-apps/plugin-dialog';
 
   const settingStore = useSettingStore();
 
   const formatTooltip: SliderProps['formatTooltip'] = (v) => `${(v * 100).toFixed(0)}%`;
+
+  const selectDownloadDirectory = async () => {
+    const dir = await open({
+      multiple: false,
+      directory: true,
+    });
+    if (dir) {
+      settingStore.downloadSetting.downloadPath = dir;
+    }
+  };
 </script>
 
 <style scoped></style>
