@@ -118,6 +118,7 @@ export const fileDownloadUrl = (data: { pick_code: string }) =>
     {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': navigator.userAgent,
       },
     },
   );

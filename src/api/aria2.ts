@@ -23,7 +23,7 @@ export const addUri = (url: string, name: string) =>
         dir: settingStore.downloadSetting.downloadPath,
         out: name,
         header: [
-          'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
+          `User-Agent: ${navigator.userAgent}`,
           `Authorization: Bearer ${userStore.accessToken}`,
         ],
       },
