@@ -1,6 +1,7 @@
 import { useSettingStore } from '@/store/setting';
 import { useUserStore } from '@/store/user';
 import { aria2Server } from '@/utils/http/alova';
+import type { Aria2Response } from './types/aria2';
 
 const settingStore = useSettingStore();
 const userStore = useUserStore();
@@ -13,7 +14,7 @@ export const getVersion = () =>
   });
 
 export const addUri = (url: string, name: string) =>
-  aria2Server.Post('/jsonrpc', {
+  aria2Server.Post<Aria2Response<string>>('/jsonrpc', {
     jsonrpc: '2.0',
     id: 'qwer',
     method: 'aria2.addUri',

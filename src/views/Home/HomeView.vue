@@ -87,8 +87,10 @@
   import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { emit, listen } from '@tauri-apps/api/event';
   import { addUri } from '@/api/aria2';
+  import { useSettingStore } from '@/store/setting';
 
   const route = useRoute();
+  const settingStore = useSettingStore();
   const themeVars = useThemeVars();
   const dialog = useDialog();
   const message = useMessage();
@@ -429,11 +431,19 @@
       const res = await fileDownloadUrl({
         pick_code: selectFile.value.pc,
       });
-      const res1 = await addUri(
+      const aria2res = await addUri(
         res.data[selectFile.value.fid].url.url,
         res.data[selectFile.value.fid].file_name,
       );
-      console.log(res1);
+      if (aria2res.result) {
+        settingStore.downloadSetting.downloadList.unshift({
+          name: selectFile.value.fn,
+          fid: selectFile.value.fid,
+          pickCode: selectFile.value.pc,
+          size: selectFile.value.fs,
+          gid: aria2res.result,
+        });
+      }
     }
   };
 </script>

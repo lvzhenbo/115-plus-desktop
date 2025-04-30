@@ -11,6 +11,11 @@ const router = createRouter({
       redirect: '/home',
       children: [
         {
+          path: 'userInfo',
+          name: 'UserInfo',
+          component: () => import('@/views/UserInfo/UserInfo.vue'),
+        },
+        {
           path: 'home',
           name: 'Home',
           component: () => import('@/views/Home/HomeView.vue'),
@@ -26,9 +31,9 @@ const router = createRouter({
           component: () => import('@/views/CloudDownload/CloudDownload.vue'),
         },
         {
-          path: 'userInfo',
-          name: 'UserInfo',
-          component: () => import('@/views/UserInfo/UserInfo.vue'),
+          path: 'download',
+          name: 'Download',
+          component: () => import('@/views/Download/DownloadView.vue'),
         },
         {
           path: 'setting',

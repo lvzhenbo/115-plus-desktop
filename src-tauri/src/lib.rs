@@ -48,6 +48,7 @@ fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
 
     // 使用 sidecar 功能启动 aria2c
     // 常用的 aria2c 参数：
+    // --continue：继续下载
     // --enable-rpc：启动 RPC 服务
     // --rpc-listen-port=6800：指定 RPC 端口
     // --rpc-allow-origin-all：允许所有来源的请求
@@ -60,11 +61,15 @@ fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
 
     let command_child = sidecar
         .args([
+            "--continue",
             "--enable-rpc",
             &format!("--rpc-listen-port={}", port),
             "--rpc-allow-origin-all",
             "--rpc-listen-all",
             "--daemon=false",
+            "--max-connection-per-server=16", // 每个服务器的最大连接数
+            "--split=10",                     // 单个文件的最大连接数
+            "--min-split-size=10M",           // 文件分片最小为10M
         ])
         .spawn()
         .map_err(|e| format!("无法启动 aria2c: {}", e))?;

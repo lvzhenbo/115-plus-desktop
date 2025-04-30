@@ -89,13 +89,14 @@
     {
       title: '操作',
       key: 'action',
-      width: 110,
+      width: 210,
       render: (row) => {
         return (
           <NSpace>
             {row.file_id ? (
               <NButton
                 text
+                type="primary"
                 onClick={() =>
                   router.push({
                     name: 'Home',
@@ -111,11 +112,13 @@
                       <FolderOutlined />
                     </NIcon>
                   ),
+                  default: () => '查看',
                 }}
               </NButton>
             ) : null}
             <NButton
               text
+              type="info"
               onClick={async () => {
                 await copy(row.url);
                 message.success('复制成功！');
@@ -127,6 +130,7 @@
                     <CopyOutlined />
                   </NIcon>
                 ),
+                default: () => '复制',
               }}
             </NButton>
             <NButton
@@ -155,6 +159,7 @@
                     <DeleteOutlined />
                   </NIcon>
                 ),
+                default: () => '删除',
               }}
             </NButton>
           </NSpace>

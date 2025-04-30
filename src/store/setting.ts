@@ -1,5 +1,15 @@
 import store from '.';
 
+export interface DownLoadFile {
+  fid: string;
+  name: string;
+  gid: string;
+  size: number;
+  pickCode: string;
+  status?: 'active' | 'waiting' | 'paused' | 'complete' | 'error' | 'removed';
+  progress?: number;
+}
+
 export const useSettingStore = defineStore(
   'setting',
   () => {
@@ -17,6 +27,7 @@ export const useSettingStore = defineStore(
     const downloadSetting = ref({
       aria2Port: 6800,
       downloadPath: '',
+      downloadList: [] as Array<DownLoadFile>,
     });
 
     return {
