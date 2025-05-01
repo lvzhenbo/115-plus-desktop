@@ -13,7 +13,7 @@ export const getVersion = () =>
     method: 'aria2.getVersion',
   });
 
-export const addUri = (url: string, name: string) =>
+export const addUri = (url: string, name: string, path?: string) =>
   aria2Server.Post<Aria2Response<string>>('/jsonrpc', {
     jsonrpc: '2.0',
     id: 'qwer',
@@ -21,7 +21,7 @@ export const addUri = (url: string, name: string) =>
     params: [
       [url],
       {
-        dir: settingStore.downloadSetting.downloadPath,
+        dir: settingStore.downloadSetting.downloadPath + (path ? `/${path}` : ''),
         out: name,
         header: [
           `User-Agent: ${navigator.userAgent}`,
@@ -37,4 +37,27 @@ export const tellStatus = (gid: string) =>
     id: 'qwer',
     method: 'aria2.tellStatus',
     params: [gid],
+  });
+
+export const remove = (gid: string) =>
+  aria2Server.Post('/jsonrpc', {
+    jsonrpc: '2.0',
+    id: 'qwer',
+    method: 'aria2.remove',
+    params: [gid],
+  });
+
+export const removeDownloadResult = (gid: string) =>
+  aria2Server.Post('/jsonrpc', {
+    jsonrpc: '2.0',
+    id: 'qwer',
+    method: 'aria2.removeDownloadResult',
+    params: [gid],
+  });
+
+export const purgeDownloadResult = () =>
+  aria2Server.Post('/jsonrpc', {
+    jsonrpc: '2.0',
+    id: 'qwer',
+    method: 'aria2.purgeDownloadResult',
   });

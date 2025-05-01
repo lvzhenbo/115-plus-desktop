@@ -24,6 +24,9 @@ const settingStore = useSettingStoreWithOut();
 const { onAuthRequired, onResponseRefreshToken } = createServerTokenAuthentication({
   refreshTokenOnSuccess: {
     isExpired: async (response, _method) => {
+      if (response.status >= 400) {
+        throw new Error(response.statusText);
+      }
       const json: ResponseData<unknown> = await response.clone().json();
       return json.code === 40140125 || json.code === 40140121;
     },

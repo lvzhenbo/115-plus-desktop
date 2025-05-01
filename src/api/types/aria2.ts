@@ -10,4 +10,7 @@ export interface Aria2Task {
   totalLength: string;
   completedLength: string;
   downloadSpeed: string;
+  files: {
+    path: string;
+  }[];
 }

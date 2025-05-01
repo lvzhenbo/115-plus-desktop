@@ -8,6 +8,8 @@ export interface DownLoadFile {
   pickCode: string;
   status?: 'active' | 'waiting' | 'paused' | 'complete' | 'error' | 'removed';
   progress?: number;
+  path?: string;
+  downloadSpeed?: number;
 }
 
 export const useSettingStore = defineStore(

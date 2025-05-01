@@ -1,3 +1,4 @@
+use std::fs;
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager};
@@ -46,6 +47,26 @@ fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
         *aria2_port = port;
     }
 
+    // 获取config_dir路径并确保session文件存在
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("无法获取配置目录: {}", e))?;
+
+    // 确保配置目录存在
+    if !config_dir.exists() {
+        fs::create_dir_all(&config_dir).map_err(|e| format!("无法创建配置目录: {}", e))?;
+    }
+
+    // 创建session文件路径
+    let session_file = config_dir.join("aria2.session");
+
+    // 如果session文件不存在，创建一个空文件
+    if !session_file.exists() {
+        fs::write(&session_file, "").map_err(|e| format!("无法创建session文件: {}", e))?;
+        println!("已创建aria2 session文件: {:?}", session_file);
+    }
+
     // 使用 sidecar 功能启动 aria2c
     // 常用的 aria2c 参数：
     // --continue：继续下载
@@ -54,10 +75,16 @@ fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
     // --rpc-allow-origin-all：允许所有来源的请求
     // --rpc-listen-all：监听所有网络接口
     // --daemon=false：不作为守护进程运行（为了让 Tauri 能够管理进程）
+    // --input-file：指定要加载的会话文件，恢复之前的下载
+    // --save-session：指定退出时保存进行中下载的会话文件
     let sidecar = app
         .shell()
         .sidecar("aria2c")
         .map_err(|e| format!("无法创建 aria2c sidecar: {}", e))?;
+
+    let session_file_str = session_file
+        .to_str()
+        .ok_or_else(|| "无法将session文件路径转换为字符串".to_string())?;
 
     let command_child = sidecar
         .args([
@@ -67,9 +94,9 @@ fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
             "--rpc-allow-origin-all",
             "--rpc-listen-all",
             "--daemon=false",
-            "--max-connection-per-server=16", // 每个服务器的最大连接数
-            "--split=10",                     // 单个文件的最大连接数
-            "--min-split-size=10M",           // 文件分片最小为10M
+            &format!("--input-file={}", session_file_str),
+            &format!("--save-session={}", session_file_str),
+            "--save-session-interval=60", // 每60秒自动保存一次会话
         ])
         .spawn()
         .map_err(|e| format!("无法启动 aria2c: {}", e))?;
@@ -78,6 +105,7 @@ fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
     *process = Some(command_child.1);
 
     println!("aria2c RPC 服务已启动在端口 {}", port);
+    println!("使用session文件: {}", session_file_str);
     Ok(())
 }
 

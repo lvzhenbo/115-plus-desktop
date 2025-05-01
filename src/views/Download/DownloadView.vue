@@ -1,5 +1,15 @@
 <template>
   <div class="px-6 py-3">
+    <NSpace class="mb-4">
+      <NButton type="primary" @click="handleClear">
+        <template #icon>
+          <NIcon>
+            <ClearOutlined />
+          </NIcon>
+        </template>
+        清除已完成
+      </NButton>
+    </NSpace>
     <NDataTable
       ref="tableRef"
       remote
@@ -13,11 +23,16 @@
 </template>
 
 <script setup lang="tsx">
+  import { purgeDownloadResult, remove, removeDownloadResult } from '@/api/aria2';
   import { useSettingStore, type DownLoadFile } from '@/store/setting';
+  import { DeleteOutlined, FolderOutlined, ClearOutlined } from '@vicons/antd';
   import { filesize } from 'filesize';
-  import { NProgress, NText, type DataTableColumns } from 'naive-ui';
+  import { NButton, NIcon, NProgress, NSpace, NText, type DataTableColumns } from 'naive-ui';
+  import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
   const settingStore = useSettingStore();
+  const message = useMessage();
+  const dialog = useDialog();
   const columns: DataTableColumns<DownLoadFile> = [
     {
       title: '文件名',
@@ -35,6 +50,19 @@
       },
     },
     {
+      title: '速度',
+      key: 'downloadSpeed',
+      width: 120,
+      render(row) {
+        if (row.status === 'active') {
+          return row.downloadSpeed
+            ? filesize(row.downloadSpeed, { standard: 'jedec' }) + '/s'
+            : '0B/s';
+        }
+        return '';
+      },
+    },
+    {
       title: '进度',
       key: 'percentDone',
       width: 300,
@@ -44,7 +72,7 @@
         } else if (row.status === 'waiting') {
           return <NText type="warning">等待中</NText>;
         } else if (row.status === 'active') {
-          return <NProgress type="line" percentage={row.progress} processing />;
+          return <NProgress type="line" percentage={row.progress || 0} processing />;
         } else if (row.status === 'paused') {
           return <NText type="info">已暂停</NText>;
         } else if (row.status === 'complete') {
@@ -55,79 +83,93 @@
     {
       title: '操作',
       key: 'action',
-      width: 110,
-      // render: (row) => {
-      //   return (
-      //     <NSpace>
-      //       {row.file_id ? (
-      //         <NButton
-      //           text
-      //           onClick={() =>
-      //             router.push({
-      //               name: 'Home',
-      //               query: {
-      //                 fid: row.file_id,
-      //               },
-      //             })
-      //           }
-      //         >
-      //           {{
-      //             icon: () => (
-      //               <NIcon>
-      //                 <FolderOutlined />
-      //               </NIcon>
-      //             ),
-      //           }}
-      //         </NButton>
-      //       ) : null}
-      //       <NButton
-      //         text
-      //         onClick={async () => {
-      //           await copy(row.url);
-      //           message.success('复制成功！');
-      //         }}
-      //       >
-      //         {{
-      //           icon: () => (
-      //             <NIcon>
-      //               <CopyOutlined />
-      //             </NIcon>
-      //           ),
-      //         }}
-      //       </NButton>
-      //       <NButton
-      //         text
-      //         type="error"
-      //         onClick={() => {
-      //           flag.value = settingStore.cloudDownloadSetting.deleteSourceFile ? 1 : 0;
-      //           dialog.warning({
-      //             title: '是否确认删除该下载任务？',
-      //             content: () => (
-      //               <NCheckbox v-model:checked={flag.value} checked-value={1} unchecked-value={0}>
-      //                 删除源文件
-      //               </NCheckbox>
-      //             ),
-      //             positiveText: '确定',
-      //             negativeText: '取消',
-      //             onPositiveClick: () => {
-      //               handleDelete(row.info_hash);
-      //             },
-      //           });
-      //         }}
-      //       >
-      //         {{
-      //           icon: () => (
-      //             <NIcon>
-      //               <DeleteOutlined />
-      //             </NIcon>
-      //           ),
-      //         }}
-      //       </NButton>
-      //     </NSpace>
-      //   );
-      // },
+      width: 140,
+      render: (row, index) => {
+        return (
+          <NSpace>
+            <NButton
+              text
+              onClick={async () => {
+                try {
+                  if (row.path) await revealItemInDir(row.path);
+                } catch (e) {
+                  console.error(e);
+                  message.error('打开文件失败，请检查文件是否存在');
+                }
+              }}
+            >
+              {{
+                icon: () => (
+                  <NIcon>
+                    <FolderOutlined />
+                  </NIcon>
+                ),
+                default: () => '打开',
+              }}
+            </NButton>
+            <NButton
+              text
+              type="error"
+              onClick={() => {
+                dialog.warning({
+                  title: '是否确认删除该下载任务？',
+                  content: '只会删除下载任务，不会删除文件。',
+                  positiveText: '确定',
+                  negativeText: '取消',
+                  onPositiveClick: async () => {
+                    try {
+                      if (row.status === 'active') {
+                        await remove(row.gid);
+                        await removeDownloadResult(row.gid);
+                      } else {
+                        await removeDownloadResult(row.gid);
+                      }
+                    } catch (e) {
+                      console.error(e);
+                    } finally {
+                      settingStore.downloadSetting.downloadList.splice(index, 1);
+                      message.success('下载任务已删除');
+                    }
+                  },
+                });
+              }}
+            >
+              {{
+                icon: () => (
+                  <NIcon>
+                    <DeleteOutlined />
+                  </NIcon>
+                ),
+                default: () => '删除',
+              }}
+            </NButton>
+          </NSpace>
+        );
+      },
     },
   ];
+
+  const handleClear = () => {
+    dialog.warning({
+      title: '是否确认清除已完成的下载任务？',
+      content: '包括已完成和已失败的下载任务',
+      positiveText: '确定',
+      negativeText: '取消',
+      onPositiveClick: async () => {
+        try {
+          await purgeDownloadResult();
+          settingStore.downloadSetting.downloadList =
+            settingStore.downloadSetting.downloadList.filter(
+              (item) =>
+                item.status !== 'complete' && item.status !== 'error' && item.status !== 'removed',
+            );
+          message.success('下载任务已清除');
+        } catch (e) {
+          console.error(e);
+        }
+      },
+    });
+  };
 </script>
 
 <style scoped></style>

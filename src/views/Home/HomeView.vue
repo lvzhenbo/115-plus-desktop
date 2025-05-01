@@ -88,6 +88,7 @@
   import { emit, listen } from '@tauri-apps/api/event';
   import { addUri } from '@/api/aria2';
   import { useSettingStore } from '@/store/setting';
+  import { sleep } from 'radash';
 
   const route = useRoute();
   const settingStore = useSettingStore();
@@ -359,6 +360,7 @@
   const folderModalShow = ref(false);
   const folderModalType = ref<'copy' | 'move'>('copy');
   const renameModalShow = ref(false);
+  const files = ref<MyFile[]>([]);
 
   const onClickoutside = () => {
     showDropdown.value = false;
@@ -427,23 +429,51 @@
 
   const handleDownload = async () => {
     if (!selectFile.value) return;
+    message.info('正在获取下载链接，并推送到aria2下载，可在下载列表中查看下载进度');
     if (selectFile.value.fc === '1') {
-      const res = await fileDownloadUrl({
-        pick_code: selectFile.value.pc,
-      });
-      const aria2res = await addUri(
-        res.data[selectFile.value.fid].url.url,
-        res.data[selectFile.value.fid].file_name,
-      );
-      if (aria2res.result) {
-        settingStore.downloadSetting.downloadList.unshift({
-          name: selectFile.value.fn,
-          fid: selectFile.value.fid,
-          pickCode: selectFile.value.pc,
-          size: selectFile.value.fs,
-          gid: aria2res.result,
+      download(selectFile.value);
+    } else {
+      files.value = [];
+      await getFiles(selectFile.value.fid, 0);
+      for (const file of files.value) {
+        await sleep(1000);
+        const res = await fileDetail({
+          file_id: file.fid,
         });
+        const fidIndex = res.data.paths.findIndex((item) => item.file_id === selectFile.value!.fid);
+        const pathList = res.data.paths.slice(fidIndex);
+        download(file, pathList.map((item) => item.file_name).join('/'));
       }
+    }
+  };
+
+  const download = async (file: MyFile, path?: string) => {
+    const res = await fileDownloadUrl({
+      pick_code: file.pc,
+    });
+    const aria2res = await addUri(res.data[file.fid].url.url, res.data[file.fid].file_name, path);
+    if (aria2res.result) {
+      settingStore.downloadSetting.downloadList.unshift({
+        name: file.fn,
+        fid: file.fid,
+        pickCode: file.pc,
+        size: file.fs,
+        gid: aria2res.result,
+      });
+    }
+  };
+
+  const getFiles = async (fid: string, offset: number) => {
+    const res = await fileList({
+      cid: fid,
+      show_dir: 0,
+      offset,
+      limit: 1150,
+      cur: 0,
+    });
+    files.value = files.value.concat(res.data);
+    if (files.value.length < res.count) {
+      await getFiles(fid, offset + 1150);
     }
   };
 </script>
