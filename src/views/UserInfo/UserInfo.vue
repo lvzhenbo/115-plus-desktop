@@ -2,7 +2,12 @@
   <div class="px-6 py-3">
     <NDescriptions label-placement="left" title="个人信息" :column="1">
       <NDescriptionsItem label="头像">
-        <NAvatar :size="180" :src="userStore.userInfo?.user_face_l" />
+        <NImage
+          width="180"
+          :src="userStore.userInfo?.user_face_l"
+          :render-toolbar="renderToolbar"
+          show-toolbar-tooltip
+        />
       </NDescriptionsItem>
       <NDescriptionsItem label="用户名"> {{ userStore.userInfo?.user_name }} </NDescriptionsItem>
       <NDescriptionsItem label="用户ID"> {{ userStore.userInfo?.user_id }} </NDescriptionsItem>
@@ -38,6 +43,7 @@
   import { useUserStore } from '@/store/user';
   import { format } from 'date-fns';
   import { zhCN } from 'date-fns/locale/zh-CN';
+  import type { ImageRenderToolbarProps } from 'naive-ui';
 
   const userStore = useUserStore();
 
@@ -54,6 +60,17 @@
       const res = await userInfo();
       userStore.userInfo = res.data;
     } catch (_error) {}
+  };
+
+  const renderToolbar = ({ nodes }: ImageRenderToolbarProps) => {
+    return [
+      nodes.rotateCounterclockwise,
+      nodes.rotateClockwise,
+      nodes.resizeToOriginalSize,
+      nodes.zoomOut,
+      nodes.zoomIn,
+      nodes.close,
+    ];
   };
 </script>
 
