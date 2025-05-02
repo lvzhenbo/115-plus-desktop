@@ -1,16 +1,52 @@
-# Tauri + Vue + TypeScript
+# 115+ 桌面客户端
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+这是一个基于 115 网盘开放平台实现的第三方开源桌面客户端，使用Tauri2和Vue3实现，支持文件管理、视频播放和文件下载功能。
 
-## Recommended IDE Setup
+## 下载
 
-- [VS Code](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+正式版暂未发布，可到 [Github Action](https://github.com/lvzhenbo/115-plus-desktop/actions) 下载 CI 流水线产物
 
-## Type Support For `.vue` Imports in TS
+## 功能
 
-Since TypeScript cannot handle type information for `.vue` imports, they are shimmed to be a generic Vue component type by default. In most cases this is fine if you don't really care about component prop types outside of templates. However, if you wish to get actual prop types in `.vue` imports (for example to get props validation when using manual `h(...)` calls), you can enable Volar's Take Over mode by following these steps:
+- [x] 手机扫码登录
+- [x] 用户信息
+- [] 文件上传
+- [x] 文件列表
+  - [x] 文件（夹）复制、移动、删除、重命名和详情
+  - [x] 新建文件夹
+- [x] 文件下载
+- [x] 回收站列表
+  - [x] 文件还原
+  - [x] 删除/清空回收站
+- [x] 视频播放
+  - [x] 获取并记忆视频播放进度
+  - [] 视频字幕
+- [x] 云下载
+  - [x] 下载配额
+  - [x] 链接下载
+  - [] BT种子解析下载
+  - [x] 云下载任务列表
+  - [x] 下载任务删除
+  - [x] 下载任务文件打开
 
-1. Run `Extensions: Show Built-in Extensions` from VS Code's command palette, look for `TypeScript and JavaScript Language Features`, then right click and select `Disable (Workspace)`. By default, Take Over mode will enable itself if the default TypeScript extension is disabled.
-2. Reload the VS Code window by running `Developer: Reload Window` from the command palette.
+## 开发说明
 
-You can learn more about Take Over mode [here](https://github.com/johnsoncodehk/volar/discussions/471).
+### 建议开发配置
+
+- IDE: [VS Code](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- Node.js: 最新LTS
+- 包管理器: 启用Corepack
+- Rust: 最新稳定版
+- 网络环境: 可连Github
+
+### 115网盘开放平台AppID和AppKey设置
+
+```conf
+# .env文件
+VITE_APP_ID=你的AppID
+VITE_APP_KEY=你的AppKey
+```
+
+## 许可证
+
+MIT
