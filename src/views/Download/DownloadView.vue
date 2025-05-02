@@ -23,9 +23,15 @@
 </template>
 
 <script setup lang="tsx">
-  import { purgeDownloadResult, remove, removeDownloadResult } from '@/api/aria2';
+  import { pause, purgeDownloadResult, remove, removeDownloadResult, unpause } from '@/api/aria2';
   import { useSettingStore, type DownLoadFile } from '@/store/setting';
-  import { DeleteOutlined, FolderOutlined, ClearOutlined } from '@vicons/antd';
+  import {
+    DeleteOutlined,
+    FolderOutlined,
+    ClearOutlined,
+    PauseCircleOutlined,
+    PlayCircleOutlined,
+  } from '@vicons/antd';
   import { filesize } from 'filesize';
   import { NButton, NIcon, NProgress, NSpace, NText, type DataTableColumns } from 'naive-ui';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
@@ -83,10 +89,61 @@
     {
       title: '操作',
       key: 'action',
-      width: 140,
+      width: 220,
       render: (row, index) => {
         return (
           <NSpace>
+            {(() => {
+              if (row.status === 'active') {
+                return (
+                  <NButton
+                    text
+                    type="warning"
+                    onClick={async () => {
+                      try {
+                        await pause(row.gid);
+                      } catch (e) {
+                        console.error(e);
+                      }
+                    }}
+                  >
+                    {{
+                      icon: () => (
+                        <NIcon>
+                          <PauseCircleOutlined />
+                        </NIcon>
+                      ),
+                      default: () => '暂停',
+                    }}
+                  </NButton>
+                );
+              } else if (row.status === 'paused') {
+                return (
+                  <NButton
+                    text
+                    type="primary"
+                    onClick={async () => {
+                      try {
+                        await unpause(row.gid);
+                      } catch (e) {
+                        console.error(e);
+                      }
+                    }}
+                  >
+                    {{
+                      icon: () => (
+                        <NIcon>
+                          <PlayCircleOutlined />
+                        </NIcon>
+                      ),
+                      default: () => '继续',
+                    }}
+                  </NButton>
+                );
+              } else {
+                return null;
+              }
+            })()}
             <NButton
               text
               onClick={async () => {

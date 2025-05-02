@@ -61,3 +61,19 @@ export const purgeDownloadResult = () =>
     id: 'qwer',
     method: 'aria2.purgeDownloadResult',
   });
+
+export const pause = (gid: string) =>
+  aria2Server.Post('/jsonrpc', {
+    jsonrpc: '2.0',
+    id: 'qwer',
+    method: 'aria2.pause',
+    params: [gid],
+  });
+
+export const unpause = (gid: string) =>
+  aria2Server.Post('/jsonrpc', {
+    jsonrpc: '2.0',
+    id: 'qwer',
+    method: 'aria2.unpause',
+    params: [gid],
+  });
