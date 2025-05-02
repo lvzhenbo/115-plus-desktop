@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "oof-plus-desktop",
+  "productName": "115+",
   "version": "0.1.0",
-  "identifier": "com.oof-plus-desktop.app",
+  "identifier": "io.github.lvzhenbo.115-plus-desktop",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -25,6 +25,11 @@
     }
   },
   "bundle": {
+    "publisher": "lvzhenbo",
+    "longDescription": "115+ 是一个基于 115 网盘开放平台的开源桌面客户端",
+    "shortDescription": "115+ 是一个基于 115 网盘开放平台的开源桌面客户端",
+    "category": "Productivity",
+    "copyright": "MIT License",
     "active": true,
     "targets": "all",
     "icon": [
@@ -34,6 +39,15 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/aria2c"]
+    "externalBin": ["binaries/aria2c"],
+    "windows": {
+      "wix": {
+        "language": "zh-CN"
+      },
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "languages": ["SimpChinese"]
+      }
+    }
   }
 }
