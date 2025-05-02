@@ -7,7 +7,6 @@
             <NQrCode
               v-if="qrCodeData.qrcode"
               :value="qrCodeData.qrcode"
-              class="box-content"
               :size="196"
               error-correction-level="H"
             />
