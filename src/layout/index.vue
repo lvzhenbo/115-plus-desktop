@@ -21,12 +21,12 @@
             @click="$router.push('/userInfo')"
           >
             <div class="flex items-center">
-              <div class="w-8.5">
-                <NAvatar round :src="userStore.userInfo?.user_face_l" bordered />
+              <div class="flex items-center w-8.5">
+                <NAvatar round :src="userStore.userInfo?.user_face_l" bordered :size="30" />
               </div>
               <div
                 v-if="!collapsed"
-                class="pl-2 line-clamp-1 font-bold"
+                class="pl-2 line-clamp-1 font-bold flex-1"
                 :class="selectMenu === 'UserInfo' ? 'text-(--primary-color)' : ''"
               >
                 {{ userStore.userInfo?.user_name }}
