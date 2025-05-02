@@ -9,6 +9,46 @@
         </template>
         刷新
       </NButton>
+      <NButton type="primary" secondary @click="newFolderModalShow = true">
+        <template #icon>
+          <NIcon>
+            <FolderAddOutlined />
+          </NIcon>
+        </template>
+        新建文件夹
+      </NButton>
+      <NButton type="primary" :disabled="!checkedRowKeys.length" @click="handleBatchDownload">
+        <template #icon>
+          <NIcon>
+            <DownloadOutlined />
+          </NIcon>
+        </template>
+        下载
+      </NButton>
+      <NButton type="primary" :disabled="!checkedRowKeys.length" @click="handleBatchCopy">
+        <template #icon>
+          <NIcon>
+            <CopyOutlined />
+          </NIcon>
+        </template>
+        复制到
+      </NButton>
+      <NButton type="primary" :disabled="!checkedRowKeys.length" @click="handleBatchMove">
+        <template #icon>
+          <NIcon>
+            <DriveFileMoveOutlined />
+          </NIcon>
+        </template>
+        移动到
+      </NButton>
+      <NButton type="error" :disabled="!checkedRowKeys.length" @click="handleBatchDelete">
+        <template #icon>
+          <NIcon>
+            <DeleteOutlined />
+          </NIcon>
+        </template>
+        删除
+      </NButton>
     </NSpace>
     <NBreadcrumb class="mb-1">
       <NBreadcrumbItem v-for="item in path" :key="item.cid" @click="handleToFolder(item.cid)">
@@ -55,6 +95,7 @@
       @success="getFileList"
     />
     <RenameModal v-model:show="renameModalShow" :file="selectFile" @success="getFileList" />
+    <NewFolderModal v-model:show="newFolderModalShow" :pid="params.cid!" @success="getFileList" />
   </div>
 </template>
 
@@ -79,6 +120,7 @@
     CopyOutlined,
     DeleteOutlined,
     DownloadOutlined,
+    FolderAddOutlined,
   } from '@vicons/antd';
   import { DriveFileMoveOutlined, DriveFileRenameOutlineOutlined } from '@vicons/material';
   import DetailModal from './components/DetailModal/DetailModal.vue';
@@ -162,6 +204,7 @@
   const forderTemp = ref(new Map<string, number>());
   const selectFile = ref<MyFile | null>(null);
   const ids = ref<string>('');
+  const newFolderModalShow = ref(false);
   const unlisten = listen('get-video-list', () => {
     emit('set-video-list', selectFile.value);
   });
@@ -292,20 +335,20 @@
       ),
     },
     {
-      label: '下载',
-      key: 'download',
-      icon: () => (
-        <NIcon>
-          <DownloadOutlined />
-        </NIcon>
-      ),
-    },
-    {
       label: '刷新',
       key: 'reload',
       icon: () => (
         <NIcon>
           <ReloadOutlined />
+        </NIcon>
+      ),
+    },
+    {
+      label: '下载',
+      key: 'download',
+      icon: () => (
+        <NIcon>
+          <DownloadOutlined />
         </NIcon>
       ),
     },
@@ -372,23 +415,21 @@
       case 'open':
         handleOpen();
         break;
-      case 'download':
-        handleDownload();
-        break;
       case 'reload':
         getFileList();
+        break;
+      case 'download':
+        handleDownload();
         break;
       case 'copy':
         if (!selectFile.value) return;
         ids.value = selectFile.value.fid;
-        folderModalType.value = 'copy';
-        folderModalShow.value = true;
+        handleOpenFolderModal('copy');
         break;
       case 'move':
         if (!selectFile.value) return;
         ids.value = selectFile.value.fid;
-        folderModalType.value = 'move';
-        folderModalShow.value = true;
+        handleOpenFolderModal('move');
         break;
       case 'rename':
         if (!selectFile.value) return;
@@ -400,20 +441,8 @@
         break;
       case 'delete':
         if (!selectFile.value) return;
-        dialog.warning({
-          title: '确认要删除选中的文件到回收站？',
-          content: '删除的文件可在30天内从回收站还原，回收站仍占用网盘的空间容量哦，请及时清理。',
-          positiveText: '确定',
-          negativeText: '取消',
-          draggable: true,
-          onPositiveClick: async () => {
-            await deleteFile({
-              file_ids: selectFile.value!.fid,
-            });
-            message.success('删除成功');
-            getFileList();
-          },
-        });
+        ids.value = selectFile.value.fid;
+        handleDelete();
         break;
       default:
         break;
@@ -430,20 +459,10 @@
   const handleDownload = async () => {
     if (!selectFile.value) return;
     message.info('正在获取下载链接，并推送到aria2下载，可在下载列表中查看下载进度');
-    if (selectFile.value.fc === '1') {
-      download(selectFile.value);
-    } else {
-      files.value = [];
-      await getFiles(selectFile.value.fid, 0);
-      for (const file of files.value) {
-        await sleep(1000);
-        const res = await fileDetail({
-          file_id: file.fid,
-        });
-        const fidIndex = res.data.paths.findIndex((item) => item.file_id === selectFile.value!.fid);
-        const pathList = res.data.paths.slice(fidIndex);
-        download(file, pathList.map((item) => item.file_name).join('/'));
-      }
+    try {
+      batchDownload(selectFile.value);
+    } catch (error) {
+      console.error(error);
     }
   };
 
@@ -463,6 +482,24 @@
     }
   };
 
+  const batchDownload = async (file: MyFile) => {
+    if (file.fc === '1') {
+      await download(file);
+    } else {
+      files.value = [];
+      await getFiles(file.fid, 0);
+      for (const file of files.value) {
+        await sleep(1000);
+        const res = await fileDetail({
+          file_id: file.fid,
+        });
+        const fidIndex = res.data.paths.findIndex((item) => item.file_id === file.fid);
+        const pathList = res.data.paths.slice(fidIndex);
+        await download(file, pathList.map((item) => item.file_name).join('/'));
+      }
+    }
+  };
+
   const getFiles = async (fid: string, offset: number) => {
     const res = await fileList({
       cid: fid,
@@ -475,6 +512,57 @@
     if (files.value.length < res.count) {
       await getFiles(fid, offset + 1150);
     }
+  };
+
+  const handleBatchDownload = async () => {
+    message.info('正在获取下载链接，并推送到aria2下载，可在下载列表中查看下载进度');
+    try {
+      for (const fid of checkedRowKeys.value) {
+        const file = data.value.find((item) => item.fid === fid);
+        if (file) {
+          await batchDownload(file);
+        }
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleBatchMove = () => {
+    ids.value = checkedRowKeys.value.join(',');
+    handleOpenFolderModal('move');
+  };
+
+  const handleOpenFolderModal = (type: 'copy' | 'move') => {
+    folderModalType.value = type;
+    folderModalShow.value = true;
+  };
+
+  const handleBatchCopy = () => {
+    ids.value = checkedRowKeys.value.join(',');
+    handleOpenFolderModal('copy');
+  };
+
+  const handleBatchDelete = () => {
+    ids.value = checkedRowKeys.value.join(',');
+    handleDelete();
+  };
+
+  const handleDelete = async () => {
+    dialog.warning({
+      title: '确认要删除选中的文件到回收站？',
+      content: '删除的文件可在30天内从回收站还原，回收站仍占用网盘的空间容量哦，请及时清理。',
+      positiveText: '确定',
+      negativeText: '取消',
+      draggable: true,
+      onPositiveClick: async () => {
+        await deleteFile({
+          file_ids: ids.value,
+        });
+        message.success('删除成功');
+        getFileList();
+      },
+    });
   };
 </script>
 
