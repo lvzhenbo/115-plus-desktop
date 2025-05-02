@@ -1,8 +1,8 @@
 <template>
   <NLayout content-class="min-h-screen">
     <div class="flex justify-center items-center pt-44">
-      <NCard hoverable class="w-100!">
-        <div class="flex flex-col items-center">
+      <NCard hoverable class="w-80! h-80!">
+        <div class="flex flex-col items-center justify-center h-full">
           <div class="w-55 h-55 relative">
             <NQrCode
               v-if="qrCodeData.qrcode"
