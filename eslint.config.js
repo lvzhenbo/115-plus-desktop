@@ -8,6 +8,8 @@ import {
 import prettierConfig from '@vue/eslint-config-prettier';
 import parserVue from 'vue-eslint-parser';
 import markdown from '@eslint/markdown';
+import { includeIgnoreFile } from '@eslint/compat';
+import { fileURLToPath, URL } from 'node:url';
 import AutoImport from './.eslintrc-auto-import.json' with { type: 'json' };
 
 configureVueProject({
@@ -15,7 +17,10 @@ configureVueProject({
   scriptLangs: ['ts', 'tsx'],
 });
 
+const gitignorePath = fileURLToPath(new URL('.gitignore', import.meta.url));
+
 export default defineConfigWithVueTs(
+  includeIgnoreFile(gitignorePath),
   {
     name: 'app/all-js&ts-files',
     files: ['**/*.{js,mjs,cjs,jsx,ts,mts,tsx,vue}'],

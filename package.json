@@ -3,13 +3,15 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "author": "lvzhenbo",
+  "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "run-p type-check build-only",
     "preview": "vite preview",
     "build-only": "vite build",
     "type-check": "vue-tsc --noEmit -p tsconfig.app.json --composite false",
-    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .gitignore",
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
     "format": "prettier --write src/",
     "get-aria2": "node scripts/getAria2.js",
     "tauri": "tauri",
@@ -41,9 +43,10 @@
   },
   "devDependencies": {
     "@alova/shared": "^1.1.2",
-    "@eslint/js": "^9.25.1",
+    "@eslint/compat": "^1.2.9",
+    "@eslint/js": "^9.26.0",
     "@eslint/markdown": "^6.4.0",
-    "@tailwindcss/vite": "^4.1.4",
+    "@tailwindcss/vite": "^4.1.5",
     "@tauri-apps/cli": "^2.5.0",
     "@tsconfig/node22": "^22.0.1",
     "@types/node": "^22.15.3",
@@ -53,11 +56,11 @@
     "@vue/eslint-config-typescript": "^14.5.0",
     "@vue/tsconfig": "^0.7.0",
     "axios": "^1.9.0",
-    "eslint": "^9.25.1",
+    "eslint": "^9.26.0",
     "eslint-plugin-vue": "^10.1.0",
     "npm-run-all2": "^7.0.2",
     "prettier": "^3.5.3",
-    "tailwindcss": "^4.1.4",
+    "tailwindcss": "^4.1.5",
     "typescript": "^5.8.3",
     "unplugin-auto-import": "^19.1.2",
     "unplugin-vue-components": "^28.5.0",
@@ -67,7 +70,7 @@
     "vue-tsc": "^2.2.10",
     "yauzl": "^3.2.0"
   },
-  "packageManager": "pnpm@10.9.0+sha512.0486e394640d3c1fb3c9d43d49cf92879ff74f8516959c235308f5a8f62e2e19528a65cdc2a3058f587cde71eba3d5b56327c8c33a97e4c4051ca48a10ca2d5f",
+  "packageManager": "pnpm@10.10.0+sha512.d615db246fe70f25dcfea6d8d73dee782ce23e2245e3c4f6f888249fb568149318637dca73c2c5c8ef2a4ca0d5657fb9567188bfab47f566d1ee6ce987815c39",
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
