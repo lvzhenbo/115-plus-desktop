@@ -2,10 +2,21 @@
 name = "oof-plus-desktop"
 version = "0.1.0"
 description = "A Tauri App"
-authors = ["you"]
-edition = "2021"
+authors = ["lvzhenbo"]
+edition = "2024"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.dev]
+incremental = true # 以较小的步骤编译您的二进制文件。
+
+[profile.release]
+codegen-units = 1 # 允许 LLVM 执行更好的优化。
+lto = true        # 启用链接时优化。
+opt-level = "s"   # 优先考虑小的二进制文件大小。如果您更喜欢速度，请使用 `3`。
+panic = "abort"   # 通过禁用 panic 处理程序来提高性能。
+strip = true      # 确保移除调试符号。
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
