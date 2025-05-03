@@ -488,14 +488,14 @@
     } else {
       files.value = [];
       await getFiles(file.fid, 0);
-      for (const file of files.value) {
+      for (const f of files.value) {
         await sleep(1000);
         const res = await fileDetail({
-          file_id: file.fid,
+          file_id: f.fid,
         });
         const fidIndex = res.data.paths.findIndex((item) => item.file_id === file.fid);
         const pathList = res.data.paths.slice(fidIndex);
-        await download(file, pathList.map((item) => item.file_name).join('/'));
+        await download(f, pathList.map((item) => item.file_name).join('/'));
       }
     }
   };
