@@ -25,7 +25,7 @@
         <!-- 视频控制条 -->
         <div
           v-show="controlsVisible"
-          class="absolute bottom-0 left-0 w-full px-4 py-2 bg-gradient-to-t from-black/80 to-transparent transition duration-300 z-20"
+          class="absolute bottom-0 left-0 w-full px-4 py-2 bg-gradient-to-t from-black/80 to-transparent transition duration-300 z-20 box-border"
           @mouseenter="showControls"
           @mouseleave="hideControlsDelayed"
         >
@@ -97,7 +97,9 @@
             <div class="flex items-center ml-auto gap-2">
               <!-- 分辨率选择 -->
               <NPopselect v-model:value="currentResolution" :options="resolutions">
-                <NButton quaternary round> {{ currentResolutionLabel }} </NButton>
+                <NButton quaternary round class="text-white!">
+                  {{ currentResolutionLabel }}
+                </NButton>
               </NPopselect>
               <!-- 播放速度选择 -->
               <NPopselect
@@ -105,7 +107,7 @@
                 :options="playbackSpeeds"
                 @update:value="changePlaybackSpeed"
               >
-                <NButton quaternary circle> {{ rate }}x </NButton>
+                <NButton quaternary round class="text-white!"> {{ rate }}x </NButton>
               </NPopselect>
               <!-- 播放列表 -->
               <NButton
