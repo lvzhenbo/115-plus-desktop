@@ -5,6 +5,8 @@ import type {
   FileDownloadUrlResponseData,
   FileListRequestParams,
   FileListResponseData,
+  FileSearchRequestParams,
+  FileSearchResponseData,
   RecycleBinListResponseData,
 } from './types/file';
 
@@ -122,3 +124,12 @@ export const fileDownloadUrl = (data: { pick_code: string }) =>
       },
     },
   );
+
+/**
+ * 文件搜索
+ */
+export const fileSearch = (params: FileSearchRequestParams) =>
+  alovaInst.Get<FileSearchResponseData>(`${openBaseUrl}/open/ufile/search`, {
+    params,
+    cacheFor: null,
+  });

@@ -123,7 +123,6 @@
     FolderAddOutlined,
   } from '@vicons/antd';
   import { DriveFileMoveOutlined, DriveFileRenameOutlineOutlined } from '@vicons/material';
-  import DetailModal from './components/DetailModal/DetailModal.vue';
   import FolderModal from './components/FolderModal/FolderModal.vue';
   import RenameModal from './components/RenameModal/RenameModal.vue';
   import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -213,13 +212,19 @@
     getFileList();
   });
 
-  onActivated(() => {
-    if (route.query.fid) {
-      params.cid = route.query.fid.toString();
-      pagination.page = forderTemp.value.get(params.cid) || 1;
-    }
-    getFileList();
-  });
+  watch(
+    route,
+    () => {
+      if (route.name === 'Home') {
+        if (route.query.fid) {
+          params.cid = route.query.fid.toString();
+          pagination.page = forderTemp.value.get(params.cid) || 1;
+        }
+        getFileList();
+      }
+    },
+    { deep: true },
+  );
 
   onUnmounted(() => {
     unlisten.then((f) => f());

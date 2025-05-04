@@ -356,3 +356,107 @@ export interface FileDownloadUrlResponseData {
     };
   };
 }
+
+export interface FileSearchRequestParams {
+  /**
+   * 查找关键字
+   */
+  search_value: string;
+  /**
+   * 单页记录数，默认20，offset+limit最大不超过10000
+   */
+  limit: number;
+  /**
+   * 数据显示偏移量
+   */
+  offset: number;
+  /**
+   * 支持文件标签搜索
+   */
+  file_label?: number;
+  /**
+   * 目标目录cid=-1时，表示不返回列表任何内容
+   */
+  cid?: string;
+  /**
+   * 搜索结果匹配的开始时间；格式：2020-11-19
+   */
+  gte_day?: string;
+  /**
+   * 搜索结果匹配的结束时间；格式：2020-11-20
+   */
+  lte_day?: string;
+  /**
+   * 只显示文件或文件夹。1 只显示文件夹，2 只显示文件
+   */
+  fc?: number;
+  /**
+   * 一级筛选大分类，1：文档，2：图片，3：音乐，4：视频，5：压缩包，6：应用
+   */
+  type?: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  /**
+   * 一级筛选选其他时填写的后缀名
+   */
+  suffix?: string;
+}
+
+export interface FileSearchResponseData extends ResponseData<SearchFile[]> {
+  limit: number;
+  offset: number;
+  count: number;
+}
+
+export interface SearchFile {
+  /**
+   * 文件ID
+   */
+  file_id: string;
+  /**
+   * 文件的状态，aid 的别名。1 正常，7 删除(回收站)，120 彻底删除
+   */
+  area_id: string;
+  /**
+   * 父目录ID
+   */
+  parent_id: string;
+  /**
+   * 用户ID
+   */
+  user_id: string;
+  /**
+   * 1：文件；0；文件夹
+   */
+  file_category: '0' | '1';
+  /**
+   * 文件名称
+   */
+  file_name: string;
+  /**
+   * 文件是否隐藏。0 未隐藏，1 已隐藏
+   */
+  is_private: 0 | 1;
+  /**
+   * 文件提取码
+   */
+  pick_code: string;
+  /**
+   * 上传时间
+   */
+  user_ptime: string;
+  /**
+   * 更新时间
+   */
+  user_utime: string;
+  /**
+   * 文件sha1值
+   */
+  sha1?: string;
+  /**
+   * 文件大小
+   */
+  file_size?: string;
+  /**
+   * 文件后缀
+   */
+  ico?: string;
+}

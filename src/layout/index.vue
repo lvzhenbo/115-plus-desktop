@@ -70,7 +70,7 @@
     </NLayoutSider>
     <NLayout>
       <NLayoutHeader bordered>
-        <div class="px-6 py-3">
+        <div class="px-6 py-3 flex items-center justify-between">
           <NButton type="primary" @click="offlineDownloadShow = true">
             <template #icon>
               <NIcon>
@@ -78,6 +78,14 @@
               </NIcon>
             </template>
             离线下载
+          </NButton>
+          <NButton round secondary @click="searchShow = true">
+            <template #icon>
+              <NIcon>
+                <SearchOutlined />
+              </NIcon>
+            </template>
+            搜索
           </NButton>
         </div>
       </NLayoutHeader>
@@ -91,6 +99,7 @@
     </NLayout>
   </NLayout>
   <OfflineDownloadModal v-model:show="offlineDownloadShow" />
+  <SearchModal v-model:show="searchShow" />
 </template>
 
 <script setup lang="tsx">
@@ -104,9 +113,11 @@
     LinkOutlined,
     SettingOutlined,
     DownloadOutlined,
+    SearchOutlined,
   } from '@vicons/antd';
   import { RouterLink } from 'vue-router';
   import OfflineDownloadModal from './components/OfflineDownloadModal/OfflineDownloadModal.vue';
+  import SearchModal from './components/SearchModal/SearchModal.vue';
   import { getVersion } from '@/api/aria2';
   import { useSettingStore } from '@/store/setting';
   import { downloadDir } from '@tauri-apps/api/path';
@@ -178,6 +189,7 @@
   const message = useMessage();
   const settingStore = useSettingStore();
   const offlineDownloadShow = ref(false);
+  const searchShow = ref(false);
   const { open, data, send } = useWebSocket(
     `ws://localhost:${settingStore.downloadSetting.aria2Port}/jsonrpc`,
     {
