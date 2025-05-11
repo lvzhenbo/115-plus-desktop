@@ -23,115 +23,125 @@
           <span>加载中...</span>
         </div>
         <!-- 视频控制条 -->
-        <div
-          v-show="controlsVisible"
-          class="absolute bottom-0 left-0 w-full px-4 py-2 bg-gradient-to-t from-black/80 to-transparent transition duration-300 z-20 box-border"
-          @mouseenter="showControls"
-          @mouseleave="hideControlsDelayed"
-        >
-          <div class="flex items-center mb-2">
-            <NTooltip :show="showTooltip" :x="tooltipX" :y="height - 70" placement="top">
-              {{ formatTime(hoverTime) }}
-            </NTooltip>
-            <div
-              ref="progressBarRef"
-              class="flex-1 h-2 bg-white/30 rounded cursor-pointer relative"
-              @click="handleSeek"
-              @mousemove="handleProgressHover"
-              @mouseenter="showTooltip = true"
-              @mouseleave="showTooltip = false"
-            >
-              <NEl
-                class="h-full bg-(--primary-color) rounded absolute top-0 left-0"
-                :style="{ width: `${progress}%` }"
-              ></NEl>
-              <NEl
-                class="h-4 w-4 rounded-full bg-(--primary-color) absolute top-1/2 -translate-y-1/2 -ml-2"
-                :style="{ left: `${progress}%` }"
-              ></NEl>
+        <AnimatePresence>
+          <motion.div
+            v-if="controlsVisible"
+            key="box"
+            ref="controlsRef"
+            :animate="{ opacity: 1, y: 0 }"
+            :initial="{ opacity: 0, y: 20 }"
+            :exit="{ opacity: 0, y: 20 }"
+            class="absolute bottom-0 left-0 w-full px-4 py-2 bg-gradient-to-t from-black/90 to-transparent z-20 box-border"
+          >
+            <div class="flex items-center mb-2">
+              <NTooltip :show="showTooltip" :x="tooltipX" :y="height - 70" placement="top">
+                {{ formatTime(hoverTime) }}
+              </NTooltip>
+              <div
+                ref="progressBarRef"
+                class="flex-1 h-2 bg-white/30 rounded cursor-pointer relative"
+                @click="handleSeek"
+                @mousemove="handleProgressHover"
+                @mouseenter="showTooltip = true"
+                @mouseleave="showTooltip = false"
+              >
+                <NEl
+                  class="h-full bg-(--primary-color) rounded absolute top-0 left-0"
+                  :style="{ width: `${progress}%` }"
+                ></NEl>
+                <NEl
+                  class="h-4 w-4 rounded-full bg-(--primary-color) absolute top-1/2 -translate-y-1/2 -ml-2"
+                  :style="{ left: `${progress}%` }"
+                ></NEl>
+              </div>
+              <div class="ml-4 text-white text-sm min-w-[100px] md:min-w-[100px] text-right">
+                {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
+              </div>
             </div>
-            <div class="ml-4 text-white text-sm min-w-[100px] md:min-w-[100px] text-right">
-              {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
-            </div>
-          </div>
-          <!-- 控制栏 -->
-          <div class="flex items-center">
-            <!-- 控制栏左侧 -->
-            <div class="flex items-center gap-2">
-              <NButton quaternary circle :disabled="!videoList.length" @click="handlePreviousVideo">
-                <template #icon>
-                  <NIcon size="24" class="text-white"><StepBackwardOutlined /></NIcon>
-                </template>
-              </NButton>
-              <NButton quaternary circle @click="playing = !playing">
-                <template #icon>
-                  <NIcon size="24" class="text-white">
-                    <PauseCircleOutlined v-if="playing" />
-                    <PlayCircleOutlined v-else />
-                  </NIcon>
-                </template>
-              </NButton>
-              <NButton quaternary circle :disabled="!videoList.length" @click="handleNextVideo">
-                <template #icon>
-                  <NIcon size="24" class="text-white"><StepForwardOutlined /></NIcon>
-                </template>
-              </NButton>
-              <NButton quaternary circle @click="toggleMute">
-                <template #icon>
-                  <NIcon size="24" class="text-white">
-                    <VolumeMuteFilled v-if="muted" />
-                    <VolumeUpFilled v-else-if="volumeLevel > 50" />
-                    <VolumeDownFilled v-else />
-                  </NIcon>
-                </template>
-              </NButton>
-              <NSlider
-                v-model:value="volumeLevel"
-                class="w-30! ml-2"
-                :min="0"
-                :max="100"
-                @update:value="changeVolume"
-              />
-            </div>
-            <!-- 控制栏右侧 -->
-            <div class="flex items-center ml-auto gap-2">
-              <!-- 分辨率选择 -->
-              <NPopselect v-model:value="currentResolution" :options="resolutions">
-                <NButton quaternary round class="text-white!">
-                  {{ currentResolutionLabel }}
+            <!-- 控制栏 -->
+            <div class="flex items-center">
+              <!-- 控制栏左侧 -->
+              <div class="flex items-center gap-2">
+                <NButton
+                  quaternary
+                  circle
+                  :disabled="!videoList.length"
+                  @click="handlePreviousVideo"
+                >
+                  <template #icon>
+                    <NIcon size="24" class="text-white"><StepBackwardOutlined /></NIcon>
+                  </template>
                 </NButton>
-              </NPopselect>
-              <!-- 播放速度选择 -->
-              <NPopselect
-                v-model:value="rate"
-                :options="playbackSpeeds"
-                @update:value="changePlaybackSpeed"
-              >
-                <NButton quaternary round class="text-white!"> {{ rate }}x </NButton>
-              </NPopselect>
-              <!-- 播放列表 -->
-              <NButton
-                quaternary
-                circle
-                :disabled="!videoList.length"
-                @click="videoListShow = !videoListShow"
-              >
-                <template #icon>
-                  <NIcon size="24" class="text-white"><UnorderedListOutlined /></NIcon>
-                </template>
-              </NButton>
-              <!-- 全屏切换 -->
-              <NButton quaternary circle class="hidden md:flex" @click="toggleFullscreen">
-                <template #icon>
-                  <NIcon size="24" class="text-white">
-                    <FullscreenExitOutlined v-if="isFullscreen" />
-                    <FullscreenOutlined v-else />
-                  </NIcon>
-                </template>
-              </NButton>
+                <NButton quaternary circle @click="playing = !playing">
+                  <template #icon>
+                    <NIcon size="24" class="text-white">
+                      <PauseCircleOutlined v-if="playing" />
+                      <PlayCircleOutlined v-else />
+                    </NIcon>
+                  </template>
+                </NButton>
+                <NButton quaternary circle :disabled="!videoList.length" @click="handleNextVideo">
+                  <template #icon>
+                    <NIcon size="24" class="text-white"><StepForwardOutlined /></NIcon>
+                  </template>
+                </NButton>
+                <NButton quaternary circle @click="toggleMute">
+                  <template #icon>
+                    <NIcon size="24" class="text-white">
+                      <VolumeMuteFilled v-if="muted" />
+                      <VolumeUpFilled v-else-if="volumeLevel > 50" />
+                      <VolumeDownFilled v-else />
+                    </NIcon>
+                  </template>
+                </NButton>
+                <NSlider
+                  v-model:value="volumeLevel"
+                  class="w-30! ml-2"
+                  :min="0"
+                  :max="100"
+                  @update:value="changeVolume"
+                />
+              </div>
+              <!-- 控制栏右侧 -->
+              <div class="flex items-center ml-auto gap-2">
+                <!-- 分辨率选择 -->
+                <NPopselect v-model:value="currentResolution" :options="resolutions">
+                  <NButton quaternary round class="text-white!">
+                    {{ currentResolutionLabel }}
+                  </NButton>
+                </NPopselect>
+                <!-- 播放速度选择 -->
+                <NPopselect
+                  v-model:value="rate"
+                  :options="playbackSpeeds"
+                  @update:value="changePlaybackSpeed"
+                >
+                  <NButton quaternary round class="text-white!"> {{ rate }}x </NButton>
+                </NPopselect>
+                <!-- 播放列表 -->
+                <NButton
+                  quaternary
+                  circle
+                  :disabled="!videoList.length"
+                  @click="videoListShow = !videoListShow"
+                >
+                  <template #icon>
+                    <NIcon size="24" class="text-white"><UnorderedListOutlined /></NIcon>
+                  </template>
+                </NButton>
+                <!-- 全屏切换 -->
+                <NButton quaternary circle class="hidden md:flex" @click="toggleFullscreen">
+                  <template #icon>
+                    <NIcon size="24" class="text-white">
+                      <FullscreenExitOutlined v-if="isFullscreen" />
+                      <FullscreenOutlined v-else />
+                    </NIcon>
+                  </template>
+                </NButton>
+              </div>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
     <VideoListDrawer
@@ -165,6 +175,7 @@
   import type { VideoURL } from '@/api/types/video';
   import VideoListDrawer from './components/VideoListDrawer/VideoListDrawer.vue';
   import { useSettingStore } from '@/store/setting';
+  import { motion } from 'motion-v';
 
   // interface Resolution {
   //   height: number;
@@ -180,6 +191,8 @@
   const message = useMessage();
   const videoContainer = ref<HTMLElement | null>(null);
   const videoRef = ref<HTMLVideoElement | null>(null);
+  const controlsRef = ref<HTMLElement | null>(null);
+  const isHovered = useElementHover(controlsRef);
   const progressBarRef = ref<HTMLElement | null>(null);
   const { playing, currentTime, duration, volume, muted, rate, seeking, waiting, ended } =
     useMediaControls(videoRef);
@@ -493,6 +506,7 @@
   // 延迟隐藏控制条
   const hideControlsDelayed = () => {
     stopControlsHideTimer();
+    if (isHovered.value) return;
     startControlsHideTimer();
   };
 

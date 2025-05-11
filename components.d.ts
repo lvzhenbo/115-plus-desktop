@@ -8,6 +8,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AnimatePresence: typeof import('motion-v')['AnimatePresence']
     DetailModal: typeof import('./src/components/DetailModal/DetailModal.vue')['default']
     FolderModal: typeof import('./src/components/FolderModal/FolderModal.vue')['default']
     NAvatar: typeof import('naive-ui')['NAvatar']
