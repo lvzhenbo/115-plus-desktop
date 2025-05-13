@@ -62,8 +62,8 @@ jobs:
           else
             touch .env.local
           fi
-          echo "APP_ID=${{ secrets.APP_ID }}" >> .env.local
-          echo "APP_KEY=${{ secrets.APP_KEY }}" >> .env.local
+          echo "VITE_APP_ID=${{ secrets.APP_ID }}" >> .env.local
+          echo "VITE_APP_KEY=${{ secrets.APP_KEY }}" >> .env.local
         shell: bash
 
       - name: Build Tauri App
