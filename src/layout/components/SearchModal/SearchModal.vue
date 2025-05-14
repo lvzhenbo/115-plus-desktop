@@ -2,7 +2,12 @@
   <NModal v-model:show="show" preset="card" class="w-250!" title="搜索">
     <NInputGroup class="mb-2">
       <NSelect v-model:value="searchParams.type" :options="options" class="w-30!" />
-      <NInput v-model:value="searchParams.search_value" placeholder="请输入搜索内容" clearable />
+      <NInput
+        v-model:value="searchParams.search_value"
+        placeholder="请输入搜索内容"
+        clearable
+        @keyup.enter="handleSearch"
+      />
       <NButton type="primary" :loading @click="handleSearch">
         <template #icon>
           <NIcon>
@@ -169,6 +174,13 @@
       message.warning('请输入搜索内容');
       return;
     }
+    if (loading.value) return;
+    data.value = [];
+    searchParams.offset = 0;
+    handleSearch();
+  };
+
+  const getList = async () => {
     try {
       loading.value = true;
       const res = await fileSearch(searchParams);
@@ -187,7 +199,7 @@
       if (loading.value || count.value <= data.value.length) return;
       if (searchParams.offset !== undefined) {
         searchParams.offset += 20;
-        handleSearch();
+        getList();
       }
     }
   };
