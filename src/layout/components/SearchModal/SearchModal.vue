@@ -177,7 +177,7 @@
     if (loading.value) return;
     data.value = [];
     searchParams.offset = 0;
-    handleSearch();
+    getList();
   };
 
   const getList = async () => {
