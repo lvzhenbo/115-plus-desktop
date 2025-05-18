@@ -200,6 +200,7 @@
   const progressBarRef = ref<HTMLElement | null>(null);
   const { playing, currentTime, duration, volume, muted, rate, seeking, waiting, ended } =
     useMediaControls(videoRef);
+  const firstLoaded = ref<boolean>(true);
   const controlsVisible = ref<boolean>(true);
   const { start: startControlsHideTimer, stop: stopControlsHideTimer } = useTimeoutFn(() => {
     controlsVisible.value = false;
@@ -254,7 +255,6 @@
   onMounted(async () => {
     emit('get-video-list');
 
-    rate.value = settingStore.videoPlayerSetting.defaultRate;
     volume.value = settingStore.videoPlayerSetting.defaultVolume;
   });
 
@@ -432,7 +432,10 @@
           seek(seekTime);
         }
         if (videoRef.value) {
-          videoRef.value.playbackRate = rate.value;
+          videoRef.value.playbackRate = firstLoaded.value
+            ? settingStore.videoPlayerSetting.defaultRate
+            : rate.value;
+          firstLoaded.value = false;
           videoRef.value.currentTime = seekTime || historyTime.value;
         }
       });
