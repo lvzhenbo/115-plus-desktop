@@ -293,7 +293,7 @@
     const res = await videoHistory({
       pick_code: file.value.pc,
     });
-    historyTime.value = res.data.time;
+    historyTime.value = res.data.time || 0;
   };
 
   const { pause, resume } = useIntervalFn(
