@@ -105,7 +105,11 @@
               <!-- 控制栏右侧 -->
               <div class="flex items-center ml-auto gap-2">
                 <!-- 分辨率选择 -->
-                <NPopselect v-model:value="currentResolution" :options="resolutions">
+                <NPopselect
+                  v-model:value="currentResolution"
+                  :options="resolutions"
+                  @update:value="changeResolution"
+                >
                   <NButton quaternary round class="text-white!">
                     {{ currentResolutionLabel }}
                   </NButton>
@@ -618,10 +622,6 @@
   const toggleMute = () => {
     muted.value = !muted.value;
   };
-
-  watch(currentResolution, (val) => {
-    changeResolution(val);
-  });
 
   // 切换分辨率
   const changeResolution = (value: number) => {
