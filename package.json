@@ -13,7 +13,7 @@
     "type-check": "vue-tsc --build",
     "lint": "eslint . --fix",
     "format": "prettier --write src/",
-    "get-aria2": "node scripts/getAria2.ts",
+    "get-aria2": "node --experimental-strip-types scripts/getAria2.ts",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
