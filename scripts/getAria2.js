@@ -2,88 +2,56 @@ import axios from 'axios';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import { Buffer } from 'buffer';
+import { Buffer, Blob } from 'buffer';
 import * as console from 'console';
 import process from 'process';
-import yauzl from 'yauzl';
-import { createWriteStream } from 'fs';
+import { ZipReader, BlobReader, BlobWriter } from '@zip.js/zip.js';
 import { mkdir } from 'fs/promises';
 
 // 使用ES模块获取__dirname等价物
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 使用yauzl解压ZIP文件
+// 使用zip.js解压ZIP文件
 const extractZip = async (source, options) => {
   const { dir: targetDir } = options;
 
-  return new Promise((resolve, reject) => {
-    yauzl.open(source, { lazyEntries: true }, (err, zipfile) => {
-      if (err) {
-        return reject(new Error(`打开ZIP文件失败: ${err.message}`));
+  try {
+    // 读取ZIP文件
+    const zipFileData = fs.readFileSync(source);
+    const zipReader = new ZipReader(new BlobReader(new Blob([zipFileData])));
+
+    // 获取所有条目
+    const entries = await zipReader.getEntries();
+
+    for (const entry of entries) {
+      const fileName = entry.filename;
+
+      // 如果是目录，则创建目录
+      if (entry.directory) {
+        await mkdir(path.join(targetDir, fileName), { recursive: true });
+        continue;
       }
 
-      zipfile.on('entry', async (entry) => {
-        try {
-          // 获取文件路径，处理目录项
-          const fileName = entry.fileName;
+      // 创建输出目录
+      const outputPath = path.join(targetDir, fileName);
+      await mkdir(path.dirname(outputPath), { recursive: true });
 
-          // 如果是目录，则创建目录并继续下一条目
-          if (/\/$/.test(fileName)) {
-            await mkdir(path.join(targetDir, fileName), { recursive: true });
-            zipfile.readEntry(); // 继续读取下一个条目
-            return;
-          }
+      // 读取条目内容并写入文件
+      if (entry.getData) {
+        const blob = await entry.getData(new BlobWriter());
+        const arrayBuffer = await blob.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
 
-          // 创建输出目录
-          const outputPath = path.join(targetDir, fileName);
-          await mkdir(path.dirname(outputPath), { recursive: true });
+        fs.writeFileSync(outputPath, buffer);
+      }
+    }
 
-          // 读取该条目内容
-          zipfile.openReadStream(entry, async (err, readStream) => {
-            if (err) {
-              console.error(`读取ZIP条目失败: ${err.message}`);
-              zipfile.readEntry();
-              return;
-            }
-
-            // 创建输出流
-            const writeStream = createWriteStream(outputPath);
-
-            // 完成写入后处理
-            writeStream.on('close', () => {
-              zipfile.readEntry(); // 处理下一个条目
-            });
-
-            // 错误处理
-            readStream.on('error', (err) => {
-              console.error(`解压条目时出错: ${err.message}`);
-              zipfile.readEntry();
-            });
-
-            // 管道连接，将内容写入文件
-            readStream.pipe(writeStream);
-          });
-        } catch (err) {
-          console.error(`处理ZIP条目失败: ${err.message}`);
-          zipfile.readEntry(); // 出错时也继续处理下一个条目
-        }
-      });
-
-      // 处理解压缩结束
-      zipfile.on('end', () => {
-        resolve();
-      });
-
-      // 处理错误
-      zipfile.on('error', (err) => {
-        reject(new Error(`解压缩过程中发生错误: ${err.message}`));
-      });
-
-      // 开始读取ZIP条目
-      zipfile.readEntry();
-    });
-  });
+    // 关闭ZIP读取器
+    await zipReader.close();
+  } catch (error) {
+    throw new Error(`解压ZIP文件失败: ${error.message}`);
+  }
 };
 
 // 目标目录
