@@ -10,10 +10,10 @@
     "build": "run-p type-check build-only",
     "preview": "vite preview",
     "build-only": "vite build",
-    "type-check": "vue-tsc --noEmit -p tsconfig.app.json --composite false",
-    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
+    "type-check": "vue-tsc --build",
+    "lint": "eslint . --fix",
     "format": "prettier --write src/",
-    "get-aria2": "node scripts/getAria2.js",
+    "get-aria2": "node scripts/getAria2.ts",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
@@ -44,8 +44,6 @@
   },
   "devDependencies": {
     "@alova/shared": "^1.1.2",
-    "@eslint/compat": "^1.2.9",
-    "@eslint/js": "^9.27.0",
     "@eslint/markdown": "^6.4.0",
     "@tailwindcss/vite": "^4.1.7",
     "@tauri-apps/cli": "^2.5.0",

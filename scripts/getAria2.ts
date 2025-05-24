@@ -2,18 +2,26 @@ import axios from 'axios';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import { Buffer, Blob } from 'buffer';
-import * as console from 'console';
-import process from 'process';
 import { ZipReader, BlobReader, BlobWriter } from '@zip.js/zip.js';
 import { mkdir } from 'fs/promises';
+
+// 定义GitHub API响应的类型
+interface GitHubAsset {
+  name: string;
+  browser_download_url: string;
+}
+
+interface GitHubRelease {
+  tag_name: string;
+  assets: GitHubAsset[];
+}
 
 // 使用ES模块获取__dirname等价物
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // 使用zip.js解压ZIP文件
-const extractZip = async (source, options) => {
+const extractZip = async (source: string, options: { dir: string }) => {
   const { dir: targetDir } = options;
 
   try {
@@ -50,7 +58,7 @@ const extractZip = async (source, options) => {
     // 关闭ZIP读取器
     await zipReader.close();
   } catch (error) {
-    throw new Error(`解压ZIP文件失败: ${error.message}`);
+    throw new Error(`解压ZIP文件失败: ${error instanceof Error ? error.message : String(error)}`);
   }
 };
 
@@ -73,14 +81,14 @@ const githubApiUrl = 'https://api.github.com/repos/aria2/aria2/releases/latest';
 async function downloadLatestAria2() {
   try {
     console.log('📥 获取aria2最新版本信息...');
-    const response = await axios.get(githubApiUrl);
+    const response = await axios.get<GitHubRelease>(githubApiUrl);
     const latestVersion = response.data.tag_name;
     console.log(`🔍 找到最新版本: ${latestVersion}`);
 
     const assets = response.data.assets;
 
     // 筛选Windows 64位平台的资源
-    let win64Asset = null;
+    let win64Asset: GitHubAsset | null = null;
 
     for (const asset of assets) {
       if (
@@ -101,12 +109,12 @@ async function downloadLatestAria2() {
 
     console.log('✅ aria2二进制文件下载和处理完成!');
   } catch (error) {
-    console.error('❌ 下载过程中发生错误:', error.message);
+    console.error('❌ 下载过程中发生错误:', error instanceof Error ? error.message : String(error));
     throw error;
   }
 }
 
-async function processAsset(asset, platform, rustTriple) {
+async function processAsset(asset: GitHubAsset, platform: string, rustTriple: string) {
   try {
     console.log(`📦 处理Windows 64位平台: ${platform} (${rustTriple})`);
 
@@ -140,9 +148,9 @@ async function processAsset(asset, platform, rustTriple) {
     await extractZip(downloadPath, { dir: extractDir });
 
     // 查找aria2c可执行文件
-    let aria2Binary = null;
+    let aria2Binary: string | null = null;
 
-    function findAria2Binary(dir) {
+    function findAria2Binary(dir: string): string | null {
       const files = fs.readdirSync(dir, { withFileTypes: true });
 
       for (const file of files) {
@@ -181,7 +189,10 @@ async function processAsset(asset, platform, rustTriple) {
     fs.rmSync(extractDir, { recursive: true, force: true });
     console.log(`🧹 已清理临时文件`);
   } catch (error) {
-    console.error(`❌ 处理 ${asset.name} 时出错:`, error.message);
+    console.error(
+      `❌ 处理 ${asset.name} 时出错:`,
+      error instanceof Error ? error.message : String(error),
+    );
     throw error;
   }
 }

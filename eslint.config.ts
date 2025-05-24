@@ -1,4 +1,3 @@
-import js from '@eslint/js';
 import pluginVue from 'eslint-plugin-vue';
 import {
   defineConfigWithVueTs,
@@ -8,26 +7,13 @@ import {
 import prettierConfig from '@vue/eslint-config-prettier';
 import parserVue from 'vue-eslint-parser';
 import markdown from '@eslint/markdown';
-import { includeIgnoreFile } from '@eslint/compat';
-import { fileURLToPath, URL } from 'node:url';
-import AutoImport from './.eslintrc-auto-import.json' with { type: 'json' };
 
 configureVueProject({
   tsSyntaxInTemplates: true,
   scriptLangs: ['ts', 'tsx'],
 });
 
-const gitignorePath = fileURLToPath(new URL('.gitignore', import.meta.url));
-
 export default defineConfigWithVueTs(
-  includeIgnoreFile(gitignorePath),
-  {
-    name: 'app/all-js&ts-files',
-    files: ['**/*.{js,mjs,cjs,jsx,ts,mts,tsx,vue}'],
-    rules: {
-      ...js.configs.recommended.rules,
-    },
-  },
   vueTsConfigs.recommended,
   {
     extends: [...pluginVue.configs['flat/recommended']],
@@ -43,11 +29,6 @@ export default defineConfigWithVueTs(
   {
     name: 'app/files-to-lint',
     files: ['**/*.{ts,mts,tsx,vue}'],
-    languageOptions: {
-      globals: {
-        ...AutoImport.globals,
-      },
-    },
     rules: {
       'no-empty': 'off',
       // 允许被禁止的类型 https://typescript-eslint.io/rules/ban-types/

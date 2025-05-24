@@ -35,9 +35,6 @@ export default defineConfig(async () => ({
         },
         '@vueuse/core',
       ],
-      eslintrc: {
-        enabled: true,
-      },
     }),
     Components({
       resolvers: [NaiveUiResolver(), MotionResolver()],
