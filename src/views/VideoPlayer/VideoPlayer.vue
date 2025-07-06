@@ -715,6 +715,7 @@
   };
 
   const changeVideoUrl = async () => {
+    pause();
     await getVideoPlayUrl();
     await getVideoHistory();
     const highestResolution = videoUrlList.value.reduce((prev, current) => {

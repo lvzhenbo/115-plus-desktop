@@ -19,6 +19,7 @@
           <NButton
             type="primary"
             :disabled="countData.used >= countData.count"
+            :loading
             @click="handleDownload"
           >
             开始下载
@@ -52,6 +53,7 @@
   });
   const folderModalShow = ref(false);
   const userStore = useUserStore();
+  const loading = ref(false);
 
   watch(show, (val) => {
     if (val) {
@@ -74,12 +76,15 @@
       return;
     }
     try {
+      loading.value = true;
       await urlTaskAdd(data.value);
       message.success('添加离线下载成功');
       userStore.setLatestFolder('save', data.value.wp_path_id);
       show.value = false;
     } catch (error) {
       console.error(error);
+    } finally {
+      loading.value = false;
     }
   };
 
