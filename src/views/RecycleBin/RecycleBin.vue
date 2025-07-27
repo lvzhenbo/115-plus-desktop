@@ -92,7 +92,7 @@
       key: 'fs',
       width: 100,
       render(row) {
-        return row.file_size ? filesize(row.file_size, { standard: 'jedec' }) : '';
+        return row.file_size ? filesize(Number(row.file_size), { standard: 'jedec' }) : '';
       },
     },
     {

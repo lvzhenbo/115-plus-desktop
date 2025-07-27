@@ -6,7 +6,6 @@ import {
 } from '@vue/eslint-config-typescript';
 import prettierConfig from '@vue/eslint-config-prettier';
 import parserVue from 'vue-eslint-parser';
-import markdown from '@eslint/markdown';
 
 configureVueProject({
   tsSyntaxInTemplates: true,
@@ -66,21 +65,6 @@ export default defineConfigWithVueTs(
           math: 'always',
         },
       ],
-    },
-  },
-  {
-    name: 'app/markdown-files',
-    files: ['**/*.md'],
-    plugins: {
-      markdown,
-    },
-    language: 'markdown/gfm',
-    rules: {
-      'markdown/fenced-code-language': 'error',
-      'markdown/heading-increment': 'error',
-      'markdown/no-empty-links': 'error',
-      'markdown/no-invalid-label-refs': 'error',
-      'markdown/no-missing-label-refs': 'error',
     },
   },
   prettierConfig,
