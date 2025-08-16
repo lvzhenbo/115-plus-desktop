@@ -2,6 +2,7 @@
   <div class="px-6 py-3">
     <NDescriptions label-placement="left" title="个人信息" :column="1">
       <NDescriptionsItem label="头像">
+        <!-- @vue-expect-error -->
         <NImage
           width="180"
           :src="userStore.userInfo?.user_face_l"

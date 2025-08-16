@@ -1,6 +1,7 @@
 <template>
   <NModal v-model:show="show" preset="card" class="w-250!" title="搜索">
     <NInputGroup class="mb-2">
+      <!-- @vue-expect-error -->
       <NSelect v-model:value="searchParams.type" :options="options" class="w-30!" />
       <NInput
         v-model:value="searchParams.search_value"
