@@ -335,7 +335,7 @@
 
   const getFileList = async (offset: number) => {
     const res = await fileList({
-      cid: file.value?.pid,
+      cid: file.value?.pid || '0',
       show_dir: 0,
       offset,
       type: 4,
@@ -586,21 +586,21 @@
   });
 
   // 监听Esc键退出全屏
-  watch(escape, (pressed) => {
+  watch(escape!, (pressed) => {
     if (pressed && isFullscreen.value) {
       toggleFullscreen();
     }
   });
 
   // 监听空格键切换播放/暂停
-  watch(space, (pressed) => {
+  watch(space!, (pressed) => {
     if (pressed && videoRef.value) {
       playing.value = !playing.value;
     }
   });
 
   // 监听左方向键后退累加
-  watch(arrowLeft, (pressed) => {
+  watch(arrowLeft!, (pressed) => {
     if (pressed && videoRef.value) {
       arrowLeftCount.value++;
       resetArrowLeftCount();
@@ -608,7 +608,7 @@
   });
 
   // 监听右方向键前进累加
-  watch(arrowRight, (pressed) => {
+  watch(arrowRight!, (pressed) => {
     if (pressed && videoRef.value) {
       arrowRightCount.value++;
       resetArrowRightCount();
@@ -694,9 +694,11 @@
     const nextVideoIndex = videoList.value.findIndex((item) => item.pc === file.value?.pc) + 1;
     if (nextVideoIndex < videoList.value.length) {
       const nextVideo = videoList.value[nextVideoIndex];
-      file.value = nextVideo;
-      pickCode.value = nextVideo.pc;
-      await changeVideoUrl();
+      if (nextVideo) {
+        file.value = nextVideo;
+        pickCode.value = nextVideo.pc;
+        await changeVideoUrl();
+      }
     } else {
       message.warning('已经是最后一个视频了');
     }
@@ -706,9 +708,11 @@
     const previousVideoIndex = videoList.value.findIndex((item) => item.pc === file.value?.pc) - 1;
     if (previousVideoIndex >= 0) {
       const previousVideo = videoList.value[previousVideoIndex];
-      file.value = previousVideo;
-      pickCode.value = previousVideo.pc;
-      await changeVideoUrl();
+      if (previousVideo) {
+        file.value = previousVideo;
+        pickCode.value = previousVideo.pc;
+        await changeVideoUrl();
+      }
     } else {
       message.warning('已经是第一个视频了');
     }

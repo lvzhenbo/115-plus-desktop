@@ -3,7 +3,7 @@ import type { ResponseData } from '@/utils/http/alova';
 export interface FileListRequestParams {
   cid?: string;
   type?: number;
-  limit?: number;
+  limit?: number | undefined;
   offset?: number;
   suffix?: string;
   asc?: number;

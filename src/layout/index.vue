@@ -252,7 +252,7 @@
                 downloadFile.progress = task.completedLength
                   ? Math.floor((parseInt(task.completedLength) / parseInt(task.totalLength)) * 100)
                   : 0;
-                downloadFile.path = task.files[0].path;
+                downloadFile.path = task.files[0]?.path || '';
                 downloadFile.downloadSpeed = Number(task.downloadSpeed);
               }
             });

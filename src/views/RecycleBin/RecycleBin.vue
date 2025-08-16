@@ -199,7 +199,13 @@
     });
     data.value = [];
     for (const item in res.data) {
-      if (item !== 'offset' && item !== 'limit' && item !== 'count' && item !== 'rb_pass') {
+      if (
+        item !== 'offset' &&
+        item !== 'limit' &&
+        item !== 'count' &&
+        item !== 'rb_pass' &&
+        res.data[item]
+      ) {
         data.value.push({
           ...res.data[item],
         });

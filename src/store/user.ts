@@ -42,6 +42,8 @@ export const useUserStore = defineStore(
         return latestMoveFolder.value;
       } else if (type === 'save') {
         return latestSaveFolder.value;
+      } else {
+        return '0';
       }
     };
 

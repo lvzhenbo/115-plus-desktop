@@ -475,7 +475,12 @@
     const res = await fileDownloadUrl({
       pick_code: file.pc,
     });
-    const aria2res = await addUri(res.data[file.fid].url.url, res.data[file.fid].file_name, path);
+    const fileData = res.data[file.fid];
+    if (!fileData) {
+      message.error('获取文件下载信息失败');
+      return;
+    }
+    const aria2res = await addUri(fileData.url.url, fileData.file_name, path);
     if (aria2res.result) {
       settingStore.downloadSetting.downloadList.unshift({
         name: file.fn,
