@@ -335,7 +335,7 @@
 
   const getFileList = async (offset: number) => {
     const res = await fileList({
-      cid: file.value?.pid || '0',
+      cid: file.value?.pid,
       show_dir: 0,
       offset,
       type: 4,

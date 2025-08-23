@@ -22,7 +22,6 @@
           >
             <div class="flex items-center">
               <div class="flex items-center w-8.5">
-                <!-- @vue-expect-error -->
                 <NAvatar round :src="userStore.userInfo?.user_face_l" bordered :size="30" />
               </div>
               <div
@@ -38,7 +37,6 @@
         <template #header>
           <div class="flex items-center">
             <div>
-              <!-- @vue-expect-error -->
               <NAvatar round :src="userStore.userInfo?.user_face_l" size="large" bordered />
             </div>
             <div class="pl-2 flex flex-col justify-between">

@@ -59,7 +59,9 @@
       title: '文件名',
       key: 'name',
       ellipsis: {
-        tooltip: true,
+        tooltip: {
+          width: 'trigger',
+        },
       },
     },
     {

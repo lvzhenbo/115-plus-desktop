@@ -145,7 +145,9 @@
       title: '文件名',
       key: 'fn',
       ellipsis: {
-        tooltip: true,
+        tooltip: {
+          width: 'trigger',
+        },
       },
     },
     {

@@ -1,5 +1,4 @@
 <template>
-  <!-- @vue-expect-error -->
   <NModal v-model:show="show" preset="card" class="w-150!" :title="fileDetailData?.file_name">
     <NDescriptions label-placement="left" :column="1">
       <NDescriptionsItem label="类型">

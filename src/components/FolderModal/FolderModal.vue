@@ -58,7 +58,9 @@
       title: '文件夹名',
       key: 'fn',
       ellipsis: {
-        tooltip: true,
+        tooltip: {
+          width: 'trigger',
+        },
       },
     },
     {

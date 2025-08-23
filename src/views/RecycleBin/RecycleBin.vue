@@ -77,14 +77,18 @@
       title: '文件名',
       key: 'file_name',
       ellipsis: {
-        tooltip: true,
+        tooltip: {
+          width: 'trigger',
+        },
       },
     },
     {
       title: '原位置',
       key: 'parent_name',
       ellipsis: {
-        tooltip: true,
+        tooltip: {
+          width: 'trigger',
+        },
       },
     },
     {
