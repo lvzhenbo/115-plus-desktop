@@ -12,6 +12,9 @@
         },
         {
           "url": "http://*.115.com"
+        },
+        {
+          "url": "https://dl.google.com"
         }
       ]
     },
