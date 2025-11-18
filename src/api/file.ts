@@ -1,7 +1,7 @@
 import { alovaInst, type ResponseData } from '@/utils/http/alova';
 import { openBaseUrl } from './config';
 import type {
-  FileDeatil,
+  FileDetail,
   FileDownloadUrlResponseData,
   FileListRequestParams,
   FileListResponseData,
@@ -23,7 +23,7 @@ export const fileList = (params: FileListRequestParams) =>
  * 获取文件详情
  */
 export const fileDetail = (params: { file_id: string }) =>
-  alovaInst.Get<ResponseData<FileDeatil>>(`${openBaseUrl}/open/folder/get_info`, {
+  alovaInst.Get<ResponseData<FileDetail>>(`${openBaseUrl}/open/folder/get_info`, {
     params,
   });
 

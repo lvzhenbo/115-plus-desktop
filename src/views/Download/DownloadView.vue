@@ -33,7 +33,7 @@
     PlayCircleOutlined,
   } from '@vicons/antd';
   import { filesize } from 'filesize';
-  import { NButton, NIcon, NProgress, NSpace, NText, type DataTableColumns } from 'naive-ui';
+  import type { DataTableColumns } from 'naive-ui';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
   const settingStore = useSettingStore();

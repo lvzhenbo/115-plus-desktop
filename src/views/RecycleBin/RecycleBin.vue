@@ -43,14 +43,7 @@
   import type { RecycleBinFile } from '@/api/types/file';
   import { format } from 'date-fns';
   import { filesize } from 'filesize';
-  import {
-    NButton,
-    NIcon,
-    NSpace,
-    type DataTableColumns,
-    type DataTableInst,
-    type PaginationProps,
-  } from 'naive-ui';
+  import type { DataTableColumns, DataTableInst, PaginationProps } from 'naive-ui';
   import { RestoreFilled } from '@vicons/material';
   import { DeleteOutlined, ClearOutlined } from '@vicons/antd';
 

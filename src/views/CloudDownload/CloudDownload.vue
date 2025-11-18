@@ -29,16 +29,7 @@
   import { taskDelete, taskList } from '@/api/cloud';
   import type { Task } from '@/api/types/cloud';
   import { filesize } from 'filesize';
-  import {
-    NButton,
-    NCheckbox,
-    NIcon,
-    NProgress,
-    NSpace,
-    NText,
-    type DataTableColumns,
-    type PaginationProps,
-  } from 'naive-ui';
+  import type { DataTableColumns, PaginationProps } from 'naive-ui';
   import { ReloadOutlined, CopyOutlined, DeleteOutlined, FolderOutlined } from '@vicons/antd';
   import { useSettingStore } from '@/store/setting';
 

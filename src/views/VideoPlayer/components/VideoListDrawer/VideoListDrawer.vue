@@ -14,7 +14,7 @@
 
 <script setup lang="tsx">
   import type { MyFile } from '@/api/types/file';
-  import { type MenuOption, NEllipsis } from 'naive-ui';
+  import type { MenuOption } from 'naive-ui';
 
   type MyMenuOption = MyFile & MenuOption;
 

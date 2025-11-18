@@ -249,7 +249,7 @@ export interface FileLabel {
   create_time: number;
 }
 
-export interface FileDeatil {
+export interface FileDetail {
   /**
    * 包含文件总数量
    */

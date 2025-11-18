@@ -41,8 +41,8 @@
 </template>
 
 <script setup lang="tsx">
-  import type { FileDeatil, FileSearchRequestParams, SearchFile } from '@/api/types/file';
-  import { NButton, NIcon, NSpace, type DataTableColumns, type SelectOption } from 'naive-ui';
+  import type { FileDetail, FileSearchRequestParams, SearchFile } from '@/api/types/file';
+  import type { DataTableColumns, SelectOption } from 'naive-ui';
   import { FolderOutlined, InfoCircleOutlined, SearchOutlined, ClearOutlined } from '@vicons/antd';
   import { fileDetail, fileSearch } from '@/api/file';
   import { format } from 'date-fns';
@@ -73,7 +73,7 @@
   const data = ref<SearchFile[]>([]);
   const count = ref(0);
   const detailModalShow = ref(false);
-  const fileDetailData = ref<FileDeatil | null>(null);
+  const fileDetailData = ref<FileDetail | null>(null);
   const columns: DataTableColumns<SearchFile> = [
     {
       title: '文件夹',

@@ -100,17 +100,8 @@
 </template>
 
 <script setup lang="tsx">
-  import {
-    type DataTableInst,
-    type DataTableColumns,
-    type PaginationProps,
-    type DropdownOption,
-    NIcon,
-    NText,
-  } from 'naive-ui';
+  import type { DataTableInst, DataTableColumns, PaginationProps, DropdownOption } from 'naive-ui';
   import { filesize } from 'filesize';
-  import { deleteFile, fileDetail, fileList, fileDownloadUrl } from '@/api/file';
-  import type { FileDeatil, FileListRequestParams, MyFile, Path } from '@/api/types/file';
   import { format } from 'date-fns';
   import type { HTMLAttributes } from 'vue';
   import {
@@ -122,14 +113,16 @@
     DownloadOutlined,
     FolderAddOutlined,
   } from '@vicons/antd';
-  import { DriveFileMoveOutlined, DriveFileRenameOutlineOutlined } from '@vicons/material';
-  import FolderModal from './components/FolderModal/FolderModal.vue';
-  import RenameModal from './components/RenameModal/RenameModal.vue';
   import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { emit, listen } from '@tauri-apps/api/event';
+  import { sleep } from 'radash';
+  import { DriveFileMoveOutlined, DriveFileRenameOutlineOutlined } from '@vicons/material';
+  import { deleteFile, fileDetail, fileList, fileDownloadUrl } from '@/api/file';
+  import type { FileDetail, FileListRequestParams, MyFile, Path } from '@/api/types/file';
   import { addUri } from '@/api/aria2';
   import { useSettingStore } from '@/store/setting';
-  import { sleep } from 'radash';
+  import FolderModal from './components/FolderModal/FolderModal.vue';
+  import RenameModal from './components/RenameModal/RenameModal.vue';
 
   const route = useRoute();
   const settingStore = useSettingStore();
@@ -406,7 +399,7 @@
     },
   ];
   const detailModalShow = ref(false);
-  const fileDetailData = ref<FileDeatil | null>(null);
+  const fileDetailData = ref<FileDetail | null>(null);
   const folderModalShow = ref(false);
   const folderModalType = ref<'copy' | 'move'>('copy');
   const renameModalShow = ref(false);

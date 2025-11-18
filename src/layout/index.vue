@@ -105,7 +105,7 @@
 <script setup lang="tsx">
   import { userInfo } from '@/api/user';
   import { useUserStore } from '@/store/user';
-  import { type MenuOption, NIcon } from 'naive-ui';
+  import type { MenuOption } from 'naive-ui';
   import {
     CloudServerOutlined,
     DeleteOutlined,
@@ -115,7 +115,6 @@
     DownloadOutlined,
     SearchOutlined,
   } from '@vicons/antd';
-  import { RouterLink } from 'vue-router';
   import OfflineDownloadModal from './components/OfflineDownloadModal/OfflineDownloadModal.vue';
   import SearchModal from './components/SearchModal/SearchModal.vue';
   import { getVersion } from '@/api/aria2';

@@ -53,7 +53,7 @@
 </template>
 
 <script setup lang="ts">
-  import type { FileDeatil } from '@/api/types/file';
+  import type { FileDetail } from '@/api/types/file';
   import { format } from 'date-fns';
   import { intervalToDuration } from 'date-fns';
   import { CopyOutlined } from '@vicons/antd';
@@ -64,7 +64,7 @@
   });
 
   defineProps<{
-    fileDetailData: FileDeatil | null;
+    fileDetailData: FileDetail | null;
   }>();
 
   const { copy, copied, isSupported } = useClipboard();

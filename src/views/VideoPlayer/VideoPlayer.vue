@@ -31,7 +31,7 @@
             :animate="{ opacity: 1, y: 0 }"
             :initial="{ opacity: 0, y: 20 }"
             :exit="{ opacity: 0, y: 20 }"
-            class="absolute bottom-0 left-0 w-full px-4 py-2 bg-gradient-to-t from-black/90 to-transparent z-20 box-border"
+            class="absolute bottom-0 left-0 w-full px-4 py-2 bg-linear-to-t from-black/90 to-transparent z-20 box-border"
           >
             <div class="flex items-center mb-2">
               <NTooltip :show="showTooltip" :x="tooltipX" :y="height - 70" placement="top">

@@ -18,14 +18,13 @@ type FetchRequestInit = Omit<RequestInit, 'body' | 'headers' | 'method'>;
 
 const isBodyData = (data: any): data is BodyInit => isString(data) || isSpecialRequestBody(data);
 
-// 将对象转换为 application/x-www-form-urlencoded 格式
+// 将对象转换为 application/x-www-form-urlencoded 格式（使用原生 URLSearchParams API）
 const toFormUrlEncoded = (data: Record<string, any>): string => {
-  return Object.keys(data)
-    .map((key) => {
-      const value = data[key] === null || data[key] === undefined ? '' : data[key];
-      return `${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
-    })
-    .join('&');
+  const params = new URLSearchParams();
+  Object.entries(data).forEach(([key, value]) => {
+    params.append(key, value === null || value === undefined ? '' : String(value));
+  });
+  return params.toString();
 };
 
 // 检查是否是 form-urlencoded 格式
