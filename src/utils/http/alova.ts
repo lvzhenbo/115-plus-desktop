@@ -47,7 +47,6 @@ const { onAuthRequired, onResponseRefreshToken } = createServerTokenAuthenticati
     },
   },
   assignToken: (method) => {
-    userStore.$hydrate();
     method.config.headers.Authorization = `Bearer ${userStore.accessToken}`;
   },
   login: async (response, _method) => {
