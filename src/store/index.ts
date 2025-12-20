@@ -1,6 +1,6 @@
-import piniaPluginPersistedstate from 'pinia-plugin-persistedstate';
+import { createPlugin } from '@tauri-store/pinia';
 
 const store = createPinia();
-store.use(piniaPluginPersistedstate);
+store.use(createPlugin());
 
 export default store;

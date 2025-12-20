@@ -7,7 +7,6 @@ import type { DeviceCodeToTokenResponseData } from '@/api/types/user';
 import { refreshToken } from '@/api/user';
 import adapterFetch from 'alova/fetch';
 import { useSettingStoreWithOut } from '@/store/setting';
-import { emit } from '@tauri-apps/api/event';
 
 export interface ResponseData<T> {
   state: 0 | 1 | boolean;
@@ -39,7 +38,6 @@ const { onAuthRequired, onResponseRefreshToken } = createServerTokenAuthenticati
         userStore.accessToken = res.data.access_token;
         userStore.refreshToken = res.data.refresh_token;
         userStore.expiresIn = res.data.expires_in;
-        emit('token-updated').catch(console.error);
       } catch (error) {
         message.error('登录失效，请重新登录');
         userStore.logout();

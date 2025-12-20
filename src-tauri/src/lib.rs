@@ -2,8 +2,8 @@ use std::fs;
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager};
-use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
+use tauri_plugin_shell::process::CommandChild;
 
 // 存储 aria2c 进程的全局变量
 lazy_static::lazy_static! {
@@ -133,13 +133,13 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let _ = show_window(app);
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_pinia::init())
         .setup(|app| {
             // 应用启动时启动 aria2c
             if let Err(e) = start_aria2_service(app.handle()) {

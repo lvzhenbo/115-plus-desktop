@@ -3,6 +3,8 @@
   "platforms": ["macOS", "windows", "linux"],
   "windows": ["main", "video-player"],
   "permissions": [
+    "pinia:default",
+    "core:event:default",
     "window-state:default",
     {
       "identifier": "http:default",
@@ -15,7 +17,6 @@
         }
       ]
     },
-    "store:default",
     "core:window:allow-set-fullscreen",
     "core:window:allow-is-fullscreen",
     "core:window:allow-set-focus",

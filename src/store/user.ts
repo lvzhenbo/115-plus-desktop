@@ -59,7 +59,9 @@ export const useUserStore = defineStore(
     };
   },
   {
-    persist: true,
+    tauri: {
+      saveOnChange: true,
+    },
   },
 );
 
