@@ -63,6 +63,7 @@ declare module 'vue' {
     NTabs: typeof import('naive-ui')['NTabs']
     NText: typeof import('naive-ui')['NText']
     NTooltip: typeof import('naive-ui')['NTooltip']
+    NVirtualList: typeof import('naive-ui')['NVirtualList']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
   }
@@ -121,6 +122,7 @@ declare global {
   const NTabs: typeof import('naive-ui')['NTabs']
   const NText: typeof import('naive-ui')['NText']
   const NTooltip: typeof import('naive-ui')['NTooltip']
+  const NVirtualList: typeof import('naive-ui')['NVirtualList']
   const RouterLink: typeof import('vue-router')['RouterLink']
   const RouterView: typeof import('vue-router')['RouterView']
 }

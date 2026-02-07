@@ -10,34 +10,26 @@ import { fetch } from '@tauri-apps/plugin-http';
 
 export default class CustomLoader implements Loader<LoaderContext> {
   context: LoaderContext | null = null;
-  stats: LoaderStats = {
-    aborted: false,
-    loaded: 0,
-    retry: 0,
-    total: 0,
-    chunkCount: 0,
-    bwEstimate: 0,
-    loading: {
-      start: 0,
-      first: 0,
-      end: 0,
-    },
-    parsing: {
-      start: 0,
-      end: 0,
-    },
-    buffering: {
-      start: 0,
-      first: 0,
-      end: 0,
-    },
-  };
+  stats: LoaderStats = this.createDefaultStats();
 
   private callbacks: LoaderCallbacks<LoaderContext> | null = null;
   private abortController: AbortController | null = null;
+  private timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(_config?: any) {
-    // 配置初始化，如果需要的话
+  constructor(_config?: any) {}
+
+  private createDefaultStats(): LoaderStats {
+    return {
+      aborted: false,
+      loaded: 0,
+      retry: 0,
+      total: 0,
+      chunkCount: 0,
+      bwEstimate: 0,
+      loading: { start: 0, first: 0, end: 0 },
+      parsing: { start: 0, end: 0 },
+      buffering: { start: 0, first: 0, end: 0 },
+    };
   }
 
   destroy(): void {
@@ -47,11 +39,19 @@ export default class CustomLoader implements Loader<LoaderContext> {
   }
 
   abort(): void {
+    this.clearTimeout();
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
     }
     this.stats.aborted = true;
+  }
+
+  private clearTimeout(): void {
+    if (this.timeoutId !== null) {
+      clearTimeout(this.timeoutId);
+      this.timeoutId = null;
+    }
   }
 
   load(
@@ -61,33 +61,36 @@ export default class CustomLoader implements Loader<LoaderContext> {
   ): void {
     this.context = context;
     this.callbacks = callbacks;
-    this.stats.aborted = false;
-    this.stats.loaded = 0;
-    this.stats.retry = 0;
+    this.stats = this.createDefaultStats();
     this.stats.loading.start = performance.now();
 
     this.abortController = new AbortController();
 
-    // 使用 Tauri 的 fetch 进行请求
+    // 设置超时（30秒）
+    this.timeoutId = setTimeout(() => {
+      if (!this.stats.aborted) {
+        this.abort();
+        this.onError(0, 'Request timeout');
+      }
+    }, 30000);
+
     fetch(context.url, {
       headers: context.headers || {},
       signal: this.abortController.signal,
     })
       .then(async (response) => {
-        if (this.stats.aborted) {
-          return;
-        }
+        this.clearTimeout();
+        if (this.stats.aborted) return;
 
         const endTime = performance.now();
+        this.stats.loading.first = this.stats.loading.first || endTime;
         this.stats.loading.end = endTime;
-        this.stats.loading.first = endTime;
 
         if (!response.ok) {
           this.onError(response.status, response.statusText);
           return;
         }
 
-        // 根据响应类型获取数据
         let responseData: string | ArrayBuffer;
         if (context.responseType === 'text' || context.responseType === 'json') {
           responseData = await response.text();
@@ -95,28 +98,23 @@ export default class CustomLoader implements Loader<LoaderContext> {
           responseData = await response.arrayBuffer();
         }
 
-        // 更新统计信息
         this.stats.loaded =
           typeof responseData === 'string' ? responseData.length : responseData.byteLength;
         this.stats.total = this.stats.loaded;
 
-        // 构建响应对象
         const loaderResponse: LoaderResponse = {
           url: context.url,
           data: responseData,
         };
 
-        // 调用成功回调
         if (this.callbacks?.onSuccess) {
           this.callbacks.onSuccess(loaderResponse, this.stats, context, response);
         }
       })
       .catch((error) => {
-        if (this.stats.aborted) {
-          return;
-        }
-
-        console.error('Custom loader error:', error);
+        this.clearTimeout();
+        // 已主动中断时不触发错误回调（abort 方法中已处理或已由超时处理）
+        if (this.stats.aborted) return;
         this.onError(0, error.message || 'Network Error');
       });
   }
@@ -126,19 +124,12 @@ export default class CustomLoader implements Loader<LoaderContext> {
   }
 
   getResponseHeader(_name: string): string | null {
-    // 在实际实现中，您可能需要存储 response headers
-    // 这里返回 null 作为简单实现
     return null;
   }
 
   private onError(code: number, text: string): void {
     if (this.callbacks?.onError && this.context) {
-      this.callbacks.onError(
-        { code, text },
-        this.context,
-        null, // networkDetails
-        this.stats,
-      );
+      this.callbacks.onError({ code, text }, this.context, null, this.stats);
     }
   }
 }

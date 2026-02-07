@@ -12,21 +12,43 @@
           class="w-full h-full object-contain cursor-pointer"
           :class="{ 'cursor-none!': !controlsVisible && playing }"
           @click="handleClick"
-          @dblclick="toggleFullscreen"
+          @dblclick="handleDblClick"
         ></video>
         <!-- 视频加载中 -->
-        <div
-          v-if="waiting || seeking"
-          class="absolute inset-0 flex flex-col justify-center items-center gap-4 bg-black/70 text-white z-10"
-        >
-          <NSpin size="large" />
-          <span>加载中...</span>
-        </div>
+        <AnimatePresence>
+          <motion.div
+            v-if="waiting || seeking"
+            key="loading"
+            :animate="{ opacity: 1 }"
+            :initial="{ opacity: 0 }"
+            :exit="{ opacity: 0 }"
+            :transition="{ duration: 0.3 }"
+            class="absolute inset-0 flex flex-col justify-center items-center gap-4 bg-black/50 text-white z-10 pointer-events-none"
+          >
+            <NSpin size="large" />
+            <span class="text-sm">加载中...</span>
+          </motion.div>
+        </AnimatePresence>
+        <!-- 视频标题 -->
+        <AnimatePresence>
+          <motion.div
+            v-if="controlsVisible && file"
+            key="title"
+            :animate="{ opacity: 1, y: 0 }"
+            :initial="{ opacity: 0, y: -20 }"
+            :exit="{ opacity: 0, y: -20 }"
+            class="absolute top-0 left-0 w-full px-4 py-3 bg-linear-to-b from-black/80 to-transparent z-20 pointer-events-none"
+          >
+            <NEllipsis class="text-white text-sm font-medium">
+              {{ file.fn }}
+            </NEllipsis>
+          </motion.div>
+        </AnimatePresence>
         <!-- 视频控制条 -->
         <AnimatePresence>
           <motion.div
             v-if="controlsVisible"
-            key="box"
+            key="controls"
             ref="controlsRef"
             :animate="{ opacity: 1, y: 0 }"
             :initial="{ opacity: 0, y: 20 }"
@@ -39,33 +61,41 @@
               </NTooltip>
               <div
                 ref="progressBarRef"
-                class="flex-1 h-2 bg-white/30 rounded cursor-pointer relative"
-                @click="handleSeek"
+                class="flex-1 h-1.5 bg-white/20 rounded cursor-pointer relative group"
+                @mousedown="handleProgressMouseDown"
                 @mousemove="handleProgressHover"
                 @mouseenter="showTooltip = true"
                 @mouseleave="showTooltip = false"
               >
+                <!-- 缓冲进度条 -->
+                <div
+                  class="h-full bg-white/30 rounded absolute top-0 left-0 transition-[width] duration-200"
+                  :style="{ width: `${bufferedProgress}%` }"
+                ></div>
+                <!-- 播放进度条 -->
                 <NEl
                   class="h-full bg-(--primary-color) rounded absolute top-0 left-0"
                   :style="{ width: `${progress}%` }"
                 ></NEl>
+                <!-- 进度条拖动手柄 -->
                 <NEl
-                  class="h-4 w-4 rounded-full bg-(--primary-color) absolute top-1/2 -translate-y-1/2 -ml-2"
+                  class="h-3 w-3 rounded-full bg-(--primary-color) absolute top-1/2 -translate-y-1/2 -ml-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                  :class="{ 'opacity-100!': isDraggingProgress }"
                   :style="{ left: `${progress}%` }"
                 ></NEl>
               </div>
-              <div class="ml-4 text-white text-sm min-w-[100px] md:min-w-[100px] text-right">
+              <div class="ml-4 text-white text-sm min-w-25 text-right tabular-nums">
                 {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
               </div>
             </div>
             <!-- 控制栏 -->
             <div class="flex items-center">
               <!-- 控制栏左侧 -->
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-1">
                 <NButton
                   quaternary
                   circle
-                  :disabled="!videoList.length"
+                  :disabled="!hasPreviousVideo"
                   @click="handlePreviousVideo"
                 >
                   <template #icon>
@@ -80,7 +110,7 @@
                     </NIcon>
                   </template>
                 </NButton>
-                <NButton quaternary circle :disabled="!videoList.length" @click="handleNextVideo">
+                <NButton quaternary circle :disabled="!hasNextVideo" @click="handleNextVideo">
                   <template #icon>
                     <NIcon size="24" class="text-white"><StepForwardOutlined /></NIcon>
                   </template>
@@ -103,14 +133,14 @@
                 />
               </div>
               <!-- 控制栏右侧 -->
-              <div class="flex items-center ml-auto gap-2">
+              <div class="flex items-center ml-auto gap-1">
                 <!-- 分辨率选择 -->
                 <NPopselect
                   v-model:value="currentResolution"
                   :options="resolutions"
                   @update:value="changeResolution"
                 >
-                  <NButton quaternary round class="text-white!">
+                  <NButton quaternary round size="small" class="text-white!">
                     {{ currentResolutionLabel }}
                   </NButton>
                 </NPopselect>
@@ -120,7 +150,7 @@
                   :options="playbackSpeeds"
                   @update:value="changePlaybackSpeed"
                 >
-                  <NButton quaternary round class="text-white!"> {{ rate }}x </NButton>
+                  <NButton quaternary round size="small" class="text-white!"> {{ rate }}x </NButton>
                 </NPopselect>
                 <!-- 播放列表 -->
                 <NButton
@@ -159,7 +189,7 @@
 
 <script setup lang="ts">
   import Hls from 'hls.js';
-  import { Window } from '@tauri-apps/api/window';
+  import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
   import {
     PlayCircleOutlined,
     PauseCircleOutlined,
@@ -181,15 +211,6 @@
   import { useSettingStore } from '@/store/setting';
   import { motion } from 'motion-v';
 
-  // interface Resolution {
-  //   height: number;
-  //   width?: number;
-  //   bitrate?: number;
-  //   url: string;
-  //   level?: number;
-  //   label: string;
-  // }
-
   const settingStore = useSettingStore();
   const { height } = useWindowSize();
   const message = useMessage();
@@ -200,22 +221,18 @@
   const progressBarRef = ref<HTMLElement | null>(null);
   const { playing, currentTime, duration, volume, muted, rate, seeking, waiting, ended } =
     useMediaControls(videoRef);
-  const firstLoaded = ref<boolean>(true);
-  const controlsVisible = ref<boolean>(true);
+  const firstLoaded = ref(true);
+  const controlsVisible = ref(true);
   const { start: startControlsHideTimer, stop: stopControlsHideTimer } = useTimeoutFn(() => {
     controlsVisible.value = false;
   }, 3000);
-  const isFullscreen = ref<boolean>(false);
+  const isFullscreen = ref(false);
   const resolutions = ref<SelectOption[]>([]);
   const currentResolution = ref<number>(0);
   const currentResolutionLabel = computed(() => {
     const resolution = resolutions.value.find((res) => res.value === currentResolution.value);
     return resolution ? resolution.label : '';
   });
-  // const resolutions = ref<Resolution[]>([]); // 可用的分辨率列表
-  // const currentResolution = ref<Resolution | null>(null); // 当前选择的分辨率
-  // const currentResolutionLabel = ref<string>(''); // 当前选择的分辨率标签
-  // const showResolutionMenu = ref<boolean>(false); // 是否显示分辨率菜单
   const playbackSpeeds: SelectOption[] = [
     { label: '5x', value: 5 },
     { label: '4x', value: 4 },
@@ -229,15 +246,45 @@
   ];
   let hls: Hls | null = null;
   const file = ref<MyFile | null>(null);
-  const pickCode = ref<string>('');
+  const pickCode = ref('');
   const videoList = ref<MyFile[]>([]);
   const videoUrlList = ref<VideoURL[]>([]);
-  const historyTime = ref<number>(0);
-  const videoListShow = ref<boolean>(false);
-  // 计算进度百分比
+  const historyTime = ref(0);
+  const videoListShow = ref(false);
+  const isDraggingProgress = ref(false);
+
+  // HLS 错误恢复相关
+  const MAX_RECOVERY_ATTEMPTS = 3;
+  let networkRecoveryAttempts = 0;
+  let mediaRecoveryAttempts = 0;
+
+  // 缓冲进度
+  const bufferedProgress = computed(() => {
+    if (!videoRef.value || !duration.value) return 0;
+    const buffered = videoRef.value.buffered;
+    if (buffered.length === 0) return 0;
+    return (buffered.end(buffered.length - 1) / duration.value) * 100;
+  });
+
+  // 播放进度百分比
   const progress = computed(() => {
     return (currentTime.value / duration.value) * 100 || 0;
   });
+
+  // 当前视频索引
+  const currentVideoIndex = computed(() => {
+    return videoList.value.findIndex((item) => item.pc === file.value?.pc);
+  });
+
+  // 是否有上一个/下一个视频
+  const hasPreviousVideo = computed(() => currentVideoIndex.value > 0);
+  const hasNextVideo = computed(
+    () => videoList.value.length > 0 && currentVideoIndex.value < videoList.value.length - 1,
+  );
+
+  // 当前 Tauri 窗口实例
+  const appWindow = getCurrentWebviewWindow();
+
   // 音量百分比
   const volumeLevel = computed({
     get: () => Math.round(volume.value * 100),
@@ -245,27 +292,60 @@
       volume.value = val / 100;
     },
   });
+
   const unlisten = listen('set-video-list', async (event) => {
     file.value = event.payload as MyFile;
     pickCode.value = file.value.pc;
     await changeVideoUrl();
-    getFileList(0);
+    getFileList();
   });
+
+  let unlistenCloseRequested: (() => void) | null = null;
 
   onMounted(async () => {
     emit('get-video-list');
-
     volume.value = settingStore.videoPlayerSetting.defaultVolume;
+
+    // 监听 Tauri 窗口关闭事件，确保资源正确清理
+    unlistenCloseRequested = await appWindow.onCloseRequested(async () => {
+      // 保存当前播放进度
+      if (file.value && settingStore.videoPlayerSetting.isHistory && currentTime.value > 0) {
+        try {
+          await saveVideoHistory({
+            pick_code: file.value.pc,
+            time: Math.floor(currentTime.value),
+          });
+        } catch {
+          // 窗口关闭时请求可能失败，忽略
+        }
+      }
+      destroyHls();
+    });
   });
 
   onBeforeUnmount(() => {
-    // 销毁HLS实例
+    destroyHls();
+    // 清理事件监听器，忽略资源已失效的错误
+    unlisten.then((f) => f()).catch(() => {});
+    if (unlistenCloseRequested) {
+      try {
+        unlistenCloseRequested();
+      } catch {
+        // 资源可能已失效
+      }
+      unlistenCloseRequested = null;
+    }
+  });
+
+  // 销毁 HLS 实例
+  const destroyHls = () => {
     if (hls) {
       hls.destroy();
+      hls = null;
     }
-
-    unlisten.then((f) => f());
-  });
+    networkRecoveryAttempts = 0;
+    mediaRecoveryAttempts = 0;
+  };
 
   const handleChangeVideo = async (value: string) => {
     if (!videoRef.value) return;
@@ -283,31 +363,27 @@
       pick_code: file.value.pc,
     });
     videoUrlList.value = res.data.video_url;
-    resolutions.value = res.data.video_url.map((item) => {
-      return {
-        label: item.title,
-        value: item.definition_n,
-      };
-    });
+    resolutions.value = res.data.video_url.map((item) => ({
+      label: item.title,
+      value: item.definition_n,
+    }));
   };
 
   const getVideoHistory = async () => {
-    if (!file.value) return;
-    if (!settingStore.videoPlayerSetting.isHistory) return;
+    if (!file.value || !settingStore.videoPlayerSetting.isHistory) return;
     const res = await videoHistory({
       pick_code: file.value.pc,
     });
     historyTime.value = res.data.time || 0;
   };
 
-  const { pause, resume } = useIntervalFn(
+  // 定时保存播放历史
+  const { pause: pauseHistorySave, resume: resumeHistorySave } = useIntervalFn(
     () => {
-      if (!videoRef.value) return;
-      if (!file.value) return;
-      if (!settingStore.videoPlayerSetting.isHistory) return;
+      if (!videoRef.value || !file.value || !settingStore.videoPlayerSetting.isHistory) return;
       saveVideoHistory({
         pick_code: file.value.pc,
-        time: currentTime.value,
+        time: Math.floor(currentTime.value),
       }).send();
     },
     5000,
@@ -316,48 +392,60 @@
 
   watch(playing, (val) => {
     if (val) {
-      resume();
+      resumeHistorySave();
     } else {
-      pause();
+      pauseHistorySave();
     }
   });
 
+  // 播放结束时保存历史并尝试播放下一个
   watch(ended, (val) => {
-    if (val) {
-      if (!file.value) return;
-      if (!settingStore.videoPlayerSetting.isHistory) return;
+    if (!val || !file.value) return;
+    if (settingStore.videoPlayerSetting.isHistory) {
       saveVideoHistory({
         pick_code: file.value.pc,
         watch_end: 1,
       }).send();
     }
+    // 自动播放下一个视频
+    if (hasNextVideo.value && settingStore.videoPlayerSetting.autoPlay) {
+      handleNextVideo();
+    }
   });
 
-  const getFileList = async (offset: number) => {
-    const res = await fileList({
-      cid: file.value?.pid,
-      show_dir: 0,
-      offset,
-      type: 4,
-      limit: 1150,
-      cur: 1,
-    });
-    if (offset === 0) {
-      videoList.value = [];
-    }
-    videoList.value = [...videoList.value, ...res.data];
-    if (videoList.value.length < res.count) {
-      getFileList(offset + 1150);
+  // 持久化音量设置
+  watch(volume, (val) => {
+    settingStore.videoPlayerSetting.defaultVolume = val;
+  });
+
+  // 迭代式获取文件列表，避免递归调用栈溢出
+  const getFileList = async () => {
+    let offset = 0;
+    const limit = 1150;
+    videoList.value = [];
+
+    while (true) {
+      const res = await fileList({
+        cid: file.value?.pid,
+        show_dir: 0,
+        offset,
+        type: 4,
+        limit,
+        cur: 1,
+      });
+      videoList.value.push(...res.data);
+      if (videoList.value.length >= res.count) break;
+      offset += limit;
     }
   };
 
-  // 格式化时间为 HH:MM:SS 格式，始终显示小时部分
+  // 格式化时间显示
   const formatTime = (time: number): string => {
+    if (!Number.isFinite(time) || time < 0) return '00:00:00';
     const hours = Math.floor(time / 3600);
     const minutes = Math.floor((time % 3600) / 60);
     const seconds = Math.floor(time % 60);
-
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   };
 
   // 加载视频
@@ -365,203 +453,202 @@
     if (!videoRef.value) return;
 
     waiting.value = true;
+    destroyHls();
 
-    // 清理现有HLS实例
-    if (hls) {
-      hls.destroy();
-      hls = null;
-    }
-
-    // 使用HLS.js加载m3u8视频
-    if (Hls.isSupported()) {
-      hls = new Hls({
-        loader: CustomLoader,
-        debug: false,
-        enableWorker: false,
-      });
-      hls.loadSource(url);
-      hls.attachMedia(videoRef.value);
-
-      hls.on(Hls.Events.MANIFEST_PARSED, (_event, _data) => {
-        waiting.value = false;
-
-        // 获取可用分辨率列表
-        // const levels = hls?.levels || [];
-        // if (levels.length > 0) {
-        //   resolutions.value = levels
-        //     .map((level, index) => {
-        //       let label: string;
-        //       if (level.height >= 1080) {
-        //         label = '1080p 高清';
-        //       } else if (level.height >= 720) {
-        //         label = '720p 高清';
-        //       } else if (level.height >= 480) {
-        //         label = '480p 标清';
-        //       } else if (level.height >= 360) {
-        //         label = '360p 流畅';
-        //       } else {
-        //         label = `${level.height}p`;
-        //       }
-        //       return {
-        //         height: level.height,
-        //         width: level.width,
-        //         bitrate: level.bitrate,
-        //         url: level.url[0],
-        //         level: index,
-        //         label,
-        //       };
-        //     })
-        //     .sort((a, b) => b.height - a.height); // 按分辨率高度降序排序
-
-        //   // 默认选择最高画质
-        //   if (resolutions.value.length > 0) {
-        //     const highestRes = resolutions.value[0];
-        //     if (hls && highestRes.level !== undefined) {
-        //       hls.currentLevel = highestRes.level;
-        //     }
-        //     currentResolution.value = highestRes;
-        //     currentResolutionLabel.value = highestRes.label;
-        //   }
-        // }
-
-        // 尝试自动播放
-        if (settingStore.videoPlayerSetting.autoPlay) {
-          playing.value = true;
-        }
-        if (seekTime) {
-          seek(seekTime);
-        }
-        if (videoRef.value) {
-          videoRef.value.playbackRate = firstLoaded.value
-            ? settingStore.videoPlayerSetting.defaultRate
-            : rate.value;
-          firstLoaded.value = false;
-          videoRef.value.currentTime = seekTime || historyTime.value;
-        }
-      });
-
-      // hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
-      //   const { level } = data;
-      //   const newResolution = resolutions.value.find((res) => res.level === level);
-      //   if (newResolution) {
-      //     currentResolution.value = newResolution;
-      //     currentResolutionLabel.value = newResolution.label;
-      //   }
-      // });
-
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              message.error('网络错误，尝试恢复...');
-              hls?.startLoad();
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              message.error('媒体错误，尝试恢复...');
-              hls?.recoverMediaError();
-              break;
-            default:
-              message.error('无法加载视频，请检查URL是否正确');
-              waiting.value = false;
-              break;
-          }
-        }
-      });
-    } else if (videoRef.value.canPlayType('application/vnd.apple.mpegurl')) {
-      // 对于原生支持HLS的浏览器（如Safari）
-      videoRef.value.src = url;
-      videoRef.value.addEventListener('loadedmetadata', () => {
-        waiting.value = false;
-        playing.value = true;
-        if (seekTime) {
-          seek(seekTime);
-        }
-        if (videoRef.value) {
-          videoRef.value.playbackRate = rate.value;
-          videoRef.value.currentTime = seekTime || historyTime.value;
-        }
-      });
-    } else {
-      message.error('您的浏览器不支持HLS视频播放');
+    if (!Hls.isSupported()) {
+      // Tauri WebView 下一般不需要原生 HLS 回退，提示用户
+      message.error('当前环境不支持 HLS 视频播放');
       waiting.value = false;
+      return;
     }
+
+    hls = new Hls({
+      loader: CustomLoader,
+      debug: false,
+      enableWorker: false,
+      // 优化分片加载
+      maxBufferLength: 30,
+      maxMaxBufferLength: 60,
+      maxBufferSize: 60 * 1000 * 1000, // 60 MB
+      maxBufferHole: 0.5,
+      startPosition: seekTime ?? historyTime.value ?? -1,
+      // 配置 HLS.js 内置重试机制
+      fragLoadPolicy: {
+        default: {
+          maxTimeToFirstByteMs: 15000,
+          maxLoadTimeMs: 30000,
+          timeoutRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+          errorRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+        },
+      },
+      manifestLoadPolicy: {
+        default: {
+          maxTimeToFirstByteMs: 15000,
+          maxLoadTimeMs: 30000,
+          timeoutRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+          errorRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+        },
+      },
+    });
+
+    hls.loadSource(url);
+    hls.attachMedia(videoRef.value);
+
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      waiting.value = false;
+
+      // 设置播放速率
+      if (videoRef.value) {
+        videoRef.value.playbackRate = firstLoaded.value
+          ? settingStore.videoPlayerSetting.defaultRate
+          : rate.value;
+        firstLoaded.value = false;
+      }
+
+      // 自动播放
+      if (settingStore.videoPlayerSetting.autoPlay) {
+        playing.value = true;
+      }
+    });
+
+    hls.on(Hls.Events.ERROR, (_event, data) => {
+      console.warn('[HLS Error]', data.type, data.details, data.url, data.fatal);
+      if (!data.fatal) return;
+
+      switch (data.type) {
+        case Hls.ErrorTypes.NETWORK_ERROR:
+          if (networkRecoveryAttempts < MAX_RECOVERY_ATTEMPTS) {
+            networkRecoveryAttempts++;
+            message.warning(
+              `网络错误（${data.details}），正在第 ${networkRecoveryAttempts} 次重试...`,
+            );
+            hls?.startLoad();
+          } else {
+            message.error('网络错误，重试次数已用尽，请检查网络连接');
+            waiting.value = false;
+          }
+          break;
+        case Hls.ErrorTypes.MEDIA_ERROR:
+          if (mediaRecoveryAttempts < MAX_RECOVERY_ATTEMPTS) {
+            mediaRecoveryAttempts++;
+            message.warning(`媒体错误，正在第 ${mediaRecoveryAttempts} 次恢复...`);
+            hls?.recoverMediaError();
+          } else {
+            message.error('媒体错误，恢复失败');
+            waiting.value = false;
+          }
+          break;
+        default:
+          message.error('无法加载视频');
+          waiting.value = false;
+          break;
+      }
+    });
   };
 
-  // 更改视频播放位置
+  // 跳转到指定时间
   const seek = (time: number) => {
-    if (!videoRef.value) return;
-    videoRef.value.currentTime = time;
+    if (!videoRef.value || !duration.value) return;
+    videoRef.value.currentTime = Math.max(0, Math.min(time, duration.value));
   };
 
-  // 单击事件处理
+  // 单击/双击处理：使用计数器区分单击与双击
+  let clickCount = 0;
+  let clickTimer: ReturnType<typeof setTimeout> | null = null;
+
   const handleClick = () => {
     if (!videoRef.value || !file.value) return;
-
-    // 延迟执行播放/暂停切换，避免与双击冲突
-    setTimeout(() => {
-      if (!videoRef.value) return;
-      playing.value = !playing.value;
-    }, 200);
+    clickCount++;
+    if (clickTimer) clearTimeout(clickTimer);
+    clickTimer = setTimeout(() => {
+      if (clickCount === 1) {
+        playing.value = !playing.value;
+      }
+      clickCount = 0;
+    }, 250);
   };
 
-  // 显示控制条
+  const handleDblClick = () => {
+    // 清除单击计时器，防止双击时触发暂停
+    if (clickTimer) {
+      clearTimeout(clickTimer);
+      clickTimer = null;
+    }
+    clickCount = 0;
+    toggleFullscreen();
+  };
+
+  // 控制条显示/隐藏
   const showControls = () => {
     controlsVisible.value = true;
     stopControlsHideTimer();
   };
 
-  // 延迟隐藏控制条
   const hideControlsDelayed = () => {
     stopControlsHideTimer();
     if (isHovered.value) return;
     startControlsHideTimer();
   };
 
-  // 在鼠标移动时显示控制条
   const handleMouseMove = () => {
     showControls();
     hideControlsDelayed();
   };
   useEventListener(videoContainer, 'mousemove', handleMouseMove);
 
-  // 拖动进度条调整位置
-  const handleSeek = (e: MouseEvent) => {
-    if (!videoRef.value) return;
+  // 进度条点击与拖拽
+  const handleProgressMouseDown = (e: MouseEvent) => {
+    if (!videoRef.value || !progressBarRef.value) return;
 
-    const progressBar = e.currentTarget as HTMLElement;
-    const rect = progressBar.getBoundingClientRect();
-    const clickPosition = (e.clientX - rect.left) / rect.width;
-    const newTime = clickPosition * duration.value;
+    isDraggingProgress.value = true;
+    const wasPlaying = playing.value;
+    if (wasPlaying) playing.value = false;
 
-    seek(newTime);
+    const seekToPosition = (clientX: number) => {
+      const rect = progressBarRef.value!.getBoundingClientRect();
+      const position = Math.max(0, Math.min((clientX - rect.left) / rect.width, 1));
+      seek(position * duration.value);
+    };
+
+    // 立即跳转到点击位置
+    seekToPosition(e.clientX);
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      seekToPosition(moveEvent.clientX);
+    };
+
+    const onMouseUp = () => {
+      isDraggingProgress.value = false;
+      if (wasPlaying) playing.value = true;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
   };
 
-  // 添加tooltip相关变量
-  const showTooltip = ref<boolean>(false);
-  const tooltipX = ref<number>(0);
-  const hoverTime = ref<number>(0);
+  // Tooltip 相关
+  const showTooltip = ref(false);
+  const tooltipX = ref(0);
+  const hoverTime = ref(0);
 
-  // 处理进度条上的鼠标移动，计算并显示对应时间点
   const handleProgressHover = (e: MouseEvent) => {
     if (!progressBarRef.value || !duration.value) return;
-
     const rect = progressBarRef.value.getBoundingClientRect();
-    const position = (e.clientX - rect.left) / rect.width;
-    const time = Math.max(0, Math.min(position * duration.value, duration.value));
-
-    hoverTime.value = time;
+    const position = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1));
+    hoverTime.value = position * duration.value;
     tooltipX.value = e.clientX;
   };
 
-  // 为键盘快捷键添加累加功能相关变量
-  const keyPressInterval = 300; // 按键检测间隔，单位毫秒
-  const arrowLeftCount = ref(0); // 左键按下次数
-  const arrowRightCount = ref(0); // 右键按下次数
-  const skipSeconds = 5; // 基础跳转秒数
+  // 键盘快捷键（带累加跳转）
+  const keyPressInterval = 300;
+  const arrowLeftCount = ref(0);
+  const arrowRightCount = ref(0);
+  const skipSeconds = 5;
 
   const { start: resetArrowLeftCount } = useTimeoutFn(() => {
     if (arrowLeftCount.value > 0) {
-      // 累加后退时间 = 基础跳转秒数 × 按键次数
       seek(currentTime.value - skipSeconds * arrowLeftCount.value);
       arrowLeftCount.value = 0;
     }
@@ -569,37 +656,39 @@
 
   const { start: resetArrowRightCount } = useTimeoutFn(() => {
     if (arrowRightCount.value > 0) {
-      // 累加前进时间 = 基础跳转秒数 × 按键次数
       seek(currentTime.value + skipSeconds * arrowRightCount.value);
       arrowRightCount.value = 0;
     }
   }, keyPressInterval);
 
-  // 使用useMagicKeys实现键盘快捷键控制
-  const { escape, arrowLeft, arrowRight, space } = useMagicKeys({
+  const {
+    escape,
+    arrowLeft,
+    arrowRight,
+    arrowUp,
+    arrowDown,
+    space,
+    m: mKey,
+  } = useMagicKeys({
     passive: false,
     onEventFired(e) {
-      if (e.code === 'Space') {
+      if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) {
         e.preventDefault();
       }
     },
   });
 
-  // 监听Esc键退出全屏
+  // Esc 退出全屏
   watch(escape!, (pressed) => {
-    if (pressed && isFullscreen.value) {
-      toggleFullscreen();
-    }
+    if (pressed && isFullscreen.value) toggleFullscreen();
   });
 
-  // 监听空格键切换播放/暂停
+  // 空格切换播放/暂停
   watch(space!, (pressed) => {
-    if (pressed && videoRef.value) {
-      playing.value = !playing.value;
-    }
+    if (pressed && videoRef.value) playing.value = !playing.value;
   });
 
-  // 监听左方向键后退累加
+  // 左方向键后退
   watch(arrowLeft!, (pressed) => {
     if (pressed && videoRef.value) {
       arrowLeftCount.value++;
@@ -607,12 +696,27 @@
     }
   });
 
-  // 监听右方向键前进累加
+  // 右方向键前进
   watch(arrowRight!, (pressed) => {
     if (pressed && videoRef.value) {
       arrowRightCount.value++;
       resetArrowRightCount();
     }
+  });
+
+  // 上方向键增加音量
+  watch(arrowUp!, (pressed) => {
+    if (pressed) changeVolume(Math.min(volumeLevel.value + 5, 100));
+  });
+
+  // 下方向键减小音量
+  watch(arrowDown!, (pressed) => {
+    if (pressed) changeVolume(Math.max(volumeLevel.value - 5, 0));
+  });
+
+  // M 键静音切换
+  watch(mKey!, (pressed) => {
+    if (pressed) toggleMute();
   });
 
   // 调整音量
@@ -626,21 +730,22 @@
     muted.value = !muted.value;
   };
 
-  // 切换分辨率
+  // 切换分辨率（保持当前进度和播放状态）
   const changeResolution = (value: number) => {
-    // const resolution = resolutions.value.find((res) => res.label === label);
-    // if (resolution && hls) {
-    //   hls.currentLevel = resolution.level!;
-    //   currentResolution.value = resolution;
-    //   currentResolutionLabel.value = resolution.label;
-    // }
     const resolution = videoUrlList.value.find((res) => res.definition_n === value);
     if (resolution) {
-      // 保存当前播放进度和播放状态
       const currentPlaybackTime = currentTime.value;
-
-      // 加载新的视频源，同时传递当前播放进度
+      const wasPlaying = playing.value;
       loadVideo(resolution.url, currentPlaybackTime);
+      // 恢复播放状态
+      if (wasPlaying) {
+        const unwatch = watch(waiting, (isWaiting) => {
+          if (!isWaiting) {
+            playing.value = true;
+            unwatch();
+          }
+        });
+      }
     }
   };
 
@@ -652,82 +757,59 @@
     }
   };
 
-  // 全屏切换
+  // 全屏切换（使用 Tauri 窗口 API）
   const toggleFullscreen = async () => {
     try {
-      // 获取当前应用的窗口实例
-      const currentWindow = Window.getCurrent();
-
-      // 使用 Tauri 的窗口 API 实现真正的屏幕全屏
-      const isCurrentlyFullscreen = await currentWindow.isFullscreen();
-
-      if (!isCurrentlyFullscreen) {
-        // 进入全屏模式
-        await currentWindow.setFullscreen(true);
-        isFullscreen.value = true;
-      } else {
-        // 退出全屏模式
-        await currentWindow.setFullscreen(false);
-        isFullscreen.value = false;
-      }
+      const isCurrentlyFullscreen = await appWindow.isFullscreen();
+      await appWindow.setFullscreen(!isCurrentlyFullscreen);
+      isFullscreen.value = !isCurrentlyFullscreen;
     } catch (err) {
-      console.error(err);
-
-      // 如果 Tauri 全屏失败，回退到 Web API 的全屏
-      if (!document.fullscreenElement && videoContainer.value) {
-        videoContainer.value
-          .requestFullscreen()
-          .then(() => {
-            isFullscreen.value = true;
-          })
-          .catch((error) => {
-            message.error(`无法进入全屏模式: ${error.message}`);
-          });
-      } else {
-        document.exitFullscreen();
-        isFullscreen.value = false;
-      }
+      console.error('全屏切换失败:', err);
+      message.error('无法切换全屏模式');
     }
   };
 
   const handleNextVideo = async () => {
-    const nextVideoIndex = videoList.value.findIndex((item) => item.pc === file.value?.pc) + 1;
-    if (nextVideoIndex < videoList.value.length) {
-      const nextVideo = videoList.value[nextVideoIndex];
-      if (nextVideo) {
-        file.value = nextVideo;
-        pickCode.value = nextVideo.pc;
-        await changeVideoUrl();
-      }
-    } else {
+    if (!hasNextVideo.value) {
       message.warning('已经是最后一个视频了');
+      return;
     }
+    const nextVideo = videoList.value[currentVideoIndex.value + 1];
+    if (!nextVideo) return;
+    file.value = nextVideo;
+    pickCode.value = nextVideo.pc;
+    await changeVideoUrl();
   };
 
   const handlePreviousVideo = async () => {
-    const previousVideoIndex = videoList.value.findIndex((item) => item.pc === file.value?.pc) - 1;
-    if (previousVideoIndex >= 0) {
-      const previousVideo = videoList.value[previousVideoIndex];
-      if (previousVideo) {
-        file.value = previousVideo;
-        pickCode.value = previousVideo.pc;
-        await changeVideoUrl();
-      }
-    } else {
+    if (!hasPreviousVideo.value) {
       message.warning('已经是第一个视频了');
+      return;
     }
+    const previousVideo = videoList.value[currentVideoIndex.value - 1];
+    if (!previousVideo) return;
+    file.value = previousVideo;
+    pickCode.value = previousVideo.pc;
+    await changeVideoUrl();
   };
 
   const changeVideoUrl = async () => {
-    pause();
+    pauseHistorySave();
     await getVideoPlayUrl();
     await getVideoHistory();
-    const highestResolution = videoUrlList.value.reduce((prev, current) => {
-      return prev.definition_n > current.definition_n ? prev : current;
-    });
+    if (videoUrlList.value.length === 0) {
+      message.error('无可用的视频源');
+      return;
+    }
+    const highestResolution = videoUrlList.value.reduce((prev, current) =>
+      prev.definition_n > current.definition_n ? prev : current,
+    );
     currentResolution.value = highestResolution.definition_n;
     loadVideo(highestResolution.url);
+
+    // 更新 Tauri 窗口标题
+    if (file.value) {
+      appWindow.setTitle(file.value.fn).catch(() => {});
+    }
   };
 </script>
-
-<style scoped></style>
