@@ -1,6 +1,6 @@
 <template>
   <div class="px-6 py-3">
-    <NSpace class="mb-4">
+    <NSpace class="mb-4" align="center">
       <NButton type="primary" @click="handleClear">
         <template #icon>
           <NIcon>
@@ -9,6 +9,29 @@
         </template>
         清除已完成
       </NButton>
+      <NButton @click="handlePauseAll">
+        <template #icon>
+          <NIcon>
+            <PauseCircleOutlined />
+          </NIcon>
+        </template>
+        全部暂停
+      </NButton>
+      <NButton @click="handleResumeAll">
+        <template #icon>
+          <NIcon>
+            <PlayCircleOutlined />
+          </NIcon>
+        </template>
+        全部继续
+      </NButton>
+      <div v-if="downloadStats.activeCount > 0" class="ml-4 text-sm text-gray-500">
+        下载中 {{ downloadStats.activeCount }} 个 ·
+        {{ formatSpeed(downloadStats.totalSpeed) }}
+      </div>
+      <div v-if="queueStatus.queueLength > 0" class="ml-2 text-sm text-gray-400">
+        队列等待 {{ queueStatus.queueLength }} 个
+      </div>
     </NSpace>
     <NDataTable
       ref="tableRef"
@@ -23,22 +46,40 @@
 </template>
 
 <script setup lang="tsx">
-  import { pause, purgeDownloadResult, remove, removeDownloadResult, unpause } from '@/api/aria2';
+  import { pause, unpause, purgeDownloadResult, pauseAll, unpauseAll } from '@/api/aria2';
   import { useSettingStore, type DownLoadFile } from '@/store/setting';
+  import { useDownloadManager } from '@/composables/useDownloadManager';
   import {
     DeleteOutlined,
     FolderOutlined,
     ClearOutlined,
     PauseCircleOutlined,
     PlayCircleOutlined,
+    ReloadOutlined,
   } from '@vicons/antd';
   import { filesize } from 'filesize';
   import type { DataTableColumns } from 'naive-ui';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
   const settingStore = useSettingStore();
+  const { retryDownload, removeTask, downloadStats, queueStatus } = useDownloadManager();
   const message = useMessage();
   const dialog = useDialog();
+
+  const formatSpeed = (speed: number) => {
+    if (!speed) return '0 B/s';
+    return filesize(speed, { standard: 'jedec' }) + '/s';
+  };
+
+  const formatEta = (seconds?: number) => {
+    if (!seconds || seconds <= 0) return '';
+    if (seconds < 60) return `${seconds}秒`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}分${seconds % 60}秒`;
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    return `${hours}时${mins}分`;
+  };
+
   const columns: DataTableColumns<DownLoadFile> = [
     {
       title: '文件名',
@@ -60,12 +101,15 @@
     {
       title: '速度',
       key: 'downloadSpeed',
-      width: 120,
+      width: 140,
       render(row) {
         if (row.status === 'active') {
-          return row.downloadSpeed
-            ? filesize(row.downloadSpeed, { standard: 'jedec' }) + '/s'
-            : '0B/s';
+          return (
+            <div>
+              <div>{formatSpeed(row.downloadSpeed || 0)}</div>
+              {row.eta ? <div class="text-xs text-gray-400">剩余 {formatEta(row.eta)}</div> : null}
+            </div>
+          );
         }
         return '';
       },
@@ -76,13 +120,27 @@
       width: 300,
       render(row) {
         if (row.status === 'error') {
-          return <NText type="error">下载失败</NText>;
+          return (
+            <NTooltip>
+              {{
+                trigger: () => <NText type="error">下载失败</NText>,
+                default: () => row.errorMessage || '未知错误',
+              }}
+            </NTooltip>
+          );
         } else if (row.status === 'waiting') {
           return <NText type="warning">等待中</NText>;
         } else if (row.status === 'active') {
-          return <NProgress type="line" percentage={row.progress || 0} processing />;
+          return <NProgress type="line" percentage={Math.floor(row.progress || 0)} processing />;
         } else if (row.status === 'paused') {
-          return <NText type="info">已暂停</NText>;
+          return (
+            <NProgress
+              type="line"
+              percentage={Math.floor(row.progress || 0)}
+              status="warning"
+              indicator-placement="inside"
+            />
+          );
         } else if (row.status === 'complete') {
           return <NText type="success">下载完成</NText>;
         }
@@ -91,8 +149,8 @@
     {
       title: '操作',
       key: 'action',
-      width: 220,
-      render: (row, index) => {
+      width: 280,
+      render: (row) => {
         return (
           <NSpace>
             {(() => {
@@ -142,6 +200,31 @@
                     }}
                   </NButton>
                 );
+              } else if (row.status === 'error') {
+                return (
+                  <NButton
+                    text
+                    type="info"
+                    onClick={async () => {
+                      try {
+                        await retryDownload(row);
+                        message.success('重试任务已添加');
+                      } catch (e) {
+                        console.error(e);
+                        message.error('重试失败');
+                      }
+                    }}
+                  >
+                    {{
+                      icon: () => (
+                        <NIcon>
+                          <ReloadOutlined />
+                        </NIcon>
+                      ),
+                      default: () => '重试',
+                    }}
+                  </NButton>
+                );
               } else {
                 return null;
               }
@@ -177,17 +260,10 @@
                   negativeText: '取消',
                   onPositiveClick: async () => {
                     try {
-                      if (row.status === 'active') {
-                        await remove(row.gid);
-                        await removeDownloadResult(row.gid);
-                      } else {
-                        await removeDownloadResult(row.gid);
-                      }
+                      await removeTask(row);
+                      message.success('下载任务已删除');
                     } catch (e) {
                       console.error(e);
-                    } finally {
-                      settingStore.downloadSetting.downloadList.splice(index, 1);
-                      message.success('下载任务已删除');
                     }
                   },
                 });
@@ -228,6 +304,24 @@
         }
       },
     });
+  };
+
+  const handlePauseAll = async () => {
+    try {
+      await pauseAll();
+      message.success('已暂停所有下载');
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleResumeAll = async () => {
+    try {
+      await unpauseAll();
+      message.success('已恢复所有下载');
+    } catch (e) {
+      console.error(e);
+    }
   };
 </script>
 

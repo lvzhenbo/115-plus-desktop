@@ -10,6 +10,16 @@ export interface DownLoadFile {
   progress?: number;
   path?: string;
   downloadSpeed?: number;
+  /** 预计剩余时间 (秒) */
+  eta?: number;
+  /** 错误信息 */
+  errorMessage?: string;
+  /** aria2 错误码 */
+  errorCode?: string;
+  /** 创建时间戳 */
+  createdAt?: number;
+  /** 完成时间戳 */
+  completedAt?: number;
 }
 
 export const useSettingStore = defineStore(

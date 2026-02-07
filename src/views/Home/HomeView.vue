@@ -115,17 +115,15 @@
   } from '@vicons/antd';
   import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { emit, listen } from '@tauri-apps/api/event';
-  import { sleep } from 'radash';
   import { DriveFileMoveOutlined, DriveFileRenameOutlineOutlined } from '@vicons/material';
-  import { deleteFile, fileDetail, fileList, fileDownloadUrl } from '@/api/file';
+  import { deleteFile, fileDetail, fileList } from '@/api/file';
   import type { FileDetail, FileListRequestParams, MyFile, Path } from '@/api/types/file';
-  import { addUri } from '@/api/aria2';
-  import { useSettingStore } from '@/store/setting';
+  import { useDownloadManager } from '@/composables/useDownloadManager';
   import FolderModal from './components/FolderModal/FolderModal.vue';
   import RenameModal from './components/RenameModal/RenameModal.vue';
 
   const route = useRoute();
-  const settingStore = useSettingStore();
+  const { download: downloadFile, batchDownload: batchDownloadFiles } = useDownloadManager();
   const themeVars = useThemeVars();
   const dialog = useDialog();
   const message = useMessage();
@@ -403,7 +401,6 @@
   const folderModalShow = ref(false);
   const folderModalType = ref<'copy' | 'move'>('copy');
   const renameModalShow = ref(false);
-  const files = ref<MyFile[]>([]);
 
   const onClickoutside = () => {
     showDropdown.value = false;
@@ -460,76 +457,27 @@
     if (!selectFile.value) return;
     message.info('正在获取下载链接，并推送到aria2下载，可在下载列表中查看下载进度');
     try {
-      batchDownload(selectFile.value);
+      await downloadFile(selectFile.value);
     } catch (error) {
       console.error(error);
-    }
-  };
-
-  const download = async (file: MyFile, path?: string) => {
-    const res = await fileDownloadUrl({
-      pick_code: file.pc,
-    });
-    const fileData = res.data[file.fid];
-    if (!fileData) {
-      message.error('获取文件下载信息失败');
-      return;
-    }
-    const aria2res = await addUri(fileData.url.url, fileData.file_name, path);
-    if (aria2res.result) {
-      settingStore.downloadSetting.downloadList.unshift({
-        name: file.fn,
-        fid: file.fid,
-        pickCode: file.pc,
-        size: file.fs,
-        gid: aria2res.result,
-      });
-    }
-  };
-
-  const batchDownload = async (file: MyFile) => {
-    if (file.fc === '1') {
-      await download(file);
-    } else {
-      files.value = [];
-      await getFiles(file.fid, 0);
-      for (const f of files.value) {
-        await sleep(1000);
-        const res = await fileDetail({
-          file_id: f.fid,
-        });
-        const fidIndex = res.data.paths.findIndex((item) => item.file_id === file.fid);
-        const pathList = res.data.paths.slice(fidIndex);
-        await download(f, pathList.map((item) => item.file_name).join('/'));
-      }
-    }
-  };
-
-  const getFiles = async (fid: string, offset: number) => {
-    const res = await fileList({
-      cid: fid,
-      show_dir: 0,
-      offset,
-      limit: 1150,
-      cur: 0,
-    });
-    files.value = files.value.concat(res.data);
-    if (files.value.length < res.count) {
-      await getFiles(fid, offset + 1150);
+      message.error('下载任务添加失败');
     }
   };
 
   const handleBatchDownload = async () => {
-    message.info('正在获取下载链接，并推送到aria2下载，可在下载列表中查看下载进度');
+    const selectedFiles = checkedRowKeys.value
+      .map((fid) => data.value.find((item) => item.fid === fid))
+      .filter(Boolean) as MyFile[];
+
+    if (selectedFiles.length === 0) return;
+
+    message.info(`正在添加 ${selectedFiles.length} 个文件到下载队列，可在下载列表中查看进度`);
+
     try {
-      for (const fid of checkedRowKeys.value) {
-        const file = data.value.find((item) => item.fid === fid);
-        if (file) {
-          await batchDownload(file);
-        }
-      }
+      await batchDownloadFiles(selectedFiles);
     } catch (error) {
       console.error(error);
+      message.error('批量下载任务添加失败');
     }
   };
 
