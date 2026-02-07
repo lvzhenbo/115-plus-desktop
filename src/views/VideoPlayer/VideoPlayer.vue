@@ -44,6 +44,14 @@
             </NEllipsis>
           </motion.div>
         </AnimatePresence>
+        <!-- 字幕显示层 -->
+        <SubtitleLayer
+          ref="subtitleLayerRef"
+          :subtitle-list="subtitleList"
+          :current-sid="currentSubtitleSid"
+          :enabled="subtitleEnabled"
+          :current-time="currentTime"
+        />
         <!-- 视频控制条 -->
         <AnimatePresence>
           <motion.div
@@ -152,6 +160,16 @@
                 >
                   <NButton quaternary round size="small" class="text-white!"> {{ rate }}x </NButton>
                 </NPopselect>
+                <!-- 字幕选择 -->
+                <NPopselect
+                  v-if="subtitleList.length > 0"
+                  v-model:value="currentSubtitleValue"
+                  :options="subtitleOptions"
+                >
+                  <NButton quaternary round size="small" class="text-white!">
+                    {{ currentSubtitleLabel }}
+                  </NButton>
+                </NPopselect>
                 <!-- 播放列表 -->
                 <NButton
                   quaternary
@@ -202,12 +220,14 @@
   import { VolumeDownFilled, VolumeMuteFilled, VolumeUpFilled } from '@vicons/material';
   import { emit, listen } from '@tauri-apps/api/event';
   import type { MyFile } from '@/api/types/file';
-  import { saveVideoHistory, videoHistory, videoPlayUrl } from '@/api/video';
+  import { saveVideoHistory, videoHistory, videoPlayUrl, videoSubtitle } from '@/api/video';
   import { fileList } from '@/api/file';
+  import type { SubtitleItem } from '@/api/types/video';
   import { type SelectOption } from 'naive-ui';
   import CustomLoader from './customLoader';
   import type { VideoURL } from '@/api/types/video';
   import VideoListDrawer from './components/VideoListDrawer/VideoListDrawer.vue';
+  import SubtitleLayer from './components/SubtitleLayer/SubtitleLayer.vue';
   import { useSettingStore } from '@/store/setting';
   import { motion } from 'motion-v';
 
@@ -252,6 +272,12 @@
   const historyTime = ref(0);
   const videoListShow = ref(false);
   const isDraggingProgress = ref(false);
+
+  // 字幕相关
+  const subtitleLayerRef = useTemplateRef('subtitleLayerRef');
+  const subtitleList = ref<SubtitleItem[]>([]);
+  const currentSubtitleSid = ref<string | null>(null);
+  const subtitleEnabled = ref(false);
 
   // HLS 错误恢复相关
   const MAX_RECOVERY_ATTEMPTS = 3;
@@ -376,6 +402,72 @@
     });
     historyTime.value = res.data.time || 0;
   };
+
+  // 获取字幕列表
+  const getSubtitleList = async () => {
+    if (!file.value) return;
+    try {
+      const res = await videoSubtitle({ pick_code: file.value.pc });
+      subtitleList.value = res.data.list || [];
+      // 如果有自动载入字幕，默认启用
+      if (res.data.autoload) {
+        currentSubtitleSid.value = res.data.autoload.sid;
+        subtitleEnabled.value = true;
+      } else if (subtitleList.value.length > 0) {
+        currentSubtitleSid.value = subtitleList.value[0]!.sid;
+        subtitleEnabled.value = false;
+      } else {
+        currentSubtitleSid.value = null;
+        subtitleEnabled.value = false;
+      }
+    } catch (e) {
+      console.warn('获取字幕列表失败', e);
+      subtitleList.value = [];
+      currentSubtitleSid.value = null;
+      subtitleEnabled.value = false;
+    }
+  };
+
+  // 切换字幕
+  const changeSubtitle = (sid: string | null) => {
+    if (sid === null) {
+      subtitleEnabled.value = false;
+      currentSubtitleSid.value = null;
+    } else {
+      currentSubtitleSid.value = sid;
+      subtitleEnabled.value = true;
+    }
+  };
+
+  // 字幕选项（用于 NPopselect）
+  const subtitleOptions = computed(() => {
+    const options: SelectOption[] = [{ label: '关闭字幕', value: '__off__' }];
+    subtitleList.value.forEach((s) => {
+      options.push({
+        label: s.title || s.language || s.file_name || '未知字幕',
+        value: s.sid,
+      });
+    });
+    return options;
+  });
+
+  const currentSubtitleValue = computed({
+    get: () =>
+      subtitleEnabled.value && currentSubtitleSid.value ? currentSubtitleSid.value : '__off__',
+    set: (val: string) => {
+      if (val === '__off__') {
+        changeSubtitle(null);
+      } else {
+        changeSubtitle(val);
+      }
+    },
+  });
+
+  const currentSubtitleLabel = computed(() => {
+    if (!subtitleEnabled.value || !currentSubtitleSid.value) return '字幕';
+    const subtitle = subtitleList.value.find((s) => s.sid === currentSubtitleSid.value);
+    return subtitle ? subtitle.title || subtitle.language || '字幕' : '字幕';
+  });
 
   // 定时保存播放历史
   const { pause: pauseHistorySave, resume: resumeHistorySave } = useIntervalFn(
@@ -796,7 +888,7 @@
   const changeVideoUrl = async () => {
     pauseHistorySave();
     await getVideoPlayUrl();
-    await getVideoHistory();
+    await Promise.all([getVideoHistory(), getSubtitleList()]);
     if (videoUrlList.value.length === 0) {
       message.error('无可用的视频源');
       return;
@@ -806,6 +898,12 @@
     );
     currentResolution.value = highestResolution.definition_n;
     loadVideo(highestResolution.url);
+
+    // 加载字幕
+    await nextTick();
+    if (subtitleEnabled.value) {
+      subtitleLayerRef.value?.loadSubtitle();
+    }
 
     // 更新 Tauri 窗口标题
     if (file.value) {

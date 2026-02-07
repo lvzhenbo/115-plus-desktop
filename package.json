@@ -34,6 +34,7 @@
     "destr": "^2.0.5",
     "filesize": "^11.0.13",
     "hls.js": "^1.6.15",
+    "media-captions": "^0.0.18",
     "motion-v": "^1.10.2",
     "naive-ui": "^2.43.2",
     "pinia": "^3.0.4",

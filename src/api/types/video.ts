@@ -53,3 +53,25 @@ export interface VideoHistoryResponseData {
   pick_code: string;
   time: number;
 }
+
+/** 字幕项 */
+export interface SubtitleItem {
+  sid: string;
+  language: string;
+  title: string;
+  url: string;
+  type: string;
+  sha1?: string;
+  file_id?: string;
+  file_name?: string;
+  pick_code?: string;
+  caption_map_id?: string;
+  is_caption_map?: number;
+  sync_time?: number;
+}
+
+/** 视频字幕列表响应数据 */
+export interface VideoSubtitleResponseData {
+  autoload: SubtitleItem | null;
+  list: SubtitleItem[];
+}
