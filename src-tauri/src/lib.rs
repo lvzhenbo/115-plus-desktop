@@ -1,9 +1,9 @@
-use std::fs;
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandChild;
+use tauri_plugin_sql::{Migration, MigrationKind};
 
 // 存储 aria2c 进程的全局变量
 lazy_static::lazy_static! {
@@ -47,44 +47,12 @@ fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
         *aria2_port = port;
     }
 
-    // 获取config_dir路径并确保session文件存在
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| format!("无法获取配置目录: {}", e))?;
-
-    // 确保配置目录存在
-    if !config_dir.exists() {
-        fs::create_dir_all(&config_dir).map_err(|e| format!("无法创建配置目录: {}", e))?;
-    }
-
-    // 创建session文件路径
-    let session_file = config_dir.join("aria2.session");
-
-    // 如果session文件不存在，创建一个空文件
-    if !session_file.exists() {
-        fs::write(&session_file, "").map_err(|e| format!("无法创建session文件: {}", e))?;
-        println!("已创建aria2 session文件: {:?}", session_file);
-    }
-
     // 使用 sidecar 功能启动 aria2c
-    // 常用的 aria2c 参数：
-    // --continue：继续下载
-    // --enable-rpc：启动 RPC 服务
-    // --rpc-listen-port=6800：指定 RPC 端口
-    // --rpc-allow-origin-all：允许所有来源的请求
-    // --rpc-listen-all：监听所有网络接口
-    // --daemon=false：不作为守护进程运行（为了让 Tauri 能够管理进程）
-    // --input-file：指定要加载的会话文件，恢复之前的下载
-    // --save-session：指定退出时保存进行中下载的会话文件
+    // 不使用 session 文件，由前端自行管理下载列表和恢复
     let sidecar = app
         .shell()
         .sidecar("aria2c")
         .map_err(|e| format!("无法创建 aria2c sidecar: {}", e))?;
-
-    let session_file_str = session_file
-        .to_str()
-        .ok_or_else(|| "无法将session文件路径转换为字符串".to_string())?;
 
     let command_child = sidecar
         .args([
@@ -94,9 +62,6 @@ fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
             "--rpc-allow-origin-all",
             "--rpc-listen-all",
             "--daemon=false",
-            &format!("--input-file={}", session_file_str),
-            &format!("--save-session={}", session_file_str),
-            "--save-session-interval=60", // 每60秒自动保存一次会话
         ])
         .spawn()
         .map_err(|e| format!("无法启动 aria2c: {}", e))?;
@@ -105,7 +70,6 @@ fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
     *process = Some(command_child.1);
 
     println!("aria2c RPC 服务已启动在端口 {}", port);
-    println!("使用session文件: {}", session_file_str);
     Ok(())
 }
 
@@ -140,6 +104,40 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_pinia::init())
+        .plugin(
+            tauri_plugin_sql::Builder::default()
+                .add_migrations(
+                    "sqlite:downloads.db",
+                    vec![Migration {
+                        version: 1,
+                        description: "create_downloads_table",
+                        sql: "CREATE TABLE IF NOT EXISTS downloads (
+                            gid TEXT PRIMARY KEY,
+                            fid TEXT NOT NULL,
+                            name TEXT NOT NULL,
+                            pick_code TEXT NOT NULL,
+                            size INTEGER NOT NULL DEFAULT 0,
+                            status TEXT NOT NULL DEFAULT 'active',
+                            progress REAL NOT NULL DEFAULT 0,
+                            path TEXT,
+                            download_speed INTEGER NOT NULL DEFAULT 0,
+                            eta INTEGER,
+                            error_message TEXT,
+                            error_code TEXT,
+                            created_at INTEGER,
+                            completed_at INTEGER,
+                            is_folder INTEGER NOT NULL DEFAULT 0,
+                            is_collecting INTEGER NOT NULL DEFAULT 0,
+                            parent_gid TEXT,
+                            total_files INTEGER,
+                            completed_files INTEGER,
+                            failed_files INTEGER
+                        );",
+                        kind: MigrationKind::Up,
+                    }],
+                )
+                .build(),
+        )
         .setup(|app| {
             // 应用启动时启动 aria2c
             if let Err(e) = start_aria2_service(app.handle()) {

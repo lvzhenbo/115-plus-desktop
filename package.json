@@ -24,6 +24,7 @@
     "@tauri-apps/plugin-http": "^2.5.7",
     "@tauri-apps/plugin-opener": "^2.5.3",
     "@tauri-apps/plugin-shell": "^2.3.5",
+    "@tauri-apps/plugin-sql": "^2.3.2",
     "@tauri-apps/plugin-window-state": "^2.4.1",
     "@tauri-store/pinia": "^4.1.1",
     "@vicons/antd": "^0.13.0",

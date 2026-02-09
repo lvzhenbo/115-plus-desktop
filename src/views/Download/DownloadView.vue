@@ -32,13 +32,14 @@
       <div v-if="queueStatus.queueLength > 0" class="ml-2 text-sm text-gray-400">
         队列等待 {{ queueStatus.queueLength }} 个
       </div>
+      <div v-if="queueStatus.isResuming" class="ml-2 text-sm text-blue-400"> 正在恢复下载...</div>
     </NSpace>
     <NDataTable
       ref="tableRef"
       remote
       flex-height
       :columns
-      :data="settingStore.downloadSetting.downloadList"
+      :data="displayList"
       :row-key="(row: DownLoadFile) => row.gid"
       class="h-[calc(100vh-133px)]"
     />
@@ -46,8 +47,8 @@
 </template>
 
 <script setup lang="tsx">
-  import { pause, unpause, purgeDownloadResult, pauseAll, unpauseAll } from '@/api/aria2';
-  import { useSettingStore, type DownLoadFile } from '@/store/setting';
+  import { pause, unpause, pauseAll, unpauseAll } from '@/api/aria2';
+  import type { DownLoadFile } from '@/store/setting';
   import { useDownloadManager } from '@/composables/useDownloadManager';
   import {
     DeleteOutlined,
@@ -61,8 +62,16 @@
   import type { DataTableColumns } from 'naive-ui';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
-  const settingStore = useSettingStore();
-  const { retryDownload, removeTask, downloadStats, queueStatus } = useDownloadManager();
+  const {
+    displayList,
+    retryDownload,
+    removeTask,
+    clearFinished,
+    pauseFolder,
+    resumeFolder,
+    downloadStats,
+    queueStatus,
+  } = useDownloadManager();
   const message = useMessage();
   const dialog = useDialog();
 
@@ -88,6 +97,18 @@
         tooltip: {
           width: 'trigger',
         },
+      },
+      render(row) {
+        return (
+          <div class="flex items-center gap-1">
+            {row.isFolder ? (
+              <NIcon size={16} class="shrink-0">
+                <FolderOutlined />
+              </NIcon>
+            ) : null}
+            <span class="truncate">{row.name}</span>
+          </div>
+        );
       },
     },
     {
@@ -119,30 +140,57 @@
       key: 'percentDone',
       width: 300,
       render(row) {
+        if (row.isFolder && row.isCollecting) {
+          return <NText type="info">正在收集文件列表...</NText>;
+        }
+
+        const fileCountInfo = row.isFolder ? (
+          <div class="text-xs text-gray-400">
+            {row.completedFiles || 0}/{row.totalFiles || 0} 个文件
+            {row.failedFiles ? `（${row.failedFiles} 个失败）` : ''}
+          </div>
+        ) : null;
+
         if (row.status === 'error') {
           return (
-            <NTooltip>
-              {{
-                trigger: () => <NText type="error">下载失败</NText>,
-                default: () => row.errorMessage || '未知错误',
-              }}
-            </NTooltip>
+            <div>
+              <NTooltip>
+                {{
+                  trigger: () => <NText type="error">下载失败</NText>,
+                  default: () => row.errorMessage || '未知错误',
+                }}
+              </NTooltip>
+              {fileCountInfo}
+            </div>
           );
         } else if (row.status === 'waiting') {
           return <NText type="warning">等待中</NText>;
         } else if (row.status === 'active') {
-          return <NProgress type="line" percentage={Math.floor(row.progress || 0)} processing />;
+          return (
+            <div>
+              <NProgress type="line" percentage={Math.floor(row.progress || 0)} processing />
+              {fileCountInfo}
+            </div>
+          );
         } else if (row.status === 'paused') {
           return (
-            <NProgress
-              type="line"
-              percentage={Math.floor(row.progress || 0)}
-              status="warning"
-              indicator-placement="inside"
-            />
+            <div>
+              <NProgress
+                type="line"
+                percentage={Math.floor(row.progress || 0)}
+                status="warning"
+                indicator-placement="inside"
+              />
+              {fileCountInfo}
+            </div>
           );
         } else if (row.status === 'complete') {
-          return <NText type="success">下载完成</NText>;
+          return (
+            <div>
+              <NText type="success">下载完成</NText>
+              {fileCountInfo}
+            </div>
+          );
         }
       },
     },
@@ -161,7 +209,11 @@
                     type="warning"
                     onClick={async () => {
                       try {
-                        await pause(row.gid);
+                        if (row.isFolder) {
+                          await pauseFolder(row);
+                        } else {
+                          await pause(row.gid);
+                        }
                       } catch (e) {
                         console.error(e);
                       }
@@ -184,7 +236,11 @@
                     type="primary"
                     onClick={async () => {
                       try {
-                        await unpause(row.gid);
+                        if (row.isFolder) {
+                          await resumeFolder(row);
+                        } else {
+                          await unpause(row.gid);
+                        }
                       } catch (e) {
                         console.error(e);
                       }
@@ -290,18 +346,9 @@
       content: '包括已完成和已失败的下载任务',
       positiveText: '确定',
       negativeText: '取消',
-      onPositiveClick: async () => {
-        try {
-          await purgeDownloadResult();
-          settingStore.downloadSetting.downloadList =
-            settingStore.downloadSetting.downloadList.filter(
-              (item) =>
-                item.status !== 'complete' && item.status !== 'error' && item.status !== 'removed',
-            );
-          message.success('下载任务已清除');
-        } catch (e) {
-          console.error(e);
-        }
+      onPositiveClick: () => {
+        clearFinished();
+        message.success('下载任务已清除');
       },
     });
   };

@@ -120,8 +120,6 @@
   import { getVersion } from '@/api/aria2';
   import { useSettingStore } from '@/store/setting';
   import { downloadDir } from '@tauri-apps/api/path';
-  import { destr } from 'destr';
-  import type { Aria2Response, Aria2Task } from '@/api/types/aria2';
 
   const route = useRoute();
   const userStore = useUserStore();
@@ -189,43 +187,6 @@
   const settingStore = useSettingStore();
   const offlineDownloadShow = ref(false);
   const searchShow = ref(false);
-  const { open, data, send } = useWebSocket(
-    `ws://localhost:${settingStore.downloadSetting.aria2Port}/jsonrpc`,
-    {
-      immediate: false,
-      onConnected() {
-        message.success('aria2服务连接成功！');
-        resume();
-      },
-    },
-  );
-  const { resume } = useIntervalFn(
-    () => {
-      send(
-        JSON.stringify([
-          {
-            jsonrpc: '2.0',
-            id: 'activeList',
-            method: 'aria2.tellActive',
-          },
-          {
-            jsonrpc: '2.0',
-            id: 'waitingList',
-            method: 'aria2.tellWaiting',
-            params: [0, 10000],
-          },
-          {
-            jsonrpc: '2.0',
-            id: 'stoppedList',
-            method: 'aria2.tellStopped',
-            params: [0, 10000],
-          },
-        ]),
-      );
-    },
-    1000,
-    { immediate: false },
-  );
 
   watch(
     () => route.name,
@@ -233,33 +194,6 @@
       selectMenu.value = newVal as string;
     },
   );
-
-  watch(data, (newVal) => {
-    const res = destr(newVal);
-    if (res) {
-      console.log(res);
-
-      if (Array.isArray(res)) {
-        res.forEach((item: Aria2Response<Aria2Task[]>) => {
-          if (item.id === 'activeList' || item.id === 'waitingList' || item.id === 'stoppedList') {
-            item.result.forEach((task) => {
-              const downloadFile = settingStore.downloadSetting.downloadList.find(
-                (file) => file.gid === task.gid,
-              );
-              if (downloadFile) {
-                downloadFile.status = task.status;
-                downloadFile.progress = task.completedLength
-                  ? Math.floor((parseInt(task.completedLength) / parseInt(task.totalLength)) * 100)
-                  : 0;
-                downloadFile.path = task.files[0]?.path || '';
-                downloadFile.downloadSpeed = Number(task.downloadSpeed);
-              }
-            });
-          }
-        });
-      }
-    }
-  });
 
   onMounted(async () => {
     const port: number = await invoke('get_port');
@@ -281,7 +215,7 @@
   const getAria2Version = async () => {
     try {
       await getVersion();
-      open();
+      message.success('aria2服务连接成功！');
     } catch (error) {
       message.error('aria2服务连接失败');
       console.error(error);
