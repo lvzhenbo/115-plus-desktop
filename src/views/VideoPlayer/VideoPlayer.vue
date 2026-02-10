@@ -276,7 +276,7 @@
   // 字幕相关
   const subtitleLayerRef = useTemplateRef('subtitleLayerRef');
   const subtitleList = ref<SubtitleItem[]>([]);
-  const currentSubtitleSid = ref<string | null>(null);
+  const currentSubtitleSid = ref<string>();
   const subtitleEnabled = ref(false);
 
   // HLS 错误恢复相关
@@ -417,22 +417,22 @@
         currentSubtitleSid.value = subtitleList.value[0]!.sid;
         subtitleEnabled.value = false;
       } else {
-        currentSubtitleSid.value = null;
+        currentSubtitleSid.value = undefined;
         subtitleEnabled.value = false;
       }
     } catch (e) {
       console.warn('获取字幕列表失败', e);
       subtitleList.value = [];
-      currentSubtitleSid.value = null;
+      currentSubtitleSid.value = undefined;
       subtitleEnabled.value = false;
     }
   };
 
   // 切换字幕
-  const changeSubtitle = (sid: string | null) => {
-    if (sid === null) {
+  const changeSubtitle = (sid?: string) => {
+    if (!sid) {
       subtitleEnabled.value = false;
-      currentSubtitleSid.value = null;
+      currentSubtitleSid.value = undefined;
     } else {
       currentSubtitleSid.value = sid;
       subtitleEnabled.value = true;
@@ -456,7 +456,7 @@
       subtitleEnabled.value && currentSubtitleSid.value ? currentSubtitleSid.value : '__off__',
     set: (val: string) => {
       if (val === '__off__') {
-        changeSubtitle(null);
+        changeSubtitle();
       } else {
         changeSubtitle(val);
       }

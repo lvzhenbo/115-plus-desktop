@@ -23,8 +23,8 @@
   const props = defineProps<{
     /** 字幕列表 */
     subtitleList: SubtitleItem[];
-    /** 当前选中的字幕 sid，null 表示关闭 */
-    currentSid: string | null;
+    /** 当前选中的字幕 sid，没有表示关闭 */
+    currentSid?: string;
     /** 是否启用字幕 */
     enabled: boolean;
     /** 当前播放时间（秒） */
