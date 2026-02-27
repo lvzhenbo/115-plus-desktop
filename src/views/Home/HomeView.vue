@@ -49,6 +49,22 @@
         </template>
         删除
       </NButton>
+      <NButton type="primary" secondary @click="handleUploadFiles">
+        <template #icon>
+          <NIcon>
+            <UploadOutlined />
+          </NIcon>
+        </template>
+        上传文件
+      </NButton>
+      <NButton type="primary" secondary @click="handleUploadFolder">
+        <template #icon>
+          <NIcon>
+            <FolderAddOutlined />
+          </NIcon>
+        </template>
+        上传文件夹
+      </NButton>
     </NSpace>
     <NBreadcrumb class="mb-1">
       <NBreadcrumbItem v-for="item in path" :key="item.cid" @click="handleToFolder(item.cid)">
@@ -112,6 +128,7 @@
     DeleteOutlined,
     DownloadOutlined,
     FolderAddOutlined,
+    UploadOutlined,
   } from '@vicons/antd';
   import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { emit, listen } from '@tauri-apps/api/event';
@@ -119,8 +136,10 @@
   import { deleteFile, fileDetail, fileList } from '@/api/file';
   import type { FileDetail, FileListRequestParams, MyFile, Path } from '@/api/types/file';
   import { useDownloadManager } from '@/composables/useDownloadManager';
+  import { useUploadManager } from '@/composables/useUploadManager';
   import FolderModal from './components/FolderModal/FolderModal.vue';
   import RenameModal from './components/RenameModal/RenameModal.vue';
+  import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
 
   const route = useRoute();
   const {
@@ -129,8 +148,15 @@
     batchDownload: batchDownloadFiles,
   } = useDownloadManager();
 
+  const {
+    init: initUploadManager,
+    uploadFiles: uploadFilesToCloud,
+    uploadFolder: uploadFolderToCloud,
+  } = useUploadManager();
+
   onMounted(() => {
     initDownloadManager();
+    initUploadManager();
   });
   const themeVars = useThemeVars();
   const dialog = useDialog();
@@ -359,6 +385,15 @@
       ),
     },
     {
+      label: '上传文件',
+      key: 'uploadFile',
+      icon: () => (
+        <NIcon>
+          <UploadOutlined />
+        </NIcon>
+      ),
+    },
+    {
       label: '复制到',
       key: 'copy',
       icon: () => (
@@ -425,6 +460,9 @@
         break;
       case 'download':
         handleDownload();
+        break;
+      case 'uploadFile':
+        handleUploadFiles();
         break;
       case 'copy':
         if (!selectFile.value) return;
@@ -524,6 +562,59 @@
         getFileList();
       },
     });
+  };
+
+  const handleUploadFiles = async () => {
+    const selected = await dialogOpen({
+      multiple: true,
+      title: '选择要上传的文件',
+    });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
+    if (paths.length === 0) return;
+
+    // 获取文件信息
+    const files: { path: string; name: string; size: number }[] = [];
+    for (const filePath of paths) {
+      try {
+        const size: number = await invoke('get_file_size', { filePath });
+        const name = filePath.split(/[\\/]/).pop() || filePath;
+        files.push({ path: filePath, name, size });
+      } catch (e) {
+        console.error('获取文件信息失败:', e);
+      }
+    }
+
+    if (files.length === 0) return;
+
+    message.info(`正在添加 ${files.length} 个文件到上传队列，可在上传列表中查看进度`);
+    try {
+      await uploadFilesToCloud(files, params.cid || '0');
+    } catch (error) {
+      console.error(error);
+      message.error('上传任务添加失败');
+    }
+  };
+
+  const handleUploadFolder = async () => {
+    const selected = await dialogOpen({
+      directory: true,
+      title: '选择要上传的文件夹',
+    });
+    if (!selected) return;
+
+    const folderPath = Array.isArray(selected) ? selected[0] : selected;
+    if (!folderPath) return;
+
+    const folderName = folderPath.split(/[\\/]/).pop() || folderPath;
+
+    message.info(`正在添加文件夹 "${folderName}" 到上传队列，可在上传列表中查看进度`);
+    try {
+      await uploadFolderToCloud(folderPath, folderName, params.cid || '0');
+    } catch (error) {
+      console.error(error);
+      message.error('上传任务添加失败');
+    }
   };
 </script>
 

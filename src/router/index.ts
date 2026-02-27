@@ -36,6 +36,11 @@ const router = createRouter({
           component: () => import('@/views/Download/DownloadView.vue'),
         },
         {
+          path: 'upload',
+          name: 'Upload',
+          component: () => import('@/views/Upload/UploadView.vue'),
+        },
+        {
           path: 'setting',
           name: 'Setting',
           component: () => import('@/views/Setting/Setting.vue'),

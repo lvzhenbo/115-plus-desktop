@@ -113,6 +113,7 @@
     LinkOutlined,
     SettingOutlined,
     DownloadOutlined,
+    UploadOutlined,
     SearchOutlined,
   } from '@vicons/antd';
   import OfflineDownloadModal from './components/OfflineDownloadModal/OfflineDownloadModal.vue';
@@ -158,6 +159,15 @@
       icon: () => (
         <NIcon>
           <DownloadOutlined />
+        </NIcon>
+      ),
+    },
+    {
+      label: () => <RouterLink to="/upload">上传列表</RouterLink>,
+      key: 'Upload',
+      icon: () => (
+        <NIcon>
+          <UploadOutlined />
         </NIcon>
       ),
     },
