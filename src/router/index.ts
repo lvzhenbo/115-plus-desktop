@@ -55,14 +55,11 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach((to) => {
   const userStore = useUserStore();
-  console.log(userStore);
 
   if (to.name !== 'Login' && !userStore.accessToken) {
-    next({ name: 'Login' });
-  } else {
-    next();
+    return { name: 'Login' };
   }
 });
 
