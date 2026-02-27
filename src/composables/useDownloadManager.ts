@@ -78,39 +78,32 @@ const cleanupAria2Task = async (gid: string) => {
 /**
  * 下载管理器
  *
- * 使用 SQLite 存储下载列表，通过响应式 displayList 驱动 UI。
- * aria2 仅作为下载引擎，不使用 session；完成/失败自动清理 aria2 记录。
- * 应用启动时自动恢复未完成的下载。
+ * - SQLite 持久化下载列表，响应式 `displayList` 驱动 UI
+ * - aria2 仅作为下载引擎，不使用 session；任务完成/失败后自动清理 aria2 记录
+ * - 需在 Home 页面调用 `init()` 完成初始化；可通过设置项决定是否自动恢复未完成任务
  */
 export const useDownloadManager = createSharedComposable(() => {
   const settingStore = useSettingStore();
 
-  /** 响应式的顶层下载列表（用于 UI 展示） */
   const displayList = ref<DownLoadFile[]>([]);
-  /** 下载队列 */
   const downloadQueue = ref<DownloadQueueItem[]>([]);
   const isProcessing = ref(false);
   const isResuming = ref(false);
 
-  /**
-   * 从数据库刷新顶层列表到响应式变量
-   */
+  /** 从数据库刷新顶层列表 */
   const refreshDisplayList = async () => {
     displayList.value = await getTopLevelDownloads();
   };
 
-  /**
-   * 状态轮询
-   */
+  // ---------- 状态轮询 ----------
+
   const {
     pause: stopPolling,
     resume: startPolling,
     isActive: isPolling,
   } = useTimeoutPoll(syncDownloadStatus, POLL_INTERVAL, { immediate: false });
 
-  /**
-   * 同步所有活跃下载任务的状态
-   */
+  /** 批量同步所有活跃任务的 aria2 状态，并聚合文件夹进度 */
   async function syncDownloadStatus() {
     const activeGids = await getActiveGids();
 
@@ -168,22 +161,17 @@ export const useDownloadManager = createSharedComposable(() => {
       }
     }
 
-    // 聚合文件夹状态
     await aggregateFolderStatuses();
-
-    // 刷新 UI
     await refreshDisplayList();
 
-    // 检查是否还需要轮询
+    // 无活跃任务时停止轮询
     const stillActive = await getActiveGids();
     if (stillActive.length === 0 && !isResuming.value) {
       stopPolling();
     }
   }
 
-  /**
-   * 聚合文件夹下载状态
-   */
+  /** 聚合文件夹内子任务的进度、速度、完成状态 */
   async function aggregateFolderStatuses() {
     const allItems = await getAllDownloads();
     const folders = allItems.filter((d) => d.isFolder && !d.isCollecting && d.status !== 'removed');
@@ -239,13 +227,15 @@ export const useDownloadManager = createSharedComposable(() => {
     }
   }
 
-  // ==================== 下载操作 ====================
+  // ---------- 队列与下载 ----------
 
+  /** 将单个文件加入下载队列 */
   const enqueueFile = (file: MyFile, path?: string) => {
     downloadQueue.value.push({ file, path, retryCount: 0 });
     processQueue();
   };
 
+  /** 将文件夹及其所有子文件加入下载队列 */
   const enqueueFolder = async (folder: MyFile) => {
     const folderGid = `folder-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const downloadPath = settingStore.downloadSetting.downloadPath;
@@ -302,6 +292,7 @@ export const useDownloadManager = createSharedComposable(() => {
     processQueue();
   };
 
+  /** 递归收集文件夹下所有文件 */
   const collectFolderFiles = async (
     folderId: string,
     currentPath: string,
@@ -325,6 +316,7 @@ export const useDownloadManager = createSharedComposable(() => {
     }
   };
 
+  /** 逐项消费下载队列，失败时自动重试（指数退避） */
   const processQueue = async () => {
     if (isProcessing.value) return;
     isProcessing.value = true;
@@ -380,6 +372,7 @@ export const useDownloadManager = createSharedComposable(() => {
     }
   };
 
+  /** 获取下载链接并提交至 aria2 */
   const downloadSingleFile = async (item: DownloadQueueItem) => {
     const { file, path, parentGid } = item;
 
@@ -407,8 +400,9 @@ export const useDownloadManager = createSharedComposable(() => {
     }
   };
 
-  // ==================== 公开接口 ====================
+  // ---------- 公开接口 ----------
 
+  /** 下载单个文件或文件夹 */
   const download = async (file: MyFile) => {
     if (file.fc === '0') {
       await enqueueFolder(file);
@@ -418,6 +412,7 @@ export const useDownloadManager = createSharedComposable(() => {
     startPolling();
   };
 
+  /** 批量下载多个文件/文件夹 */
   const batchDownload = async (files: MyFile[]) => {
     for (const file of files) {
       if (file.fc === '0') {
@@ -430,6 +425,7 @@ export const useDownloadManager = createSharedComposable(() => {
     startPolling();
   };
 
+  /** 重试失败的下载任务 */
   const retryDownload = async (downloadFile: DownLoadFile) => {
     if (downloadFile.isFolder) {
       await retryFolderDownload(downloadFile);
@@ -466,6 +462,7 @@ export const useDownloadManager = createSharedComposable(() => {
     }
   };
 
+  /** 重试文件夹内所有失败的子任务 */
   const retryFolderDownload = async (folder: DownLoadFile) => {
     const children = await getChildDownloads(folder.gid);
     const failedChildren = children.filter((d) => d.status === 'error');
@@ -501,6 +498,7 @@ export const useDownloadManager = createSharedComposable(() => {
     startPolling();
   };
 
+  /** 移除下载任务（含 aria2 清理） */
   const removeTask = async (downloadFile: DownLoadFile) => {
     if (downloadFile.isFolder) {
       await removeFolderTask(downloadFile);
@@ -510,6 +508,7 @@ export const useDownloadManager = createSharedComposable(() => {
     await refreshDisplayList();
   };
 
+  /** 移除单个任务：取消 aria2 + 删除数据库记录 */
   const removeSingleTask = async (downloadFile: DownLoadFile) => {
     try {
       if (
@@ -527,6 +526,7 @@ export const useDownloadManager = createSharedComposable(() => {
     await deleteDownload(downloadFile.gid);
   };
 
+  /** 移除整个文件夹任务及其所有子任务 */
   const removeFolderTask = async (folder: DownLoadFile) => {
     downloadQueue.value = downloadQueue.value.filter((q) => q.parentGid !== folder.gid);
 
@@ -539,11 +539,13 @@ export const useDownloadManager = createSharedComposable(() => {
     await refreshDisplayList();
   };
 
+  /** 清除所有已完成的下载记录 */
   const clearFinished = async () => {
     await deleteFinishedDownloads();
     await refreshDisplayList();
   };
 
+  /** 暂停文件夹内所有活跃子任务 */
   const pauseFolder = async (folder: DownLoadFile) => {
     const children = await getChildDownloads(folder.gid);
     const active = children.filter((d) => d.status === 'active' || d.status === 'waiting');
@@ -556,6 +558,7 @@ export const useDownloadManager = createSharedComposable(() => {
     }
   };
 
+  /** 恢复文件夹内所有已暂停的子任务 */
   const resumeFolder = async (folder: DownLoadFile) => {
     const children = await getChildDownloads(folder.gid);
     const paused = children.filter((d) => d.status === 'paused');
@@ -568,12 +571,13 @@ export const useDownloadManager = createSharedComposable(() => {
     }
   };
 
-  // ==================== 启动时恢复下载 ====================
+  // ---------- 启动恢复 ----------
 
+  /** 恢复所有未完成的下载任务（重新获取链接并提交 aria2） */
   const resumeIncompleteDownloads = async () => {
     const allItems = await getAllDownloads();
 
-    // 修复中断的文件夹收集
+    // 将被中断的文件夹收集标记为失败
     const collecting = allItems.filter((d) => d.isFolder && d.isCollecting);
     for (const d of collecting) {
       await updateDownload(d.gid, {
@@ -620,7 +624,7 @@ export const useDownloadManager = createSharedComposable(() => {
 
         const aria2res = await addUri(fileData.url.url, fileData.file_name, subPath);
         if (aria2res.result) {
-          // gid 变了，需要删除旧记录并插入新记录
+          // aria2 会分配新 gid，需替换数据库记录
           const oldGid = task.gid;
           await deleteDownload(oldGid);
           await insertDownload({
@@ -652,7 +656,7 @@ export const useDownloadManager = createSharedComposable(() => {
     console.log('下载恢复完成');
   };
 
-  // ==================== 计算属性 ====================
+  // ---------- 计算属性 ----------
 
   const queueStatus = computed(() => ({
     queueLength: downloadQueue.value.length,
@@ -676,13 +680,32 @@ export const useDownloadManager = createSharedComposable(() => {
     };
   });
 
-  // ==================== 初始化 ====================
+  // ---------- 初始化 ----------
 
-  tryOnMounted(() => {
-    resumeIncompleteDownloads();
-  });
+  let initialized = false;
+
+  /**
+   * 初始化下载管理器（仅执行一次）
+   *
+   * 开启自动恢复时重新提交未完成任务，否则将未完成任务标记为暂停。
+   */
+  const init = async () => {
+    if (initialized) return;
+    initialized = true;
+    if (settingStore.downloadSetting.autoResumeDownloads) {
+      await resumeIncompleteDownloads();
+    } else {
+      // 将未完成的任务标记为暂停
+      const incompleteTasks = await getIncompleteDownloads();
+      for (const task of incompleteTasks) {
+        await updateDownload(task.gid, { status: 'paused', downloadSpeed: 0 });
+      }
+      await refreshDisplayList();
+    }
+  };
 
   return {
+    init,
     displayList,
     download,
     batchDownload,

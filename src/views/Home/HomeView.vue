@@ -123,7 +123,15 @@
   import RenameModal from './components/RenameModal/RenameModal.vue';
 
   const route = useRoute();
-  const { download: downloadFile, batchDownload: batchDownloadFiles } = useDownloadManager();
+  const {
+    init: initDownloadManager,
+    download: downloadFile,
+    batchDownload: batchDownloadFiles,
+  } = useDownloadManager();
+
+  onMounted(() => {
+    initDownloadManager();
+  });
   const themeVars = useThemeVars();
   const dialog = useDialog();
   const message = useMessage();

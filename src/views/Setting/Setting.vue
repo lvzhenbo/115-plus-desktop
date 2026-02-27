@@ -52,6 +52,9 @@
               <NButton type="primary" @click="selectDownloadDirectory"> 选择下载目录 </NButton>
             </NInputGroup>
           </NFormItem>
+          <NFormItem label="启动时自动恢复未完成下载" path="downloadSetting.autoResumeDownloads">
+            <NSwitch v-model:value="settingStore.downloadSetting.autoResumeDownloads" />
+          </NFormItem>
         </NForm>
       </NTabPane>
     </NTabs>

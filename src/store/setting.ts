@@ -51,6 +51,7 @@ export const useSettingStore = defineStore(
     const downloadSetting = ref({
       aria2Port: 6800,
       downloadPath: '',
+      autoResumeDownloads: false,
     });
 
     return {
