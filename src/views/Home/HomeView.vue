@@ -17,6 +17,16 @@
         </template>
         新建文件夹
       </NButton>
+      <NDropdown :options="uploadOptions" @select="handleUploadSelect">
+        <NButton type="primary" secondary>
+          <template #icon>
+            <NIcon>
+              <UploadOutlined />
+            </NIcon>
+          </template>
+          上传
+        </NButton>
+      </NDropdown>
       <NButton type="primary" :disabled="!checkedRowKeys.length" @click="handleBatchDownload">
         <template #icon>
           <NIcon>
@@ -48,22 +58,6 @@
           </NIcon>
         </template>
         删除
-      </NButton>
-      <NButton type="primary" secondary @click="handleUploadFiles">
-        <template #icon>
-          <NIcon>
-            <UploadOutlined />
-          </NIcon>
-        </template>
-        上传文件
-      </NButton>
-      <NButton type="primary" secondary @click="handleUploadFolder">
-        <template #icon>
-          <NIcon>
-            <FolderAddOutlined />
-          </NIcon>
-        </template>
-        上传文件夹
       </NButton>
     </NSpace>
     <NBreadcrumb class="mb-1">
@@ -444,6 +438,35 @@
   const folderModalShow = ref(false);
   const folderModalType = ref<'copy' | 'move'>('copy');
   const renameModalShow = ref(false);
+
+  const uploadOptions: DropdownOption[] = [
+    {
+      label: '上传文件',
+      key: 'uploadFile',
+      icon: () => (
+        <NIcon>
+          <UploadOutlined />
+        </NIcon>
+      ),
+    },
+    {
+      label: '上传文件夹',
+      key: 'uploadFolder',
+      icon: () => (
+        <NIcon>
+          <FolderAddOutlined />
+        </NIcon>
+      ),
+    },
+  ];
+
+  const handleUploadSelect = (key: string) => {
+    if (key === 'uploadFile') {
+      handleUploadFiles();
+    } else if (key === 'uploadFolder') {
+      handleUploadFolder();
+    }
+  };
 
   const onClickoutside = () => {
     showDropdown.value = false;
