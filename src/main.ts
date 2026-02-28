@@ -6,6 +6,7 @@ import router from './router';
 import store from './store';
 import { useUserStore } from './store/user';
 import { useSettingStore } from './store/setting';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 const app = createApp(App);
 
@@ -22,6 +23,9 @@ async function bootstrap() {
   app.use(router);
 
   app.mount('#app');
+
+  // 前端渲染完成后再显示窗口，避免白屏闪烁
+  await getCurrentWindow().show();
 }
 
 bootstrap();

@@ -5,6 +5,8 @@ use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+use tauri_plugin_window_state::StateFlags;
+
 mod upload;
 
 // 存储 aria2c 进程的全局变量
@@ -100,7 +102,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_window_state::Builder::new().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
+                .build(),
+        )
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let _ = show_window(app);
         }))

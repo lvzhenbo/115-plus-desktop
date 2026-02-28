@@ -21,6 +21,7 @@
     "core:window:allow-is-fullscreen",
     "core:window:allow-set-focus",
     "core:window:allow-set-title",
+    "core:window:allow-show",
     "core:window:allow-destroy",
     "core:webview:allow-create-webview-window",
     "core:event:allow-listen",
