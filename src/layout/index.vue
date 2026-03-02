@@ -91,9 +91,19 @@
       </NLayoutHeader>
       <NLayoutContent>
         <RouterView v-slot="{ Component }">
-          <KeepAlive>
-            <component :is="Component" />
-          </KeepAlive>
+          <Transition
+            mode="out-in"
+            enter-active-class="transition-opacity duration-200 ease-in-out"
+            leave-active-class="transition-opacity duration-200 ease-in-out"
+            enter-from-class="opacity-0"
+            leave-from-class="opacity-100"
+            enter-to-class="opacity-100"
+            leave-to-class="opacity-0"
+          >
+            <KeepAlive>
+              <component :is="Component" :key="route.name" />
+            </KeepAlive>
+          </Transition>
         </RouterView>
       </NLayoutContent>
     </NLayout>
