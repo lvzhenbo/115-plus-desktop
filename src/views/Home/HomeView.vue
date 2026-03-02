@@ -317,6 +317,7 @@
             minWidth: 1280,
             minHeight: 720,
             center: true,
+            visible: false, // 初始隐藏窗口，等内容加载完成后再显示
           });
 
           // 监听窗口创建完成事件
