@@ -3,7 +3,7 @@
     <NLayoutSider
       v-model:collapsed="collapsed"
       bordered
-      show-trigger="bar"
+      show-trigger
       collapse-mode="width"
       :width="180"
       :collapsed-width="66"

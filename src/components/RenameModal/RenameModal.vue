@@ -61,5 +61,3 @@
 
   const noSideSpace = (value: string) => !value.startsWith(' ') && !value.endsWith(' ');
 </script>
-
-<style scoped></style>

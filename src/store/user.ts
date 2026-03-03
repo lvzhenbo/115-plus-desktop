@@ -1,4 +1,5 @@
 import type { UserInfoResponseData } from '@/api/types/user';
+import type { SortConfig, ViewMode } from '@/components/FileExplorer/types';
 import store from '.';
 import router from '@/router';
 
@@ -12,6 +13,12 @@ export const useUserStore = defineStore(
     const latestCopyFolder = ref('0');
     const latestMoveFolder = ref('0');
     const latestSaveFolder = ref('0');
+
+    // FileExplorer 视图设置
+    const homeViewMode = ref<ViewMode>('list');
+    const homeSortConfig = ref<SortConfig>({ field: 'user_utime', direction: 'desc' });
+    const folderModalViewMode = ref<ViewMode>('list');
+    const folderModalSortConfig = ref<SortConfig>({ field: 'user_utime', direction: 'desc' });
 
     const logout = () => {
       accessToken.value = '';
@@ -53,6 +60,10 @@ export const useUserStore = defineStore(
       latestCopyFolder,
       latestMoveFolder,
       latestSaveFolder,
+      homeViewMode,
+      homeSortConfig,
+      folderModalViewMode,
+      folderModalSortConfig,
       logout,
       setLatestFolder,
       getLatestFolder,
