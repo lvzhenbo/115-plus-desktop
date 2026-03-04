@@ -16,7 +16,7 @@
       flex-height
       :columns
       :data
-      :pagination
+      :pagination="(pagination as PaginationProps)"
       :row-key="(row: Task) => row.info_hash"
       :loading
       class="h-[calc(100vh-133px)]"

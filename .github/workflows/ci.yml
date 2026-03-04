@@ -1,4 +1,4 @@
-name: 'Build Tauri App'
+name: "Build Tauri App"
 
 on:
   push:
@@ -21,17 +21,17 @@ jobs:
           #   args: '--target x86_64-apple-darwin'
           # - platform: 'ubuntu-latest' # for Tauri v1 you could replace this with ubuntu-20.04.
           #   args: ''
-          - platform: 'windows-latest'
-            args: ''
+          - platform: "windows-latest"
+            args: ""
 
     runs-on: ${{ matrix.platform }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
 
@@ -72,7 +72,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-artifacts-${{ matrix.platform }}
           path: |

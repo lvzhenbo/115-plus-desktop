@@ -29,7 +29,7 @@
       flex-height
       :columns
       :data
-      :pagination
+      :pagination="(pagination as PaginationProps)"
       :row-key="(row: RecycleBinFile) => row.id"
       :loading
       class="h-[calc(100vh-133px)]"
