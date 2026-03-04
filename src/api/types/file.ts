@@ -1,14 +1,58 @@
 import type { ResponseData } from '@/utils/http/alova';
 
+/**
+ * 排序字段
+ * - file_name：文件名
+ * - file_size：文件大小
+ * - user_utime：修改时间
+ * - user_ptime：上传时间
+ * - file_type：文件类型
+ */
+export type SortField = 'file_name' | 'file_size' | 'user_ptime' | 'user_utime' | 'file_type';
+
 export interface FileListRequestParams {
+  /**
+   * 父目录ID，根目录为0
+   */
   cid?: string;
   type?: number;
+  /**
+   * 分页数量
+   * @default 20
+   * 最大 1150
+   */
   limit?: number;
+  /**
+   * 偏移量
+   * @default 0
+   */
   offset?: number;
+  /**
+   * 文件后缀名
+   */
   suffix?: string;
-  asc?: number;
-  o?: string;
-  custom_order?: number;
+  /**
+   * 排序顺序
+   * - 0 降序
+   * - 1 升序
+   */
+  asc?: 1 | 0;
+  /**
+   * 排序字段
+   * - file_name：文件名
+   * - file_size：文件大小
+   * - user_utime：修改时间
+   * - user_ptime：上传时间
+   * - file_type：文件类型
+   */
+  o?: SortField;
+  /**
+   * 排序方式
+   * - 0 使用记忆排序，自定义排序失效
+   * - 1 使用自定义排序，不使用记忆排序
+   * - 2 自定义排序，非文件夹置顶
+   */
+  custom_order?: 0 | 1 | 2;
   stdir?: number;
   star?: number;
   /**
@@ -56,9 +100,14 @@ export interface FileListResponseData extends ResponseData<MyFile[]> {
    */
   offset: number;
   /**
-   * 排序
+   * 排序字段
+   * - file_name：文件名
+   * - file_size：文件大小
+   * - user_utime：修改时间
+   * - user_ptime：上传时间
+   * - file_type：文件类型
    */
-  order: string;
+  order: SortField;
   /**
    * 父目录树
    */

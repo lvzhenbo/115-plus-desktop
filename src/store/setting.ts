@@ -37,6 +37,16 @@ export interface DownLoadFile {
 export const useSettingStore = defineStore(
   'setting',
   () => {
+    const generalSetting = ref({
+      /**
+       * 排序方式
+       * - 0 使用记忆排序，自定义排序失效
+       * - 1 使用自定义排序，不使用记忆排序
+       * - 2 自定义排序，非文件夹置顶
+       */
+      customOrder: 0 as 0 | 1 | 2,
+    });
+
     const videoPlayerSetting = ref({
       defaultVolume: 1,
       defaultRate: 1,
@@ -55,6 +65,7 @@ export const useSettingStore = defineStore(
     });
 
     return {
+      generalSetting,
       videoPlayerSetting,
       cloudDownloadSetting,
       downloadSetting,

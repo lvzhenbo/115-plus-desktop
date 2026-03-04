@@ -1,10 +1,7 @@
-import type { MyFile } from '@/api/types/file';
+import type { MyFile, SortField } from '@/api/types/file';
 
 /** 视图模式 */
 export type ViewMode = 'grid' | 'list';
-
-/** 排序字段（对应接口 o 参数） */
-export type SortField = 'file_name' | 'file_size' | 'user_ptime' | 'user_utime' | 'file_type';
 
 /** 排序方向 */
 export type SortDirection = 'asc' | 'desc';

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-  import type { MyFile } from '@/api/types/file';
-  import type { ViewMode, SortConfig, SortField, ListColumn } from '../../types';
+  import type { MyFile, SortField } from '@/api/types/file';
+  import type { ViewMode, SortConfig, ListColumn } from '../../types';
 
   defineProps<{
     items: MyFile[];

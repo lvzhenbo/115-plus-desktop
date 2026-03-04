@@ -1,6 +1,22 @@
 <template>
   <div class="p-6">
     <NTabs type="segment" animated>
+      <NTabPane name="generalSetting" tab="常规设置">
+        <NForm label-placement="left" label-width="auto" :show-feedback="false">
+          <NFormItem label="排序方式" path="generalSetting.customOrder">
+            <NRadioGroup
+              v-model:value="settingStore.generalSetting.customOrder"
+              name="customOrderGroup"
+            >
+              <NSpace>
+                <NRadio :value="0"> 记忆排序 </NRadio>
+                <NRadio :value="1"> 自定义排序 </NRadio>
+                <NRadio :value="2"> 自定义排序（非文件夹置顶） </NRadio>
+              </NSpace>
+            </NRadioGroup>
+          </NFormItem>
+        </NForm>
+      </NTabPane>
       <NTabPane name="videoPlayerSetting" tab="视频播放器设置">
         <NForm label-placement="left" label-width="auto" :show-feedback="false">
           <NFormItem label="默认播放音量" path="videoPlayerSetting.defaultVolume">

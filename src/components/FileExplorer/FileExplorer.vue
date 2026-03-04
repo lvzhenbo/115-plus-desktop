@@ -96,18 +96,19 @@
 <script setup lang="ts">
   import type { PaginationProps } from 'naive-ui';
   import { fileDetail, fileList, deleteFile } from '@/api/file';
-  import type { FileDetail, FileListRequestParams, MyFile, Path } from '@/api/types/file';
   import type {
-    ViewMode,
-    SortConfig,
+    FileDetail,
+    FileListRequestParams,
+    MyFile,
+    Path,
     SortField,
-    ToolbarAction,
-    ContextMenuAction,
-    ListColumn,
-  } from './types';
+  } from '@/api/types/file';
+  import type { ViewMode, SortConfig, ToolbarAction, ContextMenuAction, ListColumn } from './types';
+  import { useSettingStore } from '@/store/setting';
 
   const dialog = useDialog();
   const message = useMessage();
+  const settingStore = useSettingStore();
 
   const allToolbarActions: ToolbarAction[] = [
     'up',
@@ -202,7 +203,7 @@
     limit: pagination.pageSize,
     o: sortConfig.value.field,
     asc: sortConfig.value.direction === 'asc' ? 1 : 0,
-    custom_order: 1,
+    custom_order: settingStore.generalSetting.customOrder,
     nf: props.onlyFolder ? 1 : 0,
   });
 
@@ -249,6 +250,13 @@
       data.value = res.data;
       pagination.itemCount = res.count;
       path.value = res.path;
+      // 记忆排序时，根据接口返回的排序信息更新展示
+      if (settingStore.generalSetting.customOrder === 0) {
+        sortConfig.value = {
+          field: res.order,
+          direction: res.is_asc === 1 ? 'asc' : 'desc',
+        };
+      }
       clearSelection();
     } finally {
       loading.value = false;
