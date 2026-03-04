@@ -1,13 +1,15 @@
 <template>
   <div
     v-if="currentLines.length > 0"
-    class="absolute bottom-16 left-0 right-0 flex justify-center z-15 pointer-events-none px-8"
+    class="absolute left-0 right-0 flex justify-center z-15 pointer-events-none px-8"
+    :style="{ bottom: `${subtitleStyle.bottomOffset}px` }"
   >
     <div class="inline-flex flex-col items-center gap-0.5">
       <span
         v-for="(line, idx) in currentLines"
         :key="idx"
-        class="inline-block text-white text-lg px-3 py-0.5 rounded bg-black/60 text-center leading-relaxed"
+        class="inline-block px-3 py-0.5 rounded text-center leading-relaxed"
+        :style="subtitleTextStyle"
       >
         {{ line }}
       </span>
@@ -17,8 +19,13 @@
 
 <script setup lang="ts">
   import type { SubtitleItem } from '@/api/types/video';
+  import { useSettingStore } from '@/store/setting';
+  import { generateTextShadow } from '@/utils/subtitleStyleUtils';
   import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
   import { parseText } from 'media-captions';
+  import type { CSSProperties } from 'vue';
+
+  const settingStore = useSettingStore();
 
   const props = defineProps<{
     /** 字幕列表 */
@@ -32,6 +39,21 @@
   }>();
 
   const message = useMessage();
+
+  /** 字幕样式配置（响应式） */
+  const subtitleStyle = computed(() => settingStore.subtitleStyleSetting);
+
+  /** 字幕文字动态样式 */
+  const subtitleTextStyle = computed<CSSProperties>(() => {
+    const s = subtitleStyle.value;
+    return {
+      color: s.fontColor,
+      fontSize: `${s.fontSize}px`,
+      fontWeight: s.fontBold ? 'bold' : 'normal',
+      backgroundColor: s.backgroundColor,
+      textShadow: generateTextShadow(s.strokeColor, s.strokeWidth),
+    };
+  });
 
   /** 解析后的字幕 cue 列表 */
   const subtitleCues = ref<{ start: number; end: number; text: string }[]>([]);

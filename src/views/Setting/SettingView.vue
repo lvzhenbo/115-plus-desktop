@@ -21,40 +21,118 @@
         </NForm>
       </NTabPane>
       <NTabPane name="videoPlayerSetting" tab="视频播放器设置">
-        <NForm label-placement="left" label-width="auto">
-          <NFormItem label="默认播放音量" path="videoPlayerSetting.defaultVolume">
-            <NSlider
-              v-model:value="settingStore.videoPlayerSetting.defaultVolume"
-              :step="0.01"
-              :max="1"
-              :format-tooltip
-            />
-          </NFormItem>
-          <NFormItem label="默认播放速度" path="videoPlayerSetting.defaultRate">
-            <NRadioGroup
-              v-model:value="settingStore.videoPlayerSetting.defaultRate"
-              name="radiogroup"
-            >
-              <NSpace>
-                <NRadio :value="0.5"> 0.5x </NRadio>
-                <NRadio :value="0.75"> 0.75x </NRadio>
-                <NRadio :value="1"> 1x </NRadio>
-                <NRadio :value="1.25"> 1.25x </NRadio>
-                <NRadio :value="1.5"> 1.5x </NRadio>
-                <NRadio :value="2"> 2x </NRadio>
-                <NRadio :value="3"> 3x </NRadio>
-                <NRadio :value="4"> 4x </NRadio>
-                <NRadio :value="5"> 5x </NRadio>
-              </NSpace>
-            </NRadioGroup>
-          </NFormItem>
-          <NFormItem label="是否自动播放" path="videoPlayerSetting.autoPlay">
-            <NSwitch v-model:value="settingStore.videoPlayerSetting.autoPlay" />
-          </NFormItem>
-          <NFormItem label="是否同步播放进度" path="videoPlayerSetting.isHistory">
-            <NSwitch v-model:value="settingStore.videoPlayerSetting.isHistory" />
-          </NFormItem>
-        </NForm>
+        <NScrollbar class="max-h-[calc(100vh-170px)]">
+          <NForm label-placement="left" label-width="auto">
+            <NFormItem label="默认播放音量" path="videoPlayerSetting.defaultVolume">
+              <NSlider
+                v-model:value="settingStore.videoPlayerSetting.defaultVolume"
+                :step="0.01"
+                :max="1"
+                :format-tooltip
+              />
+            </NFormItem>
+            <NFormItem label="默认播放速度" path="videoPlayerSetting.defaultRate">
+              <NRadioGroup
+                v-model:value="settingStore.videoPlayerSetting.defaultRate"
+                name="radiogroup"
+              >
+                <NSpace>
+                  <NRadio :value="0.5"> 0.5x </NRadio>
+                  <NRadio :value="0.75"> 0.75x </NRadio>
+                  <NRadio :value="1"> 1x </NRadio>
+                  <NRadio :value="1.25"> 1.25x </NRadio>
+                  <NRadio :value="1.5"> 1.5x </NRadio>
+                  <NRadio :value="2"> 2x </NRadio>
+                  <NRadio :value="3"> 3x </NRadio>
+                  <NRadio :value="4"> 4x </NRadio>
+                  <NRadio :value="5"> 5x </NRadio>
+                </NSpace>
+              </NRadioGroup>
+            </NFormItem>
+            <NFormItem label="是否自动播放" path="videoPlayerSetting.autoPlay">
+              <NSwitch v-model:value="settingStore.videoPlayerSetting.autoPlay" />
+            </NFormItem>
+            <NFormItem label="是否同步播放进度" path="videoPlayerSetting.isHistory">
+              <NSwitch v-model:value="settingStore.videoPlayerSetting.isHistory" />
+            </NFormItem>
+            <NDivider> 字幕样式 </NDivider>
+            <NFormItem label="默认开启字幕" path="subtitleStyleSetting.defaultEnabled">
+              <NSwitch v-model:value="settingStore.subtitleStyleSetting.defaultEnabled" />
+            </NFormItem>
+            <NFormItem label="字体大小" path="subtitleStyleSetting.fontSize">
+              <NInputNumber
+                v-model:value="settingStore.subtitleStyleSetting.fontSize"
+                :min="12"
+                :max="48"
+                :step="1"
+              >
+                <template #suffix> px </template>
+              </NInputNumber>
+            </NFormItem>
+            <NFormItem label="字体颜色" path="subtitleStyleSetting.fontColor">
+              <NColorPicker
+                v-model:value="settingStore.subtitleStyleSetting.fontColor"
+                :modes="['hex']"
+                :show-alpha="false"
+              />
+            </NFormItem>
+            <NFormItem label="加粗" path="subtitleStyleSetting.fontBold">
+              <NSwitch v-model:value="settingStore.subtitleStyleSetting.fontBold" />
+            </NFormItem>
+            <NFormItem label="描边颜色" path="subtitleStyleSetting.strokeColor">
+              <NColorPicker
+                v-model:value="settingStore.subtitleStyleSetting.strokeColor"
+                :modes="['hex']"
+                :show-alpha="false"
+              />
+            </NFormItem>
+            <NFormItem label="描边宽度" path="subtitleStyleSetting.strokeWidth">
+              <NInputNumber
+                v-model:value="settingStore.subtitleStyleSetting.strokeWidth"
+                :min="0"
+                :max="5"
+                :step="0.5"
+              >
+                <template #suffix> px </template>
+              </NInputNumber>
+            </NFormItem>
+            <NFormItem label="背景颜色" path="subtitleStyleSetting.backgroundColor">
+              <NColorPicker
+                v-model:value="settingStore.subtitleStyleSetting.backgroundColor"
+                :modes="['hex']"
+              />
+            </NFormItem>
+            <NFormItem label="距底部偏移" path="subtitleStyleSetting.bottomOffset">
+              <NInputNumber
+                v-model:value="settingStore.subtitleStyleSetting.bottomOffset"
+                :min="0"
+                :max="200"
+                :step="4"
+              >
+                <template #suffix> px </template>
+              </NInputNumber>
+            </NFormItem>
+            <NFormItem label="预览">
+              <div
+                class="w-full h-30 bg-zinc-800 rounded flex items-end justify-center overflow-hidden relative"
+              >
+                <div
+                  class="inline-flex flex-col items-center gap-0.5 mb-2"
+                  :style="{
+                    marginBottom: `${Math.min(settingStore.subtitleStyleSetting.bottomOffset / 4, 40)}px`,
+                  }"
+                >
+                  <span
+                    class="inline-block px-3 py-0.5 rounded text-center leading-relaxed"
+                    :style="subtitlePreviewStyle"
+                  >
+                    示例字幕 Sample Subtitle
+                  </span>
+                </div>
+              </div>
+            </NFormItem>
+          </NForm>
+        </NScrollbar>
       </NTabPane>
       <NTabPane name="cloudDownloadSetting" tab="云下载设置">
         <NForm label-placement="left" label-width="auto">
@@ -117,10 +195,24 @@
   import { useSettingStore } from '@/store/setting';
   import type { SliderProps } from 'naive-ui';
   import { open } from '@tauri-apps/plugin-dialog';
+  import { generateTextShadow } from '@/utils/subtitleStyleUtils';
+  import type { CSSProperties } from 'vue';
 
   const settingStore = useSettingStore();
 
   const formatTooltip: SliderProps['formatTooltip'] = (v) => `${(v * 100).toFixed(0)}%`;
+
+  /** 字幕预览样式 */
+  const subtitlePreviewStyle = computed<CSSProperties>(() => {
+    const s = settingStore.subtitleStyleSetting;
+    return {
+      color: s.fontColor,
+      fontSize: `${s.fontSize}px`,
+      fontWeight: s.fontBold ? 'bold' : 'normal',
+      backgroundColor: s.backgroundColor,
+      textShadow: generateTextShadow(s.strokeColor, s.strokeWidth),
+    };
+  });
 
   const selectDownloadDirectory = async () => {
     const dir = await open({

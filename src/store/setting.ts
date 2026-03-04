@@ -76,12 +76,32 @@ export const useSettingStore = defineStore(
       maxConcurrent: 5,
     });
 
+    const subtitleStyleSetting = ref({
+      /** 是否默认开启字幕 */
+      defaultEnabled: true,
+      /** 字体大小 (px) */
+      fontSize: 22,
+      /** 字体颜色 */
+      fontColor: '#FFFFFF',
+      /** 是否加粗 */
+      fontBold: false,
+      /** 描边颜色 */
+      strokeColor: '#000000',
+      /** 描边宽度 (px) */
+      strokeWidth: 1,
+      /** 背景颜色 (hex8 含透明度) */
+      backgroundColor: '#00000099',
+      /** 距底部偏移 (px) */
+      bottomOffset: 64,
+    });
+
     return {
       generalSetting,
       videoPlayerSetting,
       cloudDownloadSetting,
       downloadSetting,
       uploadSetting,
+      subtitleStyleSetting,
     };
   },
   {

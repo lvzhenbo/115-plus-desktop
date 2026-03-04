@@ -409,13 +409,14 @@
     try {
       const res = await videoSubtitle({ pick_code: file.value.pc });
       subtitleList.value = res.data.list || [];
-      // 如果有自动载入字幕，默认启用
+      // 根据设置决定是否默认启用字幕
+      const shouldEnable = settingStore.subtitleStyleSetting.defaultEnabled;
       if (res.data.autoload) {
         currentSubtitleSid.value = res.data.autoload.sid;
-        subtitleEnabled.value = true;
+        subtitleEnabled.value = shouldEnable;
       } else if (subtitleList.value.length > 0) {
         currentSubtitleSid.value = subtitleList.value[0]!.sid;
-        subtitleEnabled.value = false;
+        subtitleEnabled.value = shouldEnable;
       } else {
         currentSubtitleSid.value = undefined;
         subtitleEnabled.value = false;
