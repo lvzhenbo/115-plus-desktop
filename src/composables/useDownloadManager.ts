@@ -5,6 +5,7 @@ import {
   removeDownloadResult,
   pause as pauseAria2,
   unpause as unpauseAria2,
+  changeGlobalOption,
 } from '@/api/aria2';
 import { fileDownloadUrl, fileList } from '@/api/file';
 import type { MyFile } from '@/api/types/file';
@@ -30,8 +31,6 @@ interface DownloadQueueItem {
   parentGid?: string;
 }
 
-/** 最大重试次数 */
-const MAX_RETRY = 5;
 /** 获取下载链接之间的最小延迟(ms) */
 const FETCH_DELAY = 2000;
 /** 文件夹列表请求之间的延迟(ms) */
@@ -42,8 +41,6 @@ const BACKOFF_BASE = 3000;
 const BACKOFF_MAX = 60000;
 /** 状态轮询间隔(ms) */
 const POLL_INTERVAL = 2000;
-/** 恢复下载时重新获取链接的延迟(ms) */
-const RESUME_FETCH_DELAY = 2000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -80,7 +77,7 @@ const cleanupAria2Task = async (gid: string) => {
  *
  * - SQLite 持久化下载列表，响应式 `displayList` 驱动 UI
  * - aria2 仅作为下载引擎，不使用 session；任务完成/失败后自动清理 aria2 记录
- * - 需在 Home 页面调用 `init()` 完成初始化；可通过设置项决定是否自动恢复未完成任务
+ * - 需在 Home 页面调用 `init()` 完成初始化
  */
 export const useDownloadManager = createSharedComposable(() => {
   const settingStore = useSettingStore();
@@ -88,7 +85,6 @@ export const useDownloadManager = createSharedComposable(() => {
   const displayList = ref<DownLoadFile[]>([]);
   const downloadQueue = ref<DownloadQueueItem[]>([]);
   const isProcessing = ref(false);
-  const isResuming = ref(false);
 
   /** 从数据库刷新顶层列表 */
   const refreshDisplayList = async () => {
@@ -166,7 +162,7 @@ export const useDownloadManager = createSharedComposable(() => {
 
     // 无活跃任务时停止轮询
     const stillActive = await getActiveGids();
-    if (stillActive.length === 0 && !isResuming.value) {
+    if (stillActive.length === 0) {
       stopPolling();
     }
   }
@@ -316,55 +312,71 @@ export const useDownloadManager = createSharedComposable(() => {
     }
   };
 
-  /** 逐项消费下载队列，失败时自动重试（指数退避） */
+  /** 消费下载队列，工作池模式并行下载，任务完成后立即填补空位 */
   const processQueue = async () => {
     if (isProcessing.value) return;
     isProcessing.value = true;
 
-    try {
-      while (downloadQueue.value.length > 0) {
-        const item = downloadQueue.value.shift()!;
+    const active = new Set<Promise<void>>();
 
-        try {
-          await downloadSingleFile(item);
-        } catch (error) {
-          if (item.retryCount < MAX_RETRY) {
-            item.retryCount++;
-            const isRateLimit = isRateLimitError(error);
-            const delay = isRateLimit
-              ? getBackoffDelay(item.retryCount)
-              : getBackoffDelay(Math.max(0, item.retryCount - 1));
+    const runItem = async (item: DownloadQueueItem) => {
+      try {
+        await downloadSingleFile(item);
+      } catch (error) {
+        const maxRetry = settingStore.downloadSetting.maxRetry;
+        if (item.retryCount < maxRetry) {
+          item.retryCount++;
+          const isRateLimit = isRateLimitError(error);
+          const delay = isRateLimit
+            ? getBackoffDelay(item.retryCount)
+            : getBackoffDelay(Math.max(0, item.retryCount - 1));
 
-            console.warn(
-              `下载失败${isRateLimit ? '(限流)' : ''}，${delay / 1000}s 后重试第 ${item.retryCount} 次: ${item.file.fn}`,
-              error,
-            );
+          console.warn(
+            `下载失败${isRateLimit ? '(限流)' : ''}，${delay / 1000}s 后重试第 ${item.retryCount} 次: ${item.file.fn}`,
+            error,
+          );
 
-            if (isRateLimit) {
-              await sleep(delay);
-            }
-            downloadQueue.value.unshift(item);
-          } else {
-            console.error(`下载失败，已超过最大重试次数: ${item.file.fn}`, error);
-            await insertDownload({
-              name: item.file.fn,
-              fid: item.file.fid,
-              pickCode: item.file.pc,
-              size: item.file.fs,
-              gid: `failed-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-              status: 'error',
-              parentGid: item.parentGid,
-              errorMessage: isRateLimitError(error)
-                ? '服务器限流，请稍后重试'
-                : '获取下载链接失败，请稍后重试',
-              createdAt: Date.now(),
-            });
-            await refreshDisplayList();
+          if (isRateLimit) {
+            await sleep(delay);
           }
+          downloadQueue.value.push(item);
+        } else {
+          console.error(`下载失败，已超过最大重试次数: ${item.file.fn}`, error);
+          await insertDownload({
+            name: item.file.fn,
+            fid: item.file.fid,
+            pickCode: item.file.pc,
+            size: item.file.fs,
+            gid: `failed-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            status: 'error',
+            parentGid: item.parentGid,
+            errorMessage: isRateLimitError(error)
+              ? '服务器限流，请稍后重试'
+              : '获取下载链接失败，请稍后重试',
+            createdAt: Date.now(),
+          });
+          await refreshDisplayList();
+        }
+      }
+    };
+
+    try {
+      while (downloadQueue.value.length > 0 || active.size > 0) {
+        const maxConcurrent = settingStore.downloadSetting.maxConcurrent || 1;
+
+        // 填充并行槽位，每启动一个任务间隔 FETCH_DELAY 以避免请求过快
+        while (downloadQueue.value.length > 0 && active.size < maxConcurrent) {
+          const item = downloadQueue.value.shift()!;
+          if (active.size > 0) {
+            await sleep(FETCH_DELAY);
+          }
+          const task = runItem(item).finally(() => active.delete(task));
+          active.add(task);
         }
 
-        if (downloadQueue.value.length > 0) {
-          await sleep(FETCH_DELAY);
+        // 等待任意一个任务完成，腾出槽位
+        if (active.size > 0) {
+          await Promise.race(active);
         }
       }
     } finally {
@@ -571,98 +583,12 @@ export const useDownloadManager = createSharedComposable(() => {
     }
   };
 
-  // ---------- 启动恢复 ----------
-
-  /** 恢复所有未完成的下载任务（重新获取链接并提交 aria2） */
-  const resumeIncompleteDownloads = async () => {
-    const allItems = await getAllDownloads();
-
-    // 将被中断的文件夹收集标记为失败
-    const collecting = allItems.filter((d) => d.isFolder && d.isCollecting);
-    for (const d of collecting) {
-      await updateDownload(d.gid, {
-        isCollecting: false,
-        status: 'error',
-        errorMessage: '文件收集被中断，请重试',
-      });
-    }
-
-    const tasksToResume = await getIncompleteDownloads();
-    if (tasksToResume.length === 0) {
-      await refreshDisplayList();
-      return;
-    }
-
-    console.log(`恢复 ${tasksToResume.length} 个未完成的下载任务...`);
-    isResuming.value = true;
-    startPolling();
-
-    for (const task of tasksToResume) {
-      try {
-        const res = await fileDownloadUrl({ pick_code: task.pickCode });
-        const fileData = res.data[task.fid];
-        if (!fileData) {
-          await updateDownload(task.gid, {
-            status: 'error',
-            errorMessage: '恢复失败：获取下载链接失败',
-            downloadSpeed: 0,
-          });
-          continue;
-        }
-
-        let subPath: string | undefined;
-        if (task.parentGid) {
-          const allDl = await getAllDownloads();
-          const parentFolder = allDl.find((d) => d.gid === task.parentGid);
-          if (parentFolder?.path) {
-            const basePath = settingStore.downloadSetting.downloadPath;
-            if (parentFolder.path.startsWith(basePath)) {
-              subPath = parentFolder.path.slice(basePath.length + 1);
-            }
-          }
-        }
-
-        const aria2res = await addUri(fileData.url.url, fileData.file_name, subPath);
-        if (aria2res.result) {
-          // aria2 会分配新 gid，需替换数据库记录
-          const oldGid = task.gid;
-          await deleteDownload(oldGid);
-          await insertDownload({
-            ...task,
-            gid: aria2res.result,
-            status: 'active',
-            downloadSpeed: 0,
-            errorMessage: undefined,
-            errorCode: undefined,
-          });
-        }
-
-        await sleep(RESUME_FETCH_DELAY);
-      } catch (e) {
-        console.error(`恢复下载失败: ${task.name}`, e);
-        if (isRateLimitError(e)) {
-          await sleep(getBackoffDelay(2));
-        }
-        await updateDownload(task.gid, {
-          status: 'error',
-          errorMessage: '恢复下载失败，请手动重试',
-          downloadSpeed: 0,
-        });
-      }
-    }
-
-    isResuming.value = false;
-    await refreshDisplayList();
-    console.log('下载恢复完成');
-  };
-
   // ---------- 计算属性 ----------
 
   const queueStatus = computed(() => ({
     queueLength: downloadQueue.value.length,
     isProcessing: isProcessing.value,
     isPolling: isPolling.value,
-    isResuming: isResuming.value,
   }));
 
   const downloadStats = computed(() => {
@@ -687,21 +613,55 @@ export const useDownloadManager = createSharedComposable(() => {
   /**
    * 初始化下载管理器（仅执行一次）
    *
-   * 开启自动恢复时重新提交未完成任务，否则将未完成任务标记为暂停。
+   * 将未完成任务标记为暂停，并同步 aria2 并行下载数为用户设置。
    */
   const init = async () => {
     if (initialized) return;
     initialized = true;
-    if (settingStore.downloadSetting.autoResumeDownloads) {
-      await resumeIncompleteDownloads();
-    } else {
-      // 将未完成的任务标记为暂停
-      const incompleteTasks = await getIncompleteDownloads();
-      for (const task of incompleteTasks) {
-        await updateDownload(task.gid, { status: 'paused', downloadSpeed: 0 });
-      }
-      await refreshDisplayList();
+
+    // 同步 aria2 最大并行下载数
+    try {
+      await changeGlobalOption({
+        'max-concurrent-downloads': String(settingStore.downloadSetting.maxConcurrent || 1),
+      });
+    } catch (e) {
+      console.error('同步 aria2 并行下载数失败:', e);
     }
+
+    // 将未完成的任务标记为暂停
+    const incompleteTasks = await getIncompleteDownloads();
+    for (const task of incompleteTasks) {
+      await updateDownload(task.gid, { status: 'paused', downloadSpeed: 0 });
+    }
+    await refreshDisplayList();
+  };
+
+  // 用户修改并行下载数时，实时同步到 aria2
+  watch(
+    () => settingStore.downloadSetting.maxConcurrent,
+    async (val) => {
+      if (!initialized) return;
+      try {
+        await changeGlobalOption({
+          'max-concurrent-downloads': String(val || 1),
+        });
+      } catch (e) {
+        console.error('同步 aria2 并行下载数失败:', e);
+      }
+    },
+  );
+
+  /** 暂停所有活跃的下载任务 */
+  const pauseAllTasks = async () => {
+    const activeGids = await getActiveGids();
+    for (const gid of activeGids) {
+      try {
+        await pauseAria2(gid);
+      } catch {
+        // 任务可能已经完成或不存在
+      }
+    }
+    await syncDownloadStatus();
   };
 
   return {
@@ -717,6 +677,7 @@ export const useDownloadManager = createSharedComposable(() => {
     startPolling,
     stopPolling,
     syncDownloadStatus,
+    pauseAllTasks,
     queueStatus,
     downloadStats,
   };

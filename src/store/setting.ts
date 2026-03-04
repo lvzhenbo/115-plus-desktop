@@ -45,6 +45,8 @@ export const useSettingStore = defineStore(
        * - 2 自定义排序，非文件夹置顶
        */
       customOrder: 0 as 0 | 1 | 2,
+      /** 关闭窗口时自动暂停任务并关闭，不弹出确认框 */
+      skipExitConfirm: false,
     });
 
     const videoPlayerSetting = ref({
@@ -61,7 +63,17 @@ export const useSettingStore = defineStore(
     const downloadSetting = ref({
       aria2Port: 6800,
       downloadPath: '',
-      autoResumeDownloads: false,
+      /** 下载失败最大重试次数 */
+      maxRetry: 5,
+      /** 并行下载任务数 */
+      maxConcurrent: 5,
+    });
+
+    const uploadSetting = ref({
+      /** 上传失败最大重试次数 */
+      maxRetry: 3,
+      /** 并行上传任务数 */
+      maxConcurrent: 5,
     });
 
     return {
@@ -69,6 +81,7 @@ export const useSettingStore = defineStore(
       videoPlayerSetting,
       cloudDownloadSetting,
       downloadSetting,
+      uploadSetting,
     };
   },
   {

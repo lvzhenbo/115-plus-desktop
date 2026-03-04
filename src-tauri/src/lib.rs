@@ -1,6 +1,7 @@
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager};
+use tauri_plugin_pinia::ManagerExt;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -51,6 +52,14 @@ fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
         *aria2_port = port;
     }
 
+    // 尝试从 pinia store 读取用户保存的并行下载数设置
+    let max_concurrent = app
+        .pinia()
+        .get::<serde_json::Value>("setting", "downloadSetting")
+        .ok()
+        .and_then(|v| v.get("maxConcurrent").and_then(|v| v.as_u64()))
+        .unwrap_or(5);
+
     // 使用 sidecar 功能启动 aria2c
     // 不使用 session 文件，由前端自行管理下载列表和恢复
     let sidecar = app
@@ -58,6 +67,7 @@ fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
         .sidecar("aria2c")
         .map_err(|e| format!("无法创建 aria2c sidecar: {}", e))?;
 
+    let max_concurrent_arg = format!("--max-concurrent-downloads={}", max_concurrent);
     let command_child = sidecar
         .args([
             "--continue",
@@ -66,6 +76,7 @@ fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
             "--rpc-allow-origin-all",
             "--rpc-listen-all",
             "--daemon=false",
+            &max_concurrent_arg,
         ])
         .spawn()
         .map_err(|e| format!("无法启动 aria2c: {}", e))?;

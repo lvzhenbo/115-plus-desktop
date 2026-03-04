@@ -32,7 +32,6 @@
       <div v-if="queueStatus.queueLength > 0" class="ml-2 text-sm text-gray-400">
         队列等待 {{ queueStatus.queueLength }} 个
       </div>
-      <div v-if="queueStatus.isResuming" class="ml-2 text-sm text-blue-400"> 正在恢复下载...</div>
     </NSpace>
     <NDataTable
       ref="tableRef"

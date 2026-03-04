@@ -131,6 +131,12 @@
   import { getVersion } from '@/api/aria2';
   import { useSettingStore } from '@/store/setting';
   import { downloadDir } from '@tauri-apps/api/path';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { ask } from '@tauri-apps/plugin-dialog';
+  import { useDownloadManager } from '@/composables/useDownloadManager';
+  import { useUploadManager } from '@/composables/useUploadManager';
+  import { hasActiveDownloads } from '@/db/downloads';
+  import { getActiveUploads } from '@/db/uploads';
 
   const route = useRoute();
   const userStore = useUserStore();
@@ -207,6 +213,20 @@
   const settingStore = useSettingStore();
   const offlineDownloadShow = ref(false);
   const searchShow = ref(false);
+  const { pauseAllTasks: pauseAllDownloads } = useDownloadManager();
+  const { pauseAllTasks: pauseAllUploads } = useUploadManager();
+
+  /** 暂停所有任务并关闭窗口 */
+  const pauseAndClose = async () => {
+    await Promise.all([pauseAllDownloads(), pauseAllUploads()]);
+    await getCurrentWindow().destroy();
+  };
+
+  /** 检查是否有活跃任务 */
+  const hasActiveTasks = async () => {
+    const [downloads, uploads] = await Promise.all([hasActiveDownloads(), getActiveUploads()]);
+    return downloads || uploads.length > 0;
+  };
 
   watch(
     () => route.name,
@@ -223,6 +243,31 @@
     if (!settingStore.downloadSetting.downloadPath) {
       settingStore.downloadSetting.downloadPath = await downloadDir();
     }
+
+    // 监听窗口关闭事件
+    await getCurrentWindow().onCloseRequested(async (event) => {
+      const active = await hasActiveTasks();
+      if (!active) return; // 无活跃任务直接关闭
+
+      if (settingStore.generalSetting.skipExitConfirm) {
+        // 自动暂停并关闭
+        event.preventDefault();
+        await pauseAndClose();
+        return;
+      }
+
+      // 弹出二次确认
+      event.preventDefault();
+      const confirmed = await ask('当前有正在进行的传输任务，确定退出？', {
+        title: '提示',
+        kind: 'warning',
+        okLabel: '确定',
+        cancelLabel: '取消',
+      });
+      if (confirmed) {
+        await pauseAndClose();
+      }
+    });
   });
 
   const getUserInfo = async () => {

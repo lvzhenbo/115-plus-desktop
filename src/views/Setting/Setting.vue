@@ -2,7 +2,7 @@
   <div class="p-6">
     <NTabs type="segment" animated>
       <NTabPane name="generalSetting" tab="常规设置">
-        <NForm label-placement="left" label-width="auto" :show-feedback="false">
+        <NForm label-placement="left" label-width="auto">
           <NFormItem label="排序方式" path="generalSetting.customOrder">
             <NRadioGroup
               v-model:value="settingStore.generalSetting.customOrder"
@@ -15,10 +15,13 @@
               </NSpace>
             </NRadioGroup>
           </NFormItem>
+          <NFormItem label="退出时有传输任务不再提示" path="generalSetting.skipExitConfirm">
+            <NSwitch v-model:value="settingStore.generalSetting.skipExitConfirm" />
+          </NFormItem>
         </NForm>
       </NTabPane>
       <NTabPane name="videoPlayerSetting" tab="视频播放器设置">
-        <NForm label-placement="left" label-width="auto" :show-feedback="false">
+        <NForm label-placement="left" label-width="auto">
           <NFormItem label="默认播放音量" path="videoPlayerSetting.defaultVolume">
             <NSlider
               v-model:value="settingStore.videoPlayerSetting.defaultVolume"
@@ -54,22 +57,55 @@
         </NForm>
       </NTabPane>
       <NTabPane name="cloudDownloadSetting" tab="云下载设置">
-        <NForm label-placement="left" label-width="auto" :show-feedback="false">
+        <NForm label-placement="left" label-width="auto">
           <NFormItem label="默认删除源文件" path="cloudDownloadSetting.deleteSourceFile">
             <NSwitch v-model:value="settingStore.cloudDownloadSetting.deleteSourceFile" />
           </NFormItem>
         </NForm>
       </NTabPane>
       <NTabPane name="downloadSetting" tab="下载设置">
-        <NForm label-placement="left" label-width="auto" :show-feedback="false">
+        <NForm label-placement="left" label-width="auto">
           <NFormItem label="下载目录" path="downloadSetting.downloadPath">
             <NInputGroup>
               <NInput v-model:value="settingStore.downloadSetting.downloadPath" readonly />
               <NButton type="primary" @click="selectDownloadDirectory"> 选择下载目录 </NButton>
             </NInputGroup>
           </NFormItem>
-          <NFormItem label="启动时自动恢复未完成下载" path="downloadSetting.autoResumeDownloads">
-            <NSwitch v-model:value="settingStore.downloadSetting.autoResumeDownloads" />
+          <NFormItem label="最大重试次数" path="downloadSetting.maxRetry">
+            <NInputNumber
+              v-model:value="settingStore.downloadSetting.maxRetry"
+              :min="0"
+              :max="20"
+              :step="1"
+            />
+          </NFormItem>
+          <NFormItem label="并行任务数" path="downloadSetting.maxConcurrent">
+            <NInputNumber
+              v-model:value="settingStore.downloadSetting.maxConcurrent"
+              :min="1"
+              :max="10"
+              :step="1"
+            />
+          </NFormItem>
+        </NForm>
+      </NTabPane>
+      <NTabPane name="uploadSetting" tab="上传设置">
+        <NForm label-placement="left" label-width="auto">
+          <NFormItem label="最大重试次数" path="uploadSetting.maxRetry">
+            <NInputNumber
+              v-model:value="settingStore.uploadSetting.maxRetry"
+              :min="0"
+              :max="20"
+              :step="1"
+            />
+          </NFormItem>
+          <NFormItem label="并行任务数" path="uploadSetting.maxConcurrent">
+            <NInputNumber
+              v-model:value="settingStore.uploadSetting.maxConcurrent"
+              :min="1"
+              :max="10"
+              :step="1"
+            />
           </NFormItem>
         </NForm>
       </NTabPane>

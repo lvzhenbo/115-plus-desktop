@@ -1,5 +1,6 @@
 import { uploadInit, uploadGetToken, uploadResume } from '@/api/upload';
 import { addFolder } from '@/api/file';
+import { useSettingStore } from '@/store/setting';
 import {
   insertUpload,
   updateUpload,
@@ -35,8 +36,6 @@ interface UploadQueueItem {
   ossUploadId?: string;
 }
 
-/** 最大重试次数 */
-const MAX_RETRY = 3;
 /** 队列处理延迟(ms) */
 const QUEUE_DELAY = 1000;
 
@@ -76,6 +75,8 @@ const generateId = () => `upload-${Date.now()}-${Math.random().toString(36).slic
  * - 支持文件和文件夹上传
  */
 export const useUploadManager = createSharedComposable(() => {
+  const settingStore = useSettingStore();
+
   const displayList = ref<UploadFile[]>([]);
   const uploadQueue = ref<UploadQueueItem[]>([]);
   const isProcessing = ref(false);
@@ -253,7 +254,8 @@ export const useUploadManager = createSharedComposable(() => {
 
   /** 在115云端创建文件夹（带限流退避重试） */
   const createRemoteFolder = async (name: string, parentCid: string): Promise<string> => {
-    for (let attempt = 0; attempt <= MAX_RETRY; attempt++) {
+    const maxRetry = settingStore.uploadSetting.maxRetry;
+    for (let attempt = 0; attempt <= maxRetry; attempt++) {
       try {
         const res = await addFolder({ file_name: name, pid: parentCid });
         if (res.data) {
@@ -261,7 +263,7 @@ export const useUploadManager = createSharedComposable(() => {
         }
         throw new Error(`创建文件夹 "${name}" 失败：无返回数据`);
       } catch (err) {
-        if (isRateLimitError(err) && attempt < MAX_RETRY) {
+        if (isRateLimitError(err) && attempt < maxRetry) {
           const delay = getBackoffDelay(attempt);
           console.warn(`创建文件夹 "${name}" 被限流，${delay / 1000}s 后重试第 ${attempt + 1} 次`);
           await sleep(delay);
@@ -447,52 +449,66 @@ export const useUploadManager = createSharedComposable(() => {
     }
   };
 
-  /** 逐项消费上传队列 */
+  /** 消费上传队列，工作池模式并行上传，任务完成后立即填补空位 */
   const processQueue = async () => {
     if (isProcessing.value) return;
     isProcessing.value = true;
 
+    const active = new Set<Promise<void>>();
+
+    const runItem = async (item: UploadQueueItem) => {
+      try {
+        await uploadSingleFile(item);
+      } catch (error) {
+        // uploadSingleFile 内部已在 DB 中标记 error，此处只处理重试逻辑
+        const maxRetry = settingStore.uploadSetting.maxRetry;
+        if (item.retryCount < maxRetry) {
+          item.retryCount++;
+          const isRateLimit = isRateLimitError(error);
+          const delay = isRateLimit
+            ? getBackoffDelay(item.retryCount)
+            : getBackoffDelay(Math.max(0, item.retryCount - 1));
+
+          console.warn(
+            `上传失败${isRateLimit ? '(限流)' : ''}，${delay / 1000}s 后重试第 ${item.retryCount} 次: ${item.fileName}`,
+            error,
+          );
+
+          if (isRateLimit) {
+            await sleep(delay);
+          }
+          uploadQueue.value.push(item);
+        } else {
+          // 已超过最大重试次数，uploadSingleFile 中已创建了 error 记录，无需再创建
+          console.error(`上传失败，已超过最大重试次数: ${item.fileName}`, error);
+        }
+        await refreshDisplayList();
+      }
+    };
+
     try {
-      while (uploadQueue.value.length > 0) {
-        const item = uploadQueue.value.shift()!;
+      while (uploadQueue.value.length > 0 || active.size > 0) {
+        const maxConcurrent = settingStore.uploadSetting.maxConcurrent || 1;
 
-        // 跳过已暂停或已取消的任务（防止暂停后队列残留的竞态情况）
-        if (item.dbId) {
-          const record = await getUploadById(item.dbId);
-          if (record && (record.status === 'paused' || record.status === 'cancelled')) {
-            continue;
-          }
-        }
-
-        try {
-          await uploadSingleFile(item);
-        } catch (error) {
-          // uploadSingleFile 内部已在 DB 中标记 error，此处只处理重试逻辑
-          if (item.retryCount < MAX_RETRY) {
-            item.retryCount++;
-            const isRateLimit = isRateLimitError(error);
-            const delay = isRateLimit
-              ? getBackoffDelay(item.retryCount)
-              : getBackoffDelay(Math.max(0, item.retryCount - 1));
-
-            console.warn(
-              `上传失败${isRateLimit ? '(限流)' : ''}，${delay / 1000}s 后重试第 ${item.retryCount} 次: ${item.fileName}`,
-              error,
-            );
-
-            if (isRateLimit) {
-              await sleep(delay);
+        // 填充并行槽位，跳过已暂停或已取消的任务
+        while (uploadQueue.value.length > 0 && active.size < maxConcurrent) {
+          const item = uploadQueue.value.shift()!;
+          if (item.dbId) {
+            const record = await getUploadById(item.dbId);
+            if (record && (record.status === 'paused' || record.status === 'cancelled')) {
+              continue;
             }
-            uploadQueue.value.unshift(item);
-          } else {
-            // 已超过最大重试次数，uploadSingleFile 中已创建了 error 记录，无需再创建
-            console.error(`上传失败，已超过最大重试次数: ${item.fileName}`, error);
           }
-          await refreshDisplayList();
+          if (active.size > 0) {
+            await sleep(QUEUE_DELAY);
+          }
+          const task = runItem(item).finally(() => active.delete(task));
+          active.add(task);
         }
 
-        if (uploadQueue.value.length > 0) {
-          await sleep(QUEUE_DELAY);
+        // 等待任意一个任务完成，腾出槽位
+        if (active.size > 0) {
+          await Promise.race(active);
         }
       }
     } finally {
@@ -1131,6 +1147,33 @@ export const useUploadManager = createSharedComposable(() => {
     await refreshDisplayList();
   };
 
+  /** 暂停所有活跃的上传任务 */
+  const pauseAllTasks = async () => {
+    const activeTasks = await getActiveUploads();
+    for (const task of activeTasks) {
+      try {
+        await invoke('pause_upload', { uploadId: task.id });
+      } catch {
+        // 可能任务还未开始OSS上传
+      }
+      await updateUpload(task.id, { status: 'paused', uploadSpeed: 0 });
+    }
+    // 暂停活跃文件夹
+    const allItems = await getAllUploads();
+    const activeFolders = allItems.filter(
+      (d) =>
+        d.isFolder &&
+        d.status !== 'complete' &&
+        d.status !== 'error' &&
+        d.status !== 'cancelled' &&
+        d.status !== 'paused',
+    );
+    for (const folder of activeFolders) {
+      await updateUpload(folder.id, { status: 'paused', uploadSpeed: 0 });
+    }
+    await refreshDisplayList();
+  };
+
   return {
     init,
     displayList,
@@ -1144,6 +1187,7 @@ export const useUploadManager = createSharedComposable(() => {
     clearFinished,
     startPolling,
     stopPolling,
+    pauseAllTasks,
     queueStatus,
     uploadStats,
   };

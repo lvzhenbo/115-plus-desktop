@@ -196,3 +196,14 @@ export const unpauseAll = () =>
     id: nextId(),
     method: 'aria2.unpauseAll',
   });
+
+/**
+ * 修改 aria2 全局配置
+ */
+export const changeGlobalOption = (options: Record<string, string>) =>
+  aria2Server.Post('/jsonrpc', {
+    jsonrpc: '2.0',
+    id: nextId(),
+    method: 'aria2.changeGlobalOption',
+    params: [options],
+  });
