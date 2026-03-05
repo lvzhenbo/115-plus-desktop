@@ -40,14 +40,18 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/aria2c"],
+    "externalBin": [
+      "binaries/aria2c"
+    ],
     "windows": {
       "wix": {
         "language": "zh-CN"
       },
       "nsis": {
         "installerIcon": "icons/icon.ico",
-        "languages": ["SimpChinese"]
+        "languages": [
+          "SimpChinese"
+        ]
       }
     }
   },
@@ -61,5 +65,6 @@
         "installMode": "passive"
       }
     }
-  }
+  },
+  "version": "1.0.0"
 }
