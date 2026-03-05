@@ -9,6 +9,9 @@
   "npm": {
     "publish": false
   },
+  "hooks": {
+    "after:bump": "cargo generate-lockfile --manifest-path src-tauri/Cargo.toml"
+  },
   "plugins": {
     "@release-it/bumper": {
       "out": [{ "file": "src-tauri/tauri.conf.json", "path": "version" }, "src-tauri/Cargo.toml"]

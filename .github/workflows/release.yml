@@ -41,8 +41,8 @@ jobs:
       - name: Run release-it
         id: release-it
         run: |
-          VERSION=$(pnpm release --ci --release-version ${{ inputs.version }})
           pnpm release --ci ${{ inputs.version }}
+          VERSION=$(node -p "require('./package.json').version")
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
