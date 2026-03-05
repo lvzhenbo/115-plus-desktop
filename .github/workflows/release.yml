@@ -16,6 +16,7 @@ jobs:
       contents: write
     outputs:
       version: ${{ steps.release-it.outputs.version }}
+      changelog: ${{ steps.release-it.outputs.changelog }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -44,6 +45,13 @@ jobs:
           pnpm release --ci ${{ inputs.version }}
           VERSION=$(node -p "require('./package.json').version")
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+          CHANGELOG=$(awk '/^## \[/{if(c++) exit}c' CHANGELOG.md)
+
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "changelog<<$EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -103,6 +111,6 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: "115+ v__VERSION__"
-          generateReleaseNotes: true
+          releaseBody: ${{ needs.bump.outputs.changelog }}
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}

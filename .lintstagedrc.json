@@ -1,0 +1,7 @@
+{
+  "*.{js,jsx,ts,tsx}": [
+    "prettier --cache --ignore-unknown  --write",
+    "eslint --cache --fix --cache-location ./node_modules/.cache/.eslintcache"
+  ],
+  "*.md": ["prettier --cache --ignore-unknown --write"]
+}
