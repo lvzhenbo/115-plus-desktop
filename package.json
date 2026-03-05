@@ -39,6 +39,7 @@
     "destr": "^2.0.5",
     "filesize": "^11.0.13",
     "hls.js": "^1.6.15",
+    "marked": "^17.0.4",
     "media-captions": "^0.0.18",
     "motion-v": "^2.0.0",
     "naive-ui": "^2.43.2",
