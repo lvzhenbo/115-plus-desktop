@@ -1,0 +1,17 @@
+{
+  "git": {
+    "commitMessage": "chore: 发布 v${version}",
+    "tagName": "v${version}"
+  },
+  "github": {
+    "release": false
+  },
+  "npm": {
+    "publish": false
+  },
+  "plugins": {
+    "@release-it/bumper": {
+      "out": [{ "file": "src-tauri/tauri.conf.json", "path": "version" }, "src-tauri/Cargo.toml"]
+    }
+  }
+}

@@ -89,7 +89,7 @@
           </NButton>
         </div>
       </NLayoutHeader>
-      <NLayoutContent>
+      <NLayoutContent :native-scrollbar="false" class="h-[calc(100vh-59px)]">
         <RouterView v-slot="{ Component }">
           <Transition
             mode="out-in"
@@ -125,6 +125,7 @@
     DownloadOutlined,
     UploadOutlined,
     SearchOutlined,
+    InfoCircleOutlined,
   } from '@vicons/antd';
   import OfflineDownloadModal from './components/OfflineDownloadModal/OfflineDownloadModal.vue';
   import SearchModal from './components/SearchModal/SearchModal.vue';
@@ -135,6 +136,7 @@
   import { ask } from '@tauri-apps/plugin-dialog';
   import { useDownloadManager } from '@/composables/useDownloadManager';
   import { useUploadManager } from '@/composables/useUploadManager';
+  import { useCheckUpdate } from '@/composables/useCheckUpdate';
   import { hasActiveDownloads } from '@/db/downloads';
   import { getActiveUploads } from '@/db/uploads';
 
@@ -196,6 +198,15 @@
         </NIcon>
       ),
     },
+    {
+      label: () => <RouterLink to="/about">关于</RouterLink>,
+      key: 'About',
+      icon: () => (
+        <NIcon>
+          <InfoCircleOutlined />
+        </NIcon>
+      ),
+    },
   ];
   const selectMenu = ref<string>(route.name as string);
   const percentage = computed(() => {
@@ -215,6 +226,7 @@
   const searchShow = ref(false);
   const { pauseAllTasks: pauseAllDownloads } = useDownloadManager();
   const { pauseAllTasks: pauseAllUploads } = useUploadManager();
+  const { checkForUpdate } = useCheckUpdate();
 
   /** 暂停所有任务并关闭窗口 */
   const pauseAndClose = async () => {
@@ -242,6 +254,11 @@
     getAria2Version();
     if (!settingStore.downloadSetting.downloadPath) {
       settingStore.downloadSetting.downloadPath = await downloadDir();
+    }
+
+    // 启动时自动检查更新
+    if (settingStore.generalSetting.autoCheckUpdate) {
+      checkForUpdate({ silent: true });
     }
 
     // 监听窗口关闭事件

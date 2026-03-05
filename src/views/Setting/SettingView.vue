@@ -1,5 +1,5 @@
 <template>
-  <div class="p-6">
+  <div class="p-4">
     <NTabs type="segment" animated>
       <NTabPane name="generalSetting" tab="常规设置">
         <NForm label-placement="left" label-width="auto">
@@ -18,10 +18,20 @@
           <NFormItem label="退出时有传输任务不再提示" path="generalSetting.skipExitConfirm">
             <NSwitch v-model:value="settingStore.generalSetting.skipExitConfirm" />
           </NFormItem>
+          <NFormItem label="启动时自动检查更新" path="generalSetting.autoCheckUpdate">
+            <NSwitch v-model:value="settingStore.generalSetting.autoCheckUpdate" />
+          </NFormItem>
+          <NFormItem label="更新代理地址" path="generalSetting.updateProxy">
+            <NInput
+              v-model:value="settingStore.generalSetting.updateProxy"
+              placeholder="http://127.0.0.1:7890"
+              clearable
+            />
+          </NFormItem>
         </NForm>
       </NTabPane>
       <NTabPane name="videoPlayerSetting" tab="视频播放器设置">
-        <NScrollbar class="max-h-[calc(100vh-170px)]">
+        <NScrollbar class="max-h-[calc(100vh-142px)]">
           <NForm label-placement="left" label-width="auto">
             <NFormItem label="默认播放音量" path="videoPlayerSetting.defaultVolume">
               <NSlider

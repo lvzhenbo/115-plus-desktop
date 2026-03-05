@@ -1,0 +1,64 @@
+name: "Release"
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: "windows-latest"
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Execute get-aria2 script
+        run: pnpm get-aria2
+
+      - name: Create .env.local file
+        run: |
+          if [ -f .env ]; then
+            cp .env .env.local
+          else
+            touch .env.local
+          fi
+          echo "VITE_APP_ID=${{ secrets.APP_ID }}" >> .env.local
+          echo "VITE_APP_KEY=${{ secrets.APP_KEY }}" >> .env.local
+        shell: bash
+
+      - name: Build and Release Tauri App
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "115+ v__VERSION__"
+          generateReleaseNotes: true
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }}

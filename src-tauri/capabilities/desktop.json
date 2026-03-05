@@ -32,6 +32,8 @@
     "sql:default",
     "sql:allow-execute",
     "sql:allow-select",
-    "sql:allow-load"
+    "sql:allow-load",
+    "updater:default",
+    "process:default"
   ]
 }

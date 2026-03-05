@@ -1,5 +1,5 @@
 <template>
-  <div class="px-6 py-3">
+  <div class="p-4">
     <NSpace class="mb-4" align="center">
       <NButton type="primary" @click="handleClear">
         <template #icon>
@@ -40,7 +40,7 @@
       :columns
       :data="displayList"
       :row-key="(row: DownLoadFile) => row.gid"
-      class="h-[calc(100vh-133px)]"
+      class="h-[calc(100vh-141px)]"
     />
   </div>
 </template>

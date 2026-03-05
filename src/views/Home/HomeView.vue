@@ -1,18 +1,16 @@
 <template>
-  <div>
-    <FileExplorer
-      ref="explorerRef"
-      v-model:cid="cid"
-      v-model:view-mode="userStore.homeViewMode"
-      v-model:sort-config="userStore.homeSortConfig"
-      class="h-[calc(100vh-59px)]"
-      @download="handleDownload"
-      @batch-download="handleBatchDownload"
-      @upload-file="handleUploadFiles"
-      @upload-folder="handleUploadFolder"
-      @open-file="handleOpenFile"
-    />
-  </div>
+  <FileExplorer
+    ref="explorerRef"
+    v-model:cid="cid"
+    v-model:view-mode="userStore.homeViewMode"
+    v-model:sort-config="userStore.homeSortConfig"
+    class="h-[calc(100vh-59px)]"
+    @download="handleDownload"
+    @batch-download="handleBatchDownload"
+    @upload-file="handleUploadFiles"
+    @upload-folder="handleUploadFolder"
+    @open-file="handleOpenFile"
+  />
 </template>
 
 <script setup lang="ts">

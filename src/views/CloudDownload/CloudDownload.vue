@@ -1,5 +1,5 @@
 <template>
-  <div class="px-6 py-3">
+  <div class="p-4">
     <NSpace class="mb-4">
       <NButton type="primary" :loading="loading" @click="getTaskList">
         <template #icon>
@@ -19,7 +19,7 @@
       :pagination="(pagination as PaginationProps)"
       :row-key="(row: Task) => row.info_hash"
       :loading
-      class="h-[calc(100vh-133px)]"
+      class="h-[calc(100vh-141px)]"
       @update:page="handlePageChange"
     />
   </div>

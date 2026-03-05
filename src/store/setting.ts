@@ -47,6 +47,10 @@ export const useSettingStore = defineStore(
       customOrder: 0 as 0 | 1 | 2,
       /** 关闭窗口时自动暂停任务并关闭，不弹出确认框 */
       skipExitConfirm: false,
+      /** 启动时自动检查更新 */
+      autoCheckUpdate: true,
+      /** 更新请求代理地址（留空不使用代理） */
+      updateProxy: '',
     });
 
     const videoPlayerSetting = ref({

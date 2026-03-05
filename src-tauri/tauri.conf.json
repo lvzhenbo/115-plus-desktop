@@ -25,6 +25,7 @@
     }
   },
   "bundle": {
+    "createUpdaterArtifacts": true,
     "publisher": "lvzhenbo",
     "longDescription": "115+ 是一个基于 115 网盘开放平台的开源桌面客户端",
     "shortDescription": "115+ 是一个基于 115 网盘开放平台的开源桌面客户端",
@@ -47,6 +48,17 @@
       "nsis": {
         "installerIcon": "icons/icon.ico",
         "languages": ["SimpChinese"]
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZBNzAzQzJGRjFCNEVCODkKUldTSjY3VHhMenh3YW5YaHVSM2ZNaUdXWkxBbHNSNUx2RFZEaFhIRzVOdktvMHJvK1U3NzFtbC8K",
+      "endpoints": [
+        "https://github.com/lvzhenbo/115-plus-desktop/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

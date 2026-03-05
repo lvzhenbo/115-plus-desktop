@@ -1,5 +1,5 @@
 <template>
-  <div class="px-6 py-3">
+  <div class="p-4">
     <NDescriptions label-placement="left" title="个人信息" :column="1">
       <NDescriptionsItem label="头像">
         <NImage
