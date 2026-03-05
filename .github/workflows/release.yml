@@ -1,12 +1,54 @@
 name: "Release"
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release type or explicit version (e.g. patch, minor, major, 1.2.3)"
+        required: true
+        default: "patch"
+        type: string
 
 jobs:
-  release:
+  bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.release-it.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Configure Git
+        run: |
+          git config user.name "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+
+      - name: Run release-it
+        id: release-it
+        run: |
+          VERSION=$(pnpm release --ci --release-version ${{ inputs.version }})
+          pnpm release --ci ${{ inputs.version }}
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    needs: bump
     permissions:
       contents: write
     strategy:
@@ -21,13 +63,15 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.bump.outputs.version }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: lts/*
 
-      - name: install Rust stable
+      - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Setup pnpm
