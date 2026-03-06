@@ -1,7 +1,13 @@
 import type { Update } from '@tauri-apps/plugin-updater';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
+import { invoke } from '@tauri-apps/api/core';
 import { useSettingStore } from '@/store/setting';
+import { useDownloadManager } from '@/composables/useDownloadManager';
+import { useUploadManager } from '@/composables/useUploadManager';
+import { hasActiveDownloads } from '@/db/downloads';
+import { getActiveUploads } from '@/db/uploads';
+import { ask } from '@tauri-apps/plugin-dialog';
 import { filesize } from 'filesize';
 import { NA, NButton, NH3, NLi, NP, NScrollbar, NText, NUl } from 'naive-ui';
 import { marked, type Token, type Tokens } from 'marked';
@@ -93,7 +99,7 @@ export const useCheckUpdate = () => {
 
     const msgReactive = message.loading('正在下载更新...', { duration: 0 });
 
-    await update.downloadAndInstall((event) => {
+    await update.download((event) => {
       switch (event.event) {
         case 'Started':
           msgReactive.content = `正在下载更新 (${filesize(event.data.contentLength ?? 0)})...`;
@@ -105,6 +111,29 @@ export const useCheckUpdate = () => {
       }
     });
 
+    // 检查是否有活跃任务，有则弹出确认
+    const [downloads, uploads] = await Promise.all([hasActiveDownloads(), getActiveUploads()]);
+    const hasActive = downloads || uploads.length > 0;
+
+    if (hasActive) {
+      const userConfirmed = await ask(
+        '当前有正在进行的传输任务，更新将暂停所有任务并重启应用，确定继续？',
+        {
+          title: '提示',
+          kind: 'warning',
+          okLabel: '确定',
+          cancelLabel: '取消',
+        },
+      );
+      if (!userConfirmed) return;
+    }
+
+    // 暂停所有任务并停止 aria2，避免进程占用导致 Windows 安装失败
+    const { pauseAllTasks: pauseAllDownloads } = useDownloadManager();
+    const { pauseAllTasks: pauseAllUploads } = useUploadManager();
+    await Promise.all([pauseAllDownloads(), pauseAllUploads()]);
+    await invoke('stop_aria2');
+    await update.install();
     await relaunch();
   }
 

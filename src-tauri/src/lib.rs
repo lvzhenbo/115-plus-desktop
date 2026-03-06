@@ -107,6 +107,11 @@ fn get_port() -> u16 {
     *port
 }
 
+#[tauri::command]
+fn stop_aria2() -> Result<(), String> {
+    stop_aria2_service()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -216,6 +221,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_port,
+            stop_aria2,
             upload::compute_file_hash,
             upload::compute_partial_sha1,
             upload::upload_to_oss,
