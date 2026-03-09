@@ -51,6 +51,8 @@ export const useSettingStore = defineStore(
       autoCheckUpdate: true,
       /** 更新请求代理地址（留空不使用代理） */
       updateProxy: '',
+      /** 115接口速率限制（每秒请求数，0为不限制） */
+      apiRateLimit: 2,
     });
 
     const videoPlayerSetting = ref({

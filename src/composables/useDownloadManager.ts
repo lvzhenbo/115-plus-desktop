@@ -22,6 +22,7 @@ import {
   getIncompleteDownloads,
   getTopLevelDownloads,
 } from '@/db/downloads';
+import { sleep, isRateLimitError, getBackoffDelay } from '@/utils/rateLimit';
 
 /** 下载队列项 */
 interface DownloadQueueItem {
@@ -31,34 +32,8 @@ interface DownloadQueueItem {
   parentGid?: string;
 }
 
-/** 获取下载链接之间的最小延迟(ms) */
-const FETCH_DELAY = 2000;
-/** 文件夹列表请求之间的延迟(ms) */
-const FOLDER_LIST_DELAY = 1000;
-/** 限流退避基础延迟(ms) */
-const BACKOFF_BASE = 3000;
-/** 限流退避最大延迟(ms) */
-const BACKOFF_MAX = 60000;
 /** 状态轮询间隔(ms) */
 const POLL_INTERVAL = 2000;
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const isRateLimitError = (error: unknown): boolean => {
-  if (!error) return false;
-  const err = error as Record<string, unknown>;
-  if (err.status === 429 || err.statusCode === 429) return true;
-  if (err.code === 20130827 || err.errno === 20130827) return true;
-  const msg = String(err.message || err.msg || '');
-  if (/rate.?limit|too.?many|频繁|限流|请求过快/i.test(msg)) return true;
-  return false;
-};
-
-const getBackoffDelay = (retryCount: number): number => {
-  const delay = Math.min(BACKOFF_BASE * Math.pow(2, retryCount), BACKOFF_MAX);
-  const jitter = delay * 0.25 * (Math.random() * 2 - 1);
-  return Math.round(delay + jitter);
-};
 
 /**
  * 从 aria2 中清除已终结的任务记录
@@ -299,7 +274,6 @@ export const useDownloadManager = createSharedComposable(() => {
 
     for (const item of res.data) {
       if (item.fc === '0') {
-        await sleep(FOLDER_LIST_DELAY);
         await collectFolderFiles(item.fid, `${currentPath}/${item.fn}`, result);
       } else {
         result.push({ file: item, path: currentPath });
@@ -307,7 +281,6 @@ export const useDownloadManager = createSharedComposable(() => {
     }
 
     if (offset + res.data.length < res.count) {
-      await sleep(FOLDER_LIST_DELAY);
       await collectFolderFiles(folderId, currentPath, result, offset + 1150);
     }
   };
@@ -364,12 +337,9 @@ export const useDownloadManager = createSharedComposable(() => {
       while (downloadQueue.value.length > 0 || active.size > 0) {
         const maxConcurrent = settingStore.downloadSetting.maxConcurrent || 1;
 
-        // 填充并行槽位，每启动一个任务间隔 FETCH_DELAY 以避免请求过快
+        // 填充并行槽位（速率由全局令牌桶控制）
         while (downloadQueue.value.length > 0 && active.size < maxConcurrent) {
           const item = downloadQueue.value.shift()!;
-          if (active.size > 0) {
-            await sleep(FETCH_DELAY);
-          }
           const task = runItem(item).finally(() => active.delete(task));
           active.add(task);
         }
@@ -429,7 +399,6 @@ export const useDownloadManager = createSharedComposable(() => {
     for (const file of files) {
       if (file.fc === '0') {
         await enqueueFolder(file);
-        await sleep(FOLDER_LIST_DELAY);
       } else {
         enqueueFile(file);
       }

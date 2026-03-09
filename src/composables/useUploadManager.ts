@@ -15,6 +15,7 @@ import {
   type UploadFile,
 } from '@/db/uploads';
 import { listen } from '@tauri-apps/api/event';
+import { sleep, isRateLimitError, getBackoffDelay } from '@/utils/rateLimit';
 
 /** 上传队列项 */
 interface UploadQueueItem {
@@ -36,33 +37,8 @@ interface UploadQueueItem {
   ossUploadId?: string;
 }
 
-/** 队列处理延迟(ms) */
-const QUEUE_DELAY = 1000;
-
 /** 状态轮询间隔(ms) */
 const POLL_INTERVAL = 2000;
-/** 限流退避基础延迟(ms) */
-const BACKOFF_BASE = 3000;
-/** 限流退避最大延迟(ms) */
-const BACKOFF_MAX = 60000;
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const isRateLimitError = (error: unknown): boolean => {
-  if (!error) return false;
-  const err = error as Record<string, unknown>;
-  if (err.status === 429 || err.statusCode === 429) return true;
-  if (err.code === 20130827 || err.errno === 20130827) return true;
-  const msg = String(err.message || err.msg || '');
-  if (/rate.?limit|too.?many|频繁|限流|请求过快/i.test(msg)) return true;
-  return false;
-};
-
-const getBackoffDelay = (retryCount: number): number => {
-  const delay = Math.min(BACKOFF_BASE * Math.pow(2, retryCount), BACKOFF_MAX);
-  const jitter = delay * 0.25 * (Math.random() * 2 - 1);
-  return Math.round(delay + jitter);
-};
 
 const generateId = () => `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -373,11 +349,6 @@ export const useUploadManager = createSharedComposable(() => {
           parentCid = rootFolderCid;
         }
 
-        // 主动限流：每次调用前等待，避免触发接口限流
-        if (idx > 0) {
-          await sleep(QUEUE_DELAY);
-        }
-
         const cid = await createRemoteFolder(dirName, parentCid);
         dirCidMap.set(dirPath, cid);
       }
@@ -498,9 +469,6 @@ export const useUploadManager = createSharedComposable(() => {
             if (record && (record.status === 'paused' || record.status === 'cancelled')) {
               continue;
             }
-          }
-          if (active.size > 0) {
-            await sleep(QUEUE_DELAY);
           }
           const task = runItem(item).finally(() => active.delete(task));
           active.add(task);

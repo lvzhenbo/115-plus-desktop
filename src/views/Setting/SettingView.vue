@@ -28,6 +28,17 @@
               clearable
             />
           </NFormItem>
+          <NFormItem label="接口速率限制" path="generalSetting.apiRateLimit">
+            <NInputNumber
+              v-model:value="settingStore.generalSetting.apiRateLimit"
+              :min="0"
+              :max="20"
+              :step="1"
+              placeholder="0为不限制"
+            >
+              <template #suffix> 次/秒 </template>
+            </NInputNumber>
+          </NFormItem>
         </NForm>
       </NTabPane>
       <NTabPane name="videoPlayerSetting" tab="视频播放器设置">

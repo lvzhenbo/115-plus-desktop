@@ -7,6 +7,7 @@ import type { DeviceCodeToTokenResponseData } from '@/api/types/user';
 import { refreshToken } from '@/api/user';
 import adapterFetch from 'alova/fetch';
 import { useSettingStoreWithOut } from '@/store/setting';
+import { createRateLimiter, sleep, getBackoffDelay, MAX_RATE_LIMIT_RETRY } from '@/utils/rateLimit';
 
 export interface ResponseData<T> {
   state: 0 | 1 | boolean;
@@ -20,6 +21,8 @@ export interface ResponseData<T> {
 const message = useMessage();
 const userStore = useUserStoreWithOut();
 const settingStore = useSettingStoreWithOut();
+
+const apiLimiter = createRateLimiter(() => settingStore.generalSetting.apiRateLimit);
 
 const { onAuthRequired, onResponseRefreshToken } = createServerTokenAuthentication({
   refreshTokenOnSuccess: {
@@ -60,7 +63,12 @@ const { onAuthRequired, onResponseRefreshToken } = createServerTokenAuthenticati
 export const alovaInst = createAlova({
   requestAdapter: adapterTauriFetch(),
   timeout: 40000,
-  beforeRequest: onAuthRequired((method) => {
+  beforeRequest: onAuthRequired(async (method) => {
+    // 对非认证请求进行令牌桶限流
+    const authRole = method.meta?.authRole;
+    if (authRole === undefined) {
+      await apiLimiter.acquire();
+    }
     console.log(method);
   }),
   responded: onResponseRefreshToken({
@@ -70,6 +78,21 @@ export const alovaInst = createAlova({
       }
       const json: ResponseData<unknown> = await response.clone().json();
       console.log(json);
+
+      // 限流自动重试（在通用错误处理之前拦截）
+      if (json.code === 20130827 || json.errno === 20130827) {
+        const retryCount =
+          ((_method.meta as Record<string, unknown> | undefined)?.__rateLimitRetry as number) || 0;
+        if (retryCount < MAX_RATE_LIMIT_RETRY) {
+          _method.meta = { ...(_method.meta || {}), __rateLimitRetry: retryCount + 1 };
+          const delay = getBackoffDelay(retryCount);
+          console.warn(`[限流] ${delay / 1000}s 后重试第 ${retryCount + 1} 次: ${_method.url}`);
+          await sleep(delay);
+          return _method.send();
+        }
+        // 超过重试次数，直接抛出（不弹 message，由调用方处理）
+        throw json;
+      }
 
       if (!json.state) {
         if (json.code === 40199002) {
