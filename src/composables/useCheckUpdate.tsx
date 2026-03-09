@@ -157,8 +157,8 @@ export const useCheckUpdate = () => {
 
       if (silent) {
         const n = notification.info({
-          title: `发现新版本 v${update.version}`,
-          content: renderBody(update.body),
+          title: '发现新版本！',
+          description: `v${update.version}`,
           action: () => (
             <NButton
               type="primary"
@@ -168,7 +168,7 @@ export const useCheckUpdate = () => {
                 confirmAndInstall(update);
               }}
             >
-              点击更新
+              查看详情
             </NButton>
           ),
         });
