@@ -1,11 +1,15 @@
 <template>
-  <NModal v-model:show="show" preset="card" class="w-100!" title="重命名">
-    <NInput
-      v-model:value="name"
-      maxlength="255"
-      :allow-input="noSideSpace"
-      placeholder="请输入名称"
-    />
+  <NModal v-model:show="show" preset="card" class="w-150!" title="重命名">
+    <NInputGroup>
+      <NInput
+        v-model:value="name"
+        maxlength="255"
+        :allow-input="noSideSpace"
+        placeholder="请输入名称"
+        clearable
+      />
+      <NButton type="primary" @click="name = rawName">重置</NButton>
+    </NInputGroup>
     <template #action>
       <NSpace justify="end">
         <NButton @click="show = false">取消</NButton>
@@ -31,13 +35,14 @@
   const emits = defineEmits(['success']);
 
   const name = ref('');
+  const rawName = computed(() => props.file?.fn || '');
   const message = useMessage();
 
   watch(show, (val) => {
     if (!val) {
       name.value = '';
     } else {
-      name.value = props.file!.fn;
+      name.value = props.file?.fn || '';
     }
   });
 
