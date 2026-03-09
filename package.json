@@ -42,10 +42,10 @@
     "marked": "^17.0.4",
     "media-captions": "^0.0.18",
     "motion-v": "^2.0.0",
-    "naive-ui": "^2.43.2",
+    "naive-ui": "^2.44.1",
     "pinia": "^3.0.4",
     "radash": "^12.1.1",
-    "vue": "^3.5.29",
+    "vue": "^3.5.30",
     "vue-router": "^5.0.3"
   },
   "devDependencies": {
@@ -58,15 +58,15 @@
     "@tailwindcss/vite": "^4.2.1",
     "@tauri-apps/cli": "^2.10.1",
     "@tsconfig/node24": "^24.0.4",
-    "@types/node": "^25.3.3",
+    "@types/node": "^25.3.5",
     "@vitejs/plugin-vue": "^6.0.4",
     "@vitejs/plugin-vue-jsx": "^5.1.4",
     "@vue/eslint-config-prettier": "^10.2.0",
     "@vue/eslint-config-typescript": "^14.7.0",
     "@vue/tsconfig": "^0.9.0",
-    "@zip.js/zip.js": "^2.8.22",
+    "@zip.js/zip.js": "^2.8.23",
     "axios": "^1.13.6",
-    "eslint": "^10.0.2",
+    "eslint": "^10.0.3",
     "eslint-plugin-vue": "^10.8.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.3.2",
@@ -82,5 +82,5 @@
     "vue-eslint-parser": "^10.4.0",
     "vue-tsc": "^3.2.5"
   },
-  "packageManager": "pnpm@10.30.3"
+  "packageManager": "pnpm@10.31.0"
 }
