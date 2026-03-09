@@ -1,5 +1,18 @@
 # 更新日志
 
+## [1.0.6](https://github.com/lvzhenbo/115-plus-desktop/compare/v1.0.5...v1.0.6) (2026-03-09)
+
+### ✨ 新功能
+
+- 优化重命名模态框，增加重置按钮并调整输入框样式 ([638f5b3](https://github.com/lvzhenbo/115-plus-desktop/commit/638f5b31453c2f80c7d4935a08562a7baec338a7))
+- 在搜索模态中添加高亮显示功能，支持根据搜索值高亮文件名 ([9587c44](https://github.com/lvzhenbo/115-plus-desktop/commit/9587c4411934e598e3f4311d6c57d19502fcbcc1))
+- 统一接口速率限制功能，添加接口速率限制设置，支持动态调整请求频率 ([659cc17](https://github.com/lvzhenbo/115-plus-desktop/commit/659cc17b7c6bbec4fdb5ac8e983d03053ddb0c7c))
+
+### 🔧 其他更新
+
+- 更新依赖 ([f80cdd5](https://github.com/lvzhenbo/115-plus-desktop/commit/f80cdd56393ce611c01a1f56900dc6e27857a1ea))
+- 添加组件名强制使用 PascalCase 的 ESLint 规则 ([78638d1](https://github.com/lvzhenbo/115-plus-desktop/commit/78638d173bc8e5b4b927e5861d37ac10b03a1bb3))
+
 ## [1.0.5](https://github.com/lvzhenbo/115-plus-desktop/compare/v1.0.4...v1.0.5) (2026-03-06)
 
 ### 🐛 Bug 修复
