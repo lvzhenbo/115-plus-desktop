@@ -65,6 +65,13 @@ export default defineConfigWithVueTs(
           math: 'always',
         },
       ],
+      // 组件名强制使用 PascalCase https://eslint.vuejs.org/rules/component-name-in-template-casing.html
+      'vue/component-name-in-template-casing': [
+        'warn',
+        'PascalCase',
+        // 自动导入兼容
+        { registeredComponentsOnly: false },
+      ],
     },
   },
   prettierConfig,
