@@ -83,6 +83,11 @@
           width: 'trigger',
         },
       },
+      render(row) {
+        return (
+          <NHighlight text={row.file_name} patterns={[searchParams.search_value]} autoEscape />
+        );
+      },
     },
     {
       title: '种类',
