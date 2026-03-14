@@ -523,29 +523,23 @@
 
   // ============ 键盘快捷键 ============
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+  onKeyStroke(['a', 'A'], (e) => {
+    if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       selectAll();
     }
-    if (e.key === 'Delete') {
-      if (selectedItems.value.size > 0) {
-        ids.value = Array.from(selectedItems.value).join(',');
-        handleDelete();
-      }
-    }
-    if (e.key === 'F5') {
-      e.preventDefault();
-      getFileList();
-    }
-  }
-
-  onMounted(() => {
-    document.addEventListener('keydown', handleKeydown);
   });
 
-  onUnmounted(() => {
-    document.removeEventListener('keydown', handleKeydown);
+  onKeyStroke('Delete', () => {
+    if (selectedItems.value.size > 0) {
+      ids.value = Array.from(selectedItems.value).join(',');
+      handleDelete();
+    }
+  });
+
+  onKeyStroke('F5', (e) => {
+    e.preventDefault();
+    getFileList();
   });
 
   // ============ 对外暴露 ============

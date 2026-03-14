@@ -647,26 +647,26 @@
 
   // 单击/双击处理：使用计数器区分单击与双击
   let clickCount = 0;
-  let clickTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const handleClick = () => {
-    if (!videoRef.value || !file.value) return;
-    clickCount++;
-    if (clickTimer) clearTimeout(clickTimer);
-    clickTimer = setTimeout(() => {
+  const { start: startClickTimer, stop: stopClickTimer } = useTimeoutFn(
+    () => {
       if (clickCount === 1) {
         playing.value = !playing.value;
       }
       clickCount = 0;
-    }, 250);
+    },
+    250,
+    { immediate: false },
+  );
+
+  const handleClick = () => {
+    if (!videoRef.value || !file.value) return;
+    clickCount++;
+    stopClickTimer();
+    startClickTimer();
   };
 
   const handleDblClick = () => {
-    // 清除单击计时器，防止双击时触发暂停
-    if (clickTimer) {
-      clearTimeout(clickTimer);
-      clickTimer = null;
-    }
+    stopClickTimer();
     clickCount = 0;
     toggleFullscreen();
   };
