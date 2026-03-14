@@ -1,5 +1,25 @@
 # 更新日志
 
+## [1.0.7](https://github.com/lvzhenbo/115-plus-desktop/compare/v1.0.6...v1.0.7) (2026-03-14)
+
+### ✨ 新功能
+
+- 将侧栏折叠功能移到头部，减少误触 ([e909222](https://github.com/lvzhenbo/115-plus-desktop/commit/e90922284104eab271eb5eec107ffaeac60e3cb1))
+
+### 🐛 Bug 修复
+
+- 修复数据库迁移SQL语句的格式 ([6cb6e1b](https://github.com/lvzhenbo/115-plus-desktop/commit/6cb6e1b56d878d9336f5665df41df80b8eb7e5a8))
+- 修复空状态组件的居中显示 ([1dcaf8f](https://github.com/lvzhenbo/115-plus-desktop/commit/1dcaf8f40409deea71f4e9a6a4d38cfb8ac7fc4c))
+
+### ♻️ 代码重构
+
+- 使用vueuse优化键盘快捷键处理和单击计时器逻辑 ([16048fd](https://github.com/lvzhenbo/115-plus-desktop/commit/16048fdddaa4f0989b9d9d217d0a3fb222ad4895))
+- 简化更新提示弹窗 ([d6e1ec3](https://github.com/lvzhenbo/115-plus-desktop/commit/d6e1ec3eac4b269b858020237fade93fdc548f5e))
+
+### 🔧 其他更新
+
+- 更新依赖，使用undici代替axios ([c006883](https://github.com/lvzhenbo/115-plus-desktop/commit/c006883c57f1c2508c128d75c57fd4c0e24ae7a1))
+
 ## [1.0.6](https://github.com/lvzhenbo/115-plus-desktop/compare/v1.0.5...v1.0.6) (2026-03-09)
 
 ### ✨ 新功能
