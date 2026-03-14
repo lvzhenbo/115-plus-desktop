@@ -60,11 +60,15 @@
       @toggle-select-all="emit('toggleSelectAll')"
     />
 
-    <NSpin :show="loading" class="flex-1 overflow-hidden" content-class="h-full">
-      <NScrollbar class="h-full">
-        <!-- 空状态 -->
-        <NEmpty v-if="!loading && items.length === 0" description="当前文件夹为空" class="py-16" />
+    <!-- 空状态 -->
+    <NEmpty
+      v-if="!loading && items.length === 0"
+      description="当前文件夹为空"
+      class="flex-1 flex justify-center items-center"
+    />
 
+    <NSpin v-else :show="loading" class="flex-1 overflow-hidden" content-class="h-full">
+      <NScrollbar class="h-full">
         <!-- 网格视图 -->
         <div
           v-if="viewMode === 'grid' && items.length > 0"
