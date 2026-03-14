@@ -1,9 +1,63 @@
-import axios from 'axios';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { ZipReader, BlobReader, BlobWriter } from '@zip.js/zip.js';
 import { mkdir } from 'fs/promises';
+import { ProxyAgent, fetch as undiciFetch, type RequestInit } from 'undici';
+
+// 从环境变量读取代理配置，或自己修改为你需要的代理地址
+const proxyUrl =
+  process.env.HTTPS_PROXY ||
+  process.env.https_proxy ||
+  process.env.HTTP_PROXY ||
+  process.env.http_proxy;
+const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
+if (proxyUrl) {
+  console.log(`🌐 使用代理: ${proxyUrl}`);
+}
+
+// 带重试的 fetch，处理 GitHub API 速率限制 (403/429)
+async function fetchWithRetry(
+  url: string,
+  options?: RequestInit,
+  maxRetries = 3,
+): Promise<import('undici').Response> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const response = await undiciFetch(url, { dispatcher, ...options });
+
+    if (response.status !== 403 && response.status !== 429) {
+      return response;
+    }
+
+    // 非速率限制的 403 直接抛出
+    const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
+    if (response.status === 403 && rateLimitRemaining !== '0') {
+      return response;
+    }
+
+    if (attempt === maxRetries) {
+      return response;
+    }
+
+    // 计算等待时间
+    let waitSeconds: number;
+    const retryAfter = response.headers.get('retry-after');
+    const rateLimitReset = response.headers.get('x-ratelimit-reset');
+
+    if (retryAfter) {
+      waitSeconds = parseInt(retryAfter, 10) || 60;
+    } else if (rateLimitReset) {
+      waitSeconds = Math.max(0, parseInt(rateLimitReset, 10) - Math.floor(Date.now() / 1000)) + 1;
+    } else {
+      waitSeconds = 60;
+    }
+
+    console.log(`⏳ GitHub API 速率限制，${waitSeconds}秒后重试 (${attempt + 1}/${maxRetries})...`);
+    await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+  }
+
+  throw new Error('重试次数已耗尽');
+}
 
 // 定义GitHub API响应的类型
 interface GitHubAsset {
@@ -81,11 +135,15 @@ const githubApiUrl = 'https://api.github.com/repos/aria2/aria2/releases/latest';
 async function downloadLatestAria2() {
   try {
     console.log('📥 获取aria2最新版本信息...');
-    const response = await axios.get<GitHubRelease>(githubApiUrl);
-    const latestVersion = response.data.tag_name;
+    const response = await fetchWithRetry(githubApiUrl);
+    if (!response.ok) {
+      throw new Error(`GitHub API 请求失败: ${response.status} ${response.statusText}`);
+    }
+    const data = (await response.json()) as GitHubRelease;
+    const latestVersion = data.tag_name;
     console.log(`🔍 找到最新版本: ${latestVersion}`);
 
-    const assets = response.data.assets;
+    const assets = data.assets;
 
     // 筛选Windows 64位平台的资源
     let win64Asset: GitHubAsset | null = null;
@@ -120,12 +178,12 @@ async function processAsset(asset: GitHubAsset, platform: string, rustTriple: st
 
     // 下载文件
     console.log(`🔗 下载: ${asset.name} 从 ${asset.browser_download_url}`);
-    const downloadResponse = await axios({
-      method: 'get',
-      url: asset.browser_download_url,
-      responseType: 'arraybuffer',
-      timeout: 1000 * 60 * 1,
+    const downloadResponse = await fetchWithRetry(asset.browser_download_url, {
+      signal: AbortSignal.timeout(1000 * 60 * 1),
     });
+    if (!downloadResponse.ok) {
+      throw new Error(`下载失败: ${downloadResponse.status} ${downloadResponse.statusText}`);
+    }
 
     const tempDir = path.join(__dirname, 'temp');
     if (!fs.existsSync(tempDir)) {
@@ -134,7 +192,8 @@ async function processAsset(asset: GitHubAsset, platform: string, rustTriple: st
 
     // 保存文件
     const downloadPath = path.join(tempDir, asset.name);
-    fs.writeFileSync(downloadPath, Buffer.from(downloadResponse.data));
+    const arrayBuffer = await downloadResponse.arrayBuffer();
+    fs.writeFileSync(downloadPath, Buffer.from(arrayBuffer));
     console.log(`✅ 下载完成: ${downloadPath}`);
 
     // 提取文件
