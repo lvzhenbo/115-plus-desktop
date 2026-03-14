@@ -3,7 +3,6 @@
     <NLayoutSider
       v-model:collapsed="collapsed"
       bordered
-      show-trigger
       collapse-mode="width"
       :width="180"
       :collapsed-width="66"
@@ -70,15 +69,24 @@
     </NLayoutSider>
     <NLayout>
       <NLayoutHeader bordered>
-        <div class="px-6 py-3 flex items-center justify-between">
-          <NButton type="primary" @click="offlineDownloadShow = true">
-            <template #icon>
-              <NIcon>
-                <LinkOutlined />
-              </NIcon>
-            </template>
-            离线下载
-          </NButton>
+        <div class="px-4 py-3 flex items-center justify-between">
+          <NSpace>
+            <NButton quaternary circle @click="collapsed = !collapsed">
+              <template #icon>
+                <NIcon>
+                  <component :is="collapsed ? MenuUnfoldOutlined : MenuFoldOutlined" />
+                </NIcon>
+              </template>
+            </NButton>
+            <NButton type="primary" @click="offlineDownloadShow = true">
+              <template #icon>
+                <NIcon>
+                  <LinkOutlined />
+                </NIcon>
+              </template>
+              离线下载
+            </NButton>
+          </NSpace>
           <NButton round secondary @click="searchShow = true">
             <template #icon>
               <NIcon>
@@ -93,8 +101,8 @@
         <RouterView v-slot="{ Component }">
           <Transition
             mode="out-in"
-            enter-active-class="transition-opacity duration-200 ease-in-out"
-            leave-active-class="transition-opacity duration-200 ease-in-out"
+            enter-active-class="transition-opacity duration-200"
+            leave-active-class="transition-opacity duration-200"
             enter-from-class="opacity-0"
             leave-from-class="opacity-100"
             enter-to-class="opacity-100"
@@ -126,6 +134,8 @@
     UploadOutlined,
     SearchOutlined,
     InfoCircleOutlined,
+    MenuFoldOutlined,
+    MenuUnfoldOutlined,
   } from '@vicons/antd';
   import OfflineDownloadModal from './components/OfflineDownloadModal/OfflineDownloadModal.vue';
   import SearchModal from './components/SearchModal/SearchModal.vue';
