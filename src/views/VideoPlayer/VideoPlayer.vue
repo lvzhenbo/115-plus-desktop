@@ -16,9 +16,10 @@
         ></video>
         <!-- 视频加载中 -->
         <AnimatePresence>
-          <motion.div
+          <div
             v-if="waiting || seeking"
             key="loading"
+            v-motion
             :animate="{ opacity: 1 }"
             :initial="{ opacity: 0 }"
             :exit="{ opacity: 0 }"
@@ -27,13 +28,14 @@
           >
             <NSpin size="large" />
             <span class="text-sm">加载中...</span>
-          </motion.div>
+          </div>
         </AnimatePresence>
         <!-- 视频标题 -->
         <AnimatePresence>
-          <motion.div
+          <div
             v-if="controlsVisible && file"
             key="title"
+            v-motion
             :animate="{ opacity: 1, y: 0 }"
             :initial="{ opacity: 0, y: -20 }"
             :exit="{ opacity: 0, y: -20 }"
@@ -42,7 +44,7 @@
             <NEllipsis class="text-white text-sm font-medium">
               {{ file.fn }}
             </NEllipsis>
-          </motion.div>
+          </div>
         </AnimatePresence>
         <!-- 字幕显示层 -->
         <SubtitleLayer
@@ -54,10 +56,11 @@
         />
         <!-- 视频控制条 -->
         <AnimatePresence>
-          <motion.div
+          <div
             v-if="controlsVisible"
             key="controls"
             ref="controlsRef"
+            v-motion
             :animate="{ opacity: 1, y: 0 }"
             :initial="{ opacity: 0, y: 20 }"
             :exit="{ opacity: 0, y: 20 }"
@@ -75,11 +78,6 @@
                 @mouseenter="showTooltip = true"
                 @mouseleave="showTooltip = false"
               >
-                <!-- 缓冲进度条 -->
-                <div
-                  class="h-full bg-white/30 rounded absolute top-0 left-0 transition-[width] duration-200"
-                  :style="{ width: `${bufferedProgress}%` }"
-                ></div>
                 <!-- 播放进度条 -->
                 <NEl
                   class="h-full bg-(--primary-color) rounded absolute top-0 left-0"
@@ -192,7 +190,7 @@
                 </NButton>
               </div>
             </div>
-          </motion.div>
+          </div>
         </AnimatePresence>
       </div>
     </div>
@@ -229,7 +227,7 @@
   import VideoListDrawer from './components/VideoListDrawer/VideoListDrawer.vue';
   import SubtitleLayer from './components/SubtitleLayer/SubtitleLayer.vue';
   import { useSettingStore } from '@/store/setting';
-  import { motion } from 'motion-v';
+  import { vMotion } from 'motion-v';
 
   const settingStore = useSettingStore();
   const { height } = useWindowSize();
@@ -283,14 +281,6 @@
   const MAX_RECOVERY_ATTEMPTS = 3;
   let networkRecoveryAttempts = 0;
   let mediaRecoveryAttempts = 0;
-
-  // 缓冲进度
-  const bufferedProgress = computed(() => {
-    if (!videoRef.value || !duration.value) return 0;
-    const buffered = videoRef.value.buffered;
-    if (buffered.length === 0) return 0;
-    return (buffered.end(buffered.length - 1) / duration.value) * 100;
-  });
 
   // 播放进度百分比
   const progress = computed(() => {
