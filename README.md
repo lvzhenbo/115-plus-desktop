@@ -139,8 +139,22 @@ pnpm tauri:dev
 ### 构建
 
 ```bash
+# 先生成签名
+pnpm tauri signer generate -w ~/.tauri/myapp.key
+# 然后将签名私钥放到环境变量中，公钥放到tauri.conf.json中
+export TAURI_SIGNING_PRIVATE_KEY="私钥路径或者私钥内容"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="如果有密码"
+
 pnpm tauri:build
 ```
+
+## 交流
+
+QQ群：[978180785](https://qm.qq.com/q/s2vhxOL8uk)
+
+## 致谢
+
+感谢 [LINUX DO](https://linux.do/) 的佬友的支持。
 
 ## 许可证
 
