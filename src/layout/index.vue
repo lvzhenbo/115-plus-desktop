@@ -8,7 +8,7 @@
       :collapsed-width="66"
       :native-scrollbar="false"
     >
-      <NPopover placement="right-start" class="w-96">
+      <NPopover placement="right-start" class="w-96" :delay="500">
         <template #trigger>
           <NEl
             class="cursor-pointer transition duration-300 px-4 py-2 hover:bg-(--hover-color) rounded-(--border-radius)"
