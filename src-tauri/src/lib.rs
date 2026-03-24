@@ -65,10 +65,9 @@ pub fn run() {
 fn show_window(app: &AppHandle) {
     let windows = app.webview_windows();
 
-    windows
-        .values()
-        .next()
-        .expect("Sorry, no window found")
-        .set_focus()
-        .expect("Can't Bring Window to Focus");
+    if let Some(window) = windows.values().next() {
+        if let Err(e) = window.set_focus() {
+            eprintln!("无法将窗口置于焦点: {}", e);
+        }
+    }
 }

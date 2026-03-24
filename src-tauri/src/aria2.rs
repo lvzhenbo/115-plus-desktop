@@ -32,7 +32,9 @@ fn find_available_port(start_port: u16) -> Option<u16> {
 // 启动 aria2c RPC 服务
 pub fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
     // 确保服务没有重复启动
-    let mut process = ARIA2_PROCESS.lock().unwrap();
+    let mut process = ARIA2_PROCESS
+        .lock()
+        .map_err(|e| format!("无法获取 aria2c 进程锁: {}", e))?;
     if process.is_some() {
         return Ok(());
     }
@@ -43,7 +45,9 @@ pub fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
 
     // 更新全局端口变量
     {
-        let mut aria2_port = ARIA2_PORT.lock().unwrap();
+        let mut aria2_port = ARIA2_PORT
+            .lock()
+            .map_err(|e| format!("无法获取端口锁: {}", e))?;
         *aria2_port = port;
     }
 
@@ -85,7 +89,9 @@ pub fn start_aria2_service(app: &AppHandle) -> Result<(), String> {
 
 // 停止 aria2c 服务
 pub fn stop_aria2_service() -> Result<(), String> {
-    let mut process = ARIA2_PROCESS.lock().unwrap();
+    let mut process = ARIA2_PROCESS
+        .lock()
+        .map_err(|e| format!("无法获取 aria2c 进程锁: {}", e))?;
     if let Some(child) = process.take() {
         child
             .kill()
@@ -97,7 +103,7 @@ pub fn stop_aria2_service() -> Result<(), String> {
 
 #[tauri::command]
 pub fn get_port() -> u16 {
-    let port = ARIA2_PORT.lock().unwrap();
+    let port = ARIA2_PORT.lock().unwrap_or_else(|e| e.into_inner());
     *port
 }
 

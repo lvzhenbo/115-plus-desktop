@@ -140,7 +140,9 @@ pub async fn upload_to_oss(
 ) -> Result<String, String> {
     let (tx, rx) = watch::channel(UploadSignal::Running);
     {
-        let mut signals = UPLOAD_SIGNALS.lock().unwrap();
+        let mut signals = UPLOAD_SIGNALS
+            .lock()
+            .map_err(|e| format!("无法获取上传信号锁: {}", e))?;
         signals.insert(upload_id.clone(), tx);
     }
 
@@ -164,7 +166,9 @@ pub async fn upload_to_oss(
 
     // 清理信号
     {
-        let mut signals = UPLOAD_SIGNALS.lock().unwrap();
+        let mut signals = UPLOAD_SIGNALS
+            .lock()
+            .map_err(|e| format!("无法获取上传信号锁: {}", e))?;
         signals.remove(&upload_id);
     }
 
@@ -174,7 +178,9 @@ pub async fn upload_to_oss(
 /// 暂停上传任务
 #[tauri::command]
 pub fn pause_upload(upload_id: String) -> Result<(), String> {
-    let signals = UPLOAD_SIGNALS.lock().unwrap();
+    let signals = UPLOAD_SIGNALS
+        .lock()
+        .map_err(|e| format!("无法获取上传信号锁: {}", e))?;
     if let Some(tx) = signals.get(&upload_id) {
         tx.send(UploadSignal::Paused)
             .map_err(|e| format!("发送暂停信号失败: {}", e))?;
@@ -187,7 +193,9 @@ pub fn pause_upload(upload_id: String) -> Result<(), String> {
 /// 取消上传任务
 #[tauri::command]
 pub fn cancel_upload(upload_id: String) -> Result<(), String> {
-    let signals = UPLOAD_SIGNALS.lock().unwrap();
+    let signals = UPLOAD_SIGNALS
+        .lock()
+        .map_err(|e| format!("无法获取上传信号锁: {}", e))?;
     if let Some(tx) = signals.get(&upload_id) {
         tx.send(UploadSignal::Cancelled)
             .map_err(|e| format!("发送取消信号失败: {}", e))?;
@@ -560,7 +568,9 @@ async fn simple_upload(
 /// 恢复上传任务信号为运行状态
 #[tauri::command]
 pub fn resume_upload(upload_id: String) -> Result<(), String> {
-    let signals = UPLOAD_SIGNALS.lock().unwrap();
+    let signals = UPLOAD_SIGNALS
+        .lock()
+        .map_err(|e| format!("无法获取上传信号锁: {}", e))?;
     if let Some(tx) = signals.get(&upload_id) {
         tx.send(UploadSignal::Running)
             .map_err(|e| format!("发送恢复信号失败: {}", e))?;
