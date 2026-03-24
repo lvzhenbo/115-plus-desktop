@@ -1,4 +1,6 @@
 import fs from 'fs';
+import os from 'os';
+import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { ZipReader, BlobReader, BlobWriter } from '@zip.js/zip.js';
@@ -124,7 +126,35 @@ if (!fs.existsSync(binariesDir)) {
   fs.mkdirSync(binariesDir, { recursive: true });
 }
 
-// Rust目标平台映射表
+// 平台检测
+const currentPlatform = os.platform();
+const currentArch = os.arch();
+
+const tripleMap: Record<string, Record<string, { triple: string; ext: string }>> = {
+  win32: { x64: { triple: 'x86_64-pc-windows-msvc', ext: '.exe' } },
+  darwin: {
+    arm64: { triple: 'aarch64-apple-darwin', ext: '' },
+    x64: { triple: 'x86_64-apple-darwin', ext: '' },
+  },
+  linux: { x64: { triple: 'x86_64-unknown-linux-gnu', ext: '' } },
+};
+
+const currentPlatformInfo = tripleMap[currentPlatform]?.[currentArch];
+if (!currentPlatformInfo) {
+  console.error(`❌ 不支持的平台: ${currentPlatform}-${currentArch}`);
+  process.exit(1);
+}
+
+const currentTargetFileName = `aria2c-${currentPlatformInfo.triple}${currentPlatformInfo.ext}`;
+const currentTargetPath = path.join(binariesDir, currentTargetFileName);
+
+// 如果目标文件已存在，则跳过
+if (fs.existsSync(currentTargetPath)) {
+  console.log(`✅ aria2c 已存在: ${currentTargetPath}`);
+  process.exit(0);
+}
+
+// Rust目标平台映射表 (Windows 下载用)
 const platformMap = {
   'windows-win64': 'x86_64-pc-windows-msvc', // Windows 64位
 };
@@ -264,13 +294,43 @@ function cleanup() {
   }
 }
 
-// 启动下载
-downloadLatestAria2()
-  .then(() => {
-    cleanup();
-    console.log('🎉 任务完成!');
-  })
-  .catch((err) => {
-    console.error('❌ 出错:', err);
+// 从系统复制 aria2c (macOS/Linux)
+async function copySystemAria2() {
+  try {
+    const aria2Path = execSync('which aria2c', { encoding: 'utf-8' }).trim();
+    console.log(`🔍 找到系统 aria2c: ${aria2Path}`);
+    fs.copyFileSync(aria2Path, currentTargetPath);
+    fs.chmodSync(currentTargetPath, 0o755);
+    console.log(`✅ 已复制到: ${currentTargetPath}`);
+  } catch {
+    const installCmd =
+      currentPlatform === 'darwin' ? 'brew install aria2' : 'sudo apt-get install aria2';
+    console.error(`❌ 未找到系统安装的 aria2c。请先安装:`);
+    console.error(`   ${installCmd}`);
     process.exit(1);
-  });
+  }
+}
+
+// 根据平台选择获取方式
+if (currentPlatform === 'win32') {
+  // Windows: 从 GitHub 下载预编译版本
+  downloadLatestAria2()
+    .then(() => {
+      cleanup();
+      console.log('🎉 任务完成!');
+    })
+    .catch((err) => {
+      console.error('❌ 出错:', err);
+      process.exit(1);
+    });
+} else {
+  // macOS/Linux: 复制系统安装的 aria2c
+  copySystemAria2()
+    .then(() => {
+      console.log('🎉 任务完成!');
+    })
+    .catch((err) => {
+      console.error('❌ 出错:', err);
+      process.exit(1);
+    });
+}
