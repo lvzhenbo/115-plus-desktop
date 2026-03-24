@@ -44,6 +44,7 @@
   import type { FileDetail, FileSearchRequestParams, SearchFile } from '@/api/types/file';
   import type { DataTableColumns, SelectOption } from 'naive-ui';
   import { FolderOutlined, InfoCircleOutlined, SearchOutlined, ClearOutlined } from '@vicons/antd';
+  import { NHighlight } from 'naive-ui';
   import { fileDetail, fileSearch } from '@/api/file';
   import { format } from 'date-fns';
 

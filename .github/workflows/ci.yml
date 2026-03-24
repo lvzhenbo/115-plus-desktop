@@ -62,7 +62,7 @@ jobs:
         if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get install -y autoconf automake autopoint libtool pkg-config \
-            libssl-dev libc-ares-dev zlib1g-dev libssh2-1-dev
+            libssl-dev zlib1g-dev
 
       - name: Compile aria2 (Ubuntu)
         if: matrix.platform == 'ubuntu-latest'
@@ -73,7 +73,7 @@ jobs:
           ./configure ARIA2_STATIC=yes \
             --without-gnutls --with-openssl \
             --without-libxml2 --without-expat \
-            --without-libgcrypt --disable-nls
+            --without-libgcrypt --without-libssh2 --without-libcares --disable-nls
           make -j$(nproc)
           strip src/aria2c
           mkdir -p "$GITHUB_WORKSPACE/src-tauri/binaries"
@@ -94,12 +94,14 @@ jobs:
 
           ARCH_FLAGS=""
           HOST_FLAG=""
+          EXTRA_FLAGS=""
           if [[ "${{ matrix.aria2_triple }}" == "x86_64-apple-darwin" ]]; then
             ARCH_FLAGS="-arch x86_64"
             HOST_FLAG="--host=x86_64-apple-darwin --build=aarch64-apple-darwin"
+            EXTRA_FLAGS="--without-libssh2 --without-libcares"
           fi
 
-          ./configure $HOST_FLAG \
+          ./configure $HOST_FLAG $EXTRA_FLAGS \
             CFLAGS="$ARCH_FLAGS" CXXFLAGS="$ARCH_FLAGS" LDFLAGS="$ARCH_FLAGS" \
             --without-gnutls --without-openssl --with-appletls \
             --without-libxml2 --without-expat \
@@ -130,6 +132,7 @@ jobs:
             pkg-config
             make
             git
+            gettext-devel
 
       - name: Compile aria2 (Windows)
         if: matrix.platform == 'windows-latest'
