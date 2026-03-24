@@ -71,6 +71,9 @@ jobs:
           cd /tmp/aria2-build
           autoreconf -i
           ./configure ARIA2_STATIC=yes \
+            CFLAGS="-Os -ffunction-sections -fdata-sections" \
+            CXXFLAGS="-Os -ffunction-sections -fdata-sections" \
+            LDFLAGS="-Wl,--gc-sections" \
             --without-gnutls --with-openssl \
             --without-libxml2 --without-expat \
             --without-libgcrypt --without-libssh2 --without-libcares --disable-nls
@@ -94,18 +97,16 @@ jobs:
 
           ARCH_FLAGS=""
           HOST_FLAG=""
-          EXTRA_FLAGS=""
           if [[ "${{ matrix.aria2_triple }}" == "x86_64-apple-darwin" ]]; then
             ARCH_FLAGS="-arch x86_64"
             HOST_FLAG="--host=x86_64-apple-darwin --build=aarch64-apple-darwin"
-            EXTRA_FLAGS="--without-libssh2 --without-libcares"
           fi
 
-          ./configure $HOST_FLAG $EXTRA_FLAGS \
-            CFLAGS="$ARCH_FLAGS" CXXFLAGS="$ARCH_FLAGS" LDFLAGS="$ARCH_FLAGS" \
+          ./configure $HOST_FLAG \
+            CFLAGS="$ARCH_FLAGS -Os -fdata-sections" CXXFLAGS="$ARCH_FLAGS -Os -fdata-sections" LDFLAGS="$ARCH_FLAGS -Wl,-dead_strip" \
             --without-gnutls --without-openssl --with-appletls \
             --without-libxml2 --without-expat \
-            --without-libgcrypt --disable-nls
+            --without-libgcrypt --without-libssh2 --without-libcares --disable-nls
           make -j$(sysctl -n hw.ncpu)
           strip src/aria2c
           mkdir -p "$GITHUB_WORKSPACE/src-tauri/binaries"
@@ -142,6 +143,9 @@ jobs:
           cd /tmp/aria2-build
           autoreconf -i
           ./configure ARIA2_STATIC=yes \
+            CFLAGS="-Os -ffunction-sections -fdata-sections" \
+            CXXFLAGS="-Os -ffunction-sections -fdata-sections" \
+            LDFLAGS="-Wl,--gc-sections" \
             --without-gnutls --with-openssl \
             --without-libxml2 --with-expat \
             --with-libcares --without-libgcrypt --disable-nls
