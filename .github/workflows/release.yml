@@ -63,18 +63,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: "macos-latest"
-            args: "--target aarch64-apple-darwin"
-            aria2_triple: "aarch64-apple-darwin"
-          - platform: "macos-latest"
-            args: "--target x86_64-apple-darwin"
-            aria2_triple: "x86_64-apple-darwin"
-          - platform: "ubuntu-latest"
-            args: ""
-            aria2_triple: "x86_64-unknown-linux-gnu"
           - platform: "windows-latest"
             args: ""
-            aria2_triple: "x86_64-pc-windows-msvc"
 
     runs-on: ${{ matrix.platform }}
 
@@ -91,14 +81,6 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-      - name: Install Tauri dependencies (Ubuntu)
-        if: matrix.platform == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -106,99 +88,8 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      # ========= Compile aria2 from source =========
-
-      - name: Install aria2 build dependencies (Ubuntu)
-        if: matrix.platform == 'ubuntu-latest'
-        run: |
-          sudo apt-get install -y autoconf automake autopoint libtool pkg-config \
-            libssl-dev libc-ares-dev zlib1g-dev libssh2-1-dev
-
-      - name: Compile aria2 (Ubuntu)
-        if: matrix.platform == 'ubuntu-latest'
-        run: |
-          git clone --depth 1 https://github.com/aria2/aria2.git /tmp/aria2-build
-          cd /tmp/aria2-build
-          autoreconf -i
-          ./configure ARIA2_STATIC=yes \
-            --without-gnutls --with-openssl \
-            --without-libxml2 --without-expat \
-            --without-libgcrypt --disable-nls
-          make -j$(nproc)
-          strip src/aria2c
-          mkdir -p "$GITHUB_WORKSPACE/src-tauri/binaries"
-          cp src/aria2c "$GITHUB_WORKSPACE/src-tauri/binaries/aria2c-${{ matrix.aria2_triple }}"
-          chmod +x "$GITHUB_WORKSPACE/src-tauri/binaries/aria2c-${{ matrix.aria2_triple }}"
-
-      - name: Install aria2 build dependencies (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          brew install autoconf automake libtool pkg-config
-
-      - name: Compile aria2 (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          git clone --depth 1 https://github.com/aria2/aria2.git /tmp/aria2-build
-          cd /tmp/aria2-build
-          autoreconf -i
-
-          ARCH_FLAGS=""
-          HOST_FLAG=""
-          if [[ "${{ matrix.aria2_triple }}" == "x86_64-apple-darwin" ]]; then
-            ARCH_FLAGS="-arch x86_64"
-            HOST_FLAG="--host=x86_64-apple-darwin --build=aarch64-apple-darwin"
-          fi
-
-          ./configure $HOST_FLAG \
-            CFLAGS="$ARCH_FLAGS" CXXFLAGS="$ARCH_FLAGS" LDFLAGS="$ARCH_FLAGS" \
-            --without-gnutls --without-openssl --with-appletls \
-            --without-libxml2 --without-expat \
-            --without-libgcrypt --disable-nls
-          make -j$(sysctl -n hw.ncpu)
-          strip src/aria2c
-          mkdir -p "$GITHUB_WORKSPACE/src-tauri/binaries"
-          cp src/aria2c "$GITHUB_WORKSPACE/src-tauri/binaries/aria2c-${{ matrix.aria2_triple }}"
-          chmod +x "$GITHUB_WORKSPACE/src-tauri/binaries/aria2c-${{ matrix.aria2_triple }}"
-
-      - name: Setup MSYS2 (Windows)
-        if: matrix.platform == 'windows-latest'
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            base-devel
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-openssl
-            mingw-w64-x86_64-c-ares
-            mingw-w64-x86_64-libssh2
-            mingw-w64-x86_64-expat
-            mingw-w64-x86_64-zlib
-            autoconf
-            automake
-            libtool
-            pkg-config
-            make
-            git
-
-      - name: Compile aria2 (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: msys2 {0}
-        run: |
-          git clone --depth 1 https://github.com/aria2/aria2.git /tmp/aria2-build
-          cd /tmp/aria2-build
-          autoreconf -i
-          ./configure ARIA2_STATIC=yes \
-            --without-gnutls --with-openssl \
-            --without-libxml2 --with-expat \
-            --with-libcares --without-libgcrypt --disable-nls
-          make -j$(nproc)
-          strip src/aria2c.exe
-          WORKSPACE=$(cygpath "$GITHUB_WORKSPACE")
-          mkdir -p "$WORKSPACE/src-tauri/binaries"
-          cp src/aria2c.exe "$WORKSPACE/src-tauri/binaries/aria2c-${{ matrix.aria2_triple }}.exe"
-
-      # ========= Build Tauri App =========
+      - name: Execute get-aria2 script
+        run: pnpm get-aria2
 
       - name: Create .env.local file
         run: |
