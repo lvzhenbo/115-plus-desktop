@@ -69,7 +69,11 @@ pub async fn compute_file_hash(file_path: String) -> Result<FileHashResult, Stri
 
         let mut pre_hasher = Sha1::new();
         pre_hasher.update(&pre_buf);
-        let pre_sha1 = format!("{:X}", pre_hasher.finalize());
+        let pre_sha1: String = pre_hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{:02X}", b))
+            .collect();
 
         // 计算完整 SHA1
         file.seek(SeekFrom::Start(0))
@@ -86,7 +90,11 @@ pub async fn compute_file_hash(file_path: String) -> Result<FileHashResult, Stri
             }
             hasher.update(&buffer[..n]);
         }
-        let sha1 = format!("{:X}", hasher.finalize());
+        let sha1: String = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{:02X}", b))
+            .collect();
 
         Ok(FileHashResult { sha1, pre_sha1 })
     })
@@ -115,7 +123,11 @@ pub async fn compute_partial_sha1(
 
         let mut hasher = Sha1::new();
         hasher.update(&buf);
-        Ok(format!("{:X}", hasher.finalize()))
+        Ok(hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{:02X}", b))
+            .collect())
     })
     .await
     .map_err(|e| format!("计算部分哈希失败: {}", e))?
