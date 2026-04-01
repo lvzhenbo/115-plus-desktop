@@ -21,6 +21,7 @@ export type ToolbarAction =
   | 'download'
   | 'copy'
   | 'move'
+  | 'rename'
   | 'delete'
   | 'viewToggle';
 
@@ -33,6 +34,7 @@ export type ContextMenuAction =
   | 'copy'
   | 'move'
   | 'rename'
+  | 'batchRename'
   | 'detail'
   | 'delete';
 

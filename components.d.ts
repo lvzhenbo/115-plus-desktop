@@ -13,6 +13,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AnimatePresence: typeof import('motion-v')['AnimatePresence']
+    BatchRenameModal: typeof import('./src/components/BatchRenameModal/BatchRenameModal.vue')['default']
     DetailModal: typeof import('./src/components/DetailModal/DetailModal.vue')['default']
     ExplorerBreadcrumb: typeof import('./src/components/FileExplorer/components/ExplorerBreadcrumb/ExplorerBreadcrumb.vue')['default']
     ExplorerContextMenu: typeof import('./src/components/FileExplorer/components/ExplorerContextMenu/ExplorerContextMenu.vue')['default']
@@ -70,6 +71,7 @@ declare module 'vue' {
     NProgress: typeof import('naive-ui')['NProgress']
     NQrCode: typeof import('naive-ui')['NQrCode']
     NRadio: typeof import('naive-ui')['NRadio']
+    NRadioButton: typeof import('naive-ui')['NRadioButton']
     NRadioGroup: typeof import('naive-ui')['NRadioGroup']
     NScrollbar: typeof import('naive-ui')['NScrollbar']
     NSelect: typeof import('naive-ui')['NSelect']
@@ -93,6 +95,7 @@ declare module 'vue' {
 // For TSX support
 declare global {
   const AnimatePresence: typeof import('motion-v')['AnimatePresence']
+  const BatchRenameModal: typeof import('./src/components/BatchRenameModal/BatchRenameModal.vue')['default']
   const DetailModal: typeof import('./src/components/DetailModal/DetailModal.vue')['default']
   const ExplorerBreadcrumb: typeof import('./src/components/FileExplorer/components/ExplorerBreadcrumb/ExplorerBreadcrumb.vue')['default']
   const ExplorerContextMenu: typeof import('./src/components/FileExplorer/components/ExplorerContextMenu/ExplorerContextMenu.vue')['default']
@@ -150,6 +153,7 @@ declare global {
   const NProgress: typeof import('naive-ui')['NProgress']
   const NQrCode: typeof import('naive-ui')['NQrCode']
   const NRadio: typeof import('naive-ui')['NRadio']
+  const NRadioButton: typeof import('naive-ui')['NRadioButton']
   const NRadioGroup: typeof import('naive-ui')['NRadioGroup']
   const NScrollbar: typeof import('naive-ui')['NScrollbar']
   const NSelect: typeof import('naive-ui')['NSelect']

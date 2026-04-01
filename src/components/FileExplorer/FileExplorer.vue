@@ -17,6 +17,7 @@
       @batch-download="handleBatchDownload"
       @batch-copy="handleBatchCopy"
       @batch-move="handleBatchMove"
+      @batch-rename="handleBatchRename"
       @batch-delete="handleBatchDelete"
     />
 
@@ -72,6 +73,7 @@
       @copy="handleContextCopy"
       @move="handleContextMove"
       @rename="renameModalShow = true"
+      @batch-rename="handleBatchRename"
       @detail="handleDetail"
       @delete="handleContextDelete"
     />
@@ -87,6 +89,11 @@
     <RenameModal
       v-model:show="renameModalShow"
       :file="contextMenuState.targetItem"
+      @success="getFileList"
+    />
+    <BatchRenameModal
+      v-model:show="batchRenameModalShow"
+      :files="batchRenameFiles"
       @success="getFileList"
     />
     <NewFolderModal v-model:show="newFolderModalShow" :pid="params.cid!" @success="getFileList" />
@@ -118,6 +125,7 @@
     'download',
     'copy',
     'move',
+    'rename',
     'delete',
     'viewToggle',
   ];
@@ -130,6 +138,7 @@
     'copy',
     'move',
     'rename',
+    'batchRename',
     'detail',
     'delete',
   ];
@@ -221,6 +230,8 @@
   const folderModalShow = ref(false);
   const folderModalType = ref<'copy' | 'move'>('copy');
   const renameModalShow = ref(false);
+  const batchRenameModalShow = ref(false);
+  const batchRenameFiles = ref<MyFile[]>([]);
   const newFolderModalShow = ref(false);
   const ids = ref('');
 
@@ -477,6 +488,12 @@
   const handleBatchMove = () => {
     ids.value = Array.from(selectedItems.value).join(',');
     handleOpenFolderModal('move');
+  };
+
+  const handleBatchRename = () => {
+    batchRenameFiles.value = getSelectedFiles();
+    if (batchRenameFiles.value.length === 0) return;
+    batchRenameModalShow.value = true;
   };
 
   const handleBatchDelete = () => {

@@ -7,6 +7,7 @@
     DeleteOutlined,
     DownloadOutlined,
     UploadOutlined,
+    OrderedListOutlined,
   } from '@vicons/antd';
   import { DriveFileMoveOutlined, DriveFileRenameOutlineOutlined } from '@vicons/material';
   import type { DropdownOption } from 'naive-ui';
@@ -29,6 +30,7 @@
     download: [];
     uploadFile: [];
     rename: [];
+    batchRename: [];
     copy: [];
     move: [];
     delete: [];
@@ -101,6 +103,16 @@
         icon: () => (
           <NIcon>
             <DriveFileRenameOutlineOutlined />
+          </NIcon>
+        ),
+      },
+      {
+        label: '批量重命名',
+        key: 'batchRename',
+        disabled: !props.hasSelection,
+        icon: () => (
+          <NIcon>
+            <OrderedListOutlined />
           </NIcon>
         ),
       },
@@ -182,6 +194,7 @@
       copy: () => emit('copy'),
       move: () => emit('move'),
       rename: () => emit('rename'),
+      batchRename: () => emit('batchRename'),
       detail: () => emit('detail'),
       delete: () => emit('delete'),
     };

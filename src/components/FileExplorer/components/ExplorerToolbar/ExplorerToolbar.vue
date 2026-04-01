@@ -10,7 +10,7 @@
     AppstoreOutlined,
     UnorderedListOutlined,
   } from '@vicons/antd';
-  import { DriveFileMoveOutlined } from '@vicons/material';
+  import { DriveFileMoveOutlined, DriveFileRenameOutlineOutlined } from '@vicons/material';
   import type { DropdownOption } from 'naive-ui';
   import type { ViewMode, ToolbarAction } from '../../types';
 
@@ -32,6 +32,7 @@
     batchDownload: [];
     batchCopy: [];
     batchMove: [];
+    batchRename: [];
     batchDelete: [];
   }>();
 
@@ -148,6 +149,19 @@
         </NButton>
       </template>
       移动到
+    </NTooltip>
+
+    <NTooltip v-if="show.includes('rename')">
+      <template #trigger>
+        <NButton size="small" quaternary :disabled="!hasSelection" @click="emit('batchRename')">
+          <template #icon>
+            <NIcon>
+              <DriveFileRenameOutlineOutlined />
+            </NIcon>
+          </template>
+        </NButton>
+      </template>
+      批量重命名
     </NTooltip>
 
     <NTooltip v-if="show.includes('delete')">
