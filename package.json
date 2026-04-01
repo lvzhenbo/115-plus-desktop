@@ -37,7 +37,7 @@
     "alova": "^3.5.1",
     "date-fns": "^4.1.0",
     "destr": "^2.0.5",
-    "filesize": "^11.0.14",
+    "filesize": "^11.0.15",
     "hls.js": "^1.6.15",
     "marked": "^17.0.5",
     "media-captions": "^0.0.18",
