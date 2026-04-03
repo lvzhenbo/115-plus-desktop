@@ -42,6 +42,8 @@ pub enum DownloadError {
     HttpStatus { status: u16, message: String },
     #[error("URL expired (HTTP {status}): {message}")]
     UrlExpired { status: u16, message: String },
+    #[error("CDN rate limited (HTTP 403)")]
+    CdnRateLimit,
     #[error("Task aborted: {0}")]
     TaskAborted(String),
     #[error("Task join error: {0}")]

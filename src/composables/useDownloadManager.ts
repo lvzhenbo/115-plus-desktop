@@ -110,7 +110,7 @@ export const useDownloadManager = createSharedComposable(() => {
 
     folder.downloadSpeed = totalSpeed;
     if (folder.size && folder.size > 0) {
-      folder.progress = Math.round((totalDownloaded / folder.size) * 10000) / 100;
+      folder.progress = Math.min(100, Math.round((totalDownloaded / folder.size) * 10000) / 100);
       folder.eta =
         totalSpeed > 0 ? Math.ceil((folder.size - totalDownloaded) / totalSpeed) : undefined;
     }
@@ -142,7 +142,9 @@ export const useDownloadManager = createSharedComposable(() => {
           // 顶层单文件下载 — 直接更新
           item.downloadSpeed = speed;
           item.progress =
-            total_bytes > 0 ? Math.round((downloaded_bytes / total_bytes) * 10000) / 100 : 0;
+            total_bytes > 0
+              ? Math.min(100, Math.round((downloaded_bytes / total_bytes) * 10000) / 100)
+              : 0;
           item.eta = eta_secs != null ? Math.ceil(eta_secs) : undefined;
           if (total_bytes > 0) item.size = total_bytes;
         } else {
@@ -264,7 +266,8 @@ export const useDownloadManager = createSharedComposable(() => {
         completedFiles: completed,
         failedFiles: failed,
         size: totalSize > 0 ? totalSize : folder.size,
-        progress: totalSize > 0 ? Math.round((completedSize / totalSize) * 10000) / 100 : 0,
+        progress:
+          totalSize > 0 ? Math.min(100, Math.round((completedSize / totalSize) * 10000) / 100) : 0,
         downloadSpeed: dlSpeed,
         eta:
           dlSpeed > 0 && totalSize > completedSize
@@ -573,6 +576,12 @@ export const useDownloadManager = createSharedComposable(() => {
     if (failedChildren.length === 0) return;
 
     for (const child of failedChildren) {
+      // 清理内存进度追踪器，防止旧子任务与新子任务进度双重计算导致 >100%
+      childToParentMap.delete(child.gid);
+      const folderChildren = folderChildProgress.get(folder.gid);
+      if (folderChildren) {
+        folderChildren.delete(child.gid);
+      }
       await deleteDownload(child.gid);
     }
 

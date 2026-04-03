@@ -538,7 +538,18 @@ pub async fn download_segment_with_retry(
                         continue; // 回到循环顶部，触发指数退避+抖动
                     }
 
-                    // 退避重试后仍然403，或者非403状态码(401/410) → 真正的URL过期
+                    // 退避2次后仍然403 → CDN并发限流，释放permit让编排层重新调度
+                    if status == 403 {
+                        warn!(
+                            "[seg-{}][{}] CDN限流确认, 释放连接等待重新调度 downloaded={:.1}MB",
+                            local_seg.index,
+                            task_id,
+                            local_seg.downloaded as f64 / 1024.0 / 1024.0
+                        );
+                        break 'retry_loop Err(DownloadError::CdnRateLimit);
+                    }
+
+                    // 非403状态码(401/410) → 真正的URL过期
                     url_refresh_count += 1;
                     warn!(
                         "[seg-{}][{}] URL过期 (HTTP {}) (第{}次刷新) downloaded={:.1}MB",
@@ -649,6 +660,7 @@ fn is_retryable_error(err: &DownloadError) -> bool {
         DownloadError::Http(_) => true,
         DownloadError::HttpStatus { status, .. } => *status >= 500,
         DownloadError::UrlExpired { .. } => false,
+        DownloadError::CdnRateLimit => false, // 由编排层处理重新排队
         DownloadError::TaskAborted(_) => false,
         DownloadError::Io(_) => false,
         _ => false,
@@ -1004,11 +1016,20 @@ pub async fn download_file(
     let task_start_time = std::time::Instant::now();
     let mut completed_segments: u32 = 0;
     let total_segments = task.segments.len() as u32;
+    // CDN限流重排队追踪 — 被动降低并发 (类似 aria2)
+    let mut cdn_retry_counts: HashMap<u16, u32> = HashMap::new();
+    const MAX_CDN_RETRIES: u32 = 50;
+    // 任务级URL刷新追踪 — 只有当所有分片都卡住时才刷新URL
+    let mut last_success_time = std::time::Instant::now();
+    let mut task_url_refresh_count: u32 = 0;
+    const MAX_TASK_URL_REFRESHES: u32 = 10;
+    const ALL_STUCK_THRESHOLD_SECS: u64 = 60;
 
     while let Some(result) = join_set.join_next().await {
         match result {
             Ok(Ok((index, bytes))) => {
                 completed_segments += 1;
+                last_success_time = std::time::Instant::now();
                 info!(
                     "[task][{}] 分片{} 完成 {:.1}MB ({}/{})",
                     task.task_id,
@@ -1048,6 +1069,144 @@ pub async fn download_file(
                 is_cancelled = true;
                 join_set.abort_all();
                 break;
+            }
+            Ok(Err((failed_seg, DownloadError::CdnRateLimit))) => {
+                // CDN限流 — 被动降低并发: 释放permit后延迟重新排队 (类似 aria2)
+                let count = cdn_retry_counts.entry(failed_seg.index).or_insert(0);
+                *count += 1;
+
+                // 检查是否所有分片都卡住 — 如果长时间无任何分片成功，可能URL真的过期了
+                let all_stuck_duration = last_success_time.elapsed().as_secs();
+                if all_stuck_duration > ALL_STUCK_THRESHOLD_SECS && join_set.is_empty() {
+                    task_url_refresh_count += 1;
+                    warn!(
+                        "[task][{}] 所有分片停滞{}s, 触发任务级URL刷新 (第{}次)",
+                        task.task_id, all_stuck_duration, task_url_refresh_count
+                    );
+                    if task_url_refresh_count > MAX_TASK_URL_REFRESHES {
+                        warn!("[task][{}] 任务级URL刷新耗尽, 标记失败", task.task_id);
+                        has_failure = true;
+                        continue;
+                    }
+                    // 触发URL刷新
+                    if url_refresh_requested
+                        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_ok()
+                    {
+                        emit_url_expired(
+                            app,
+                            &UrlExpiredEvent {
+                                task_id: task.task_id.clone(),
+                                pick_code: task.pick_code.clone(),
+                            },
+                        );
+                    }
+                }
+
+                if *count > MAX_CDN_RETRIES {
+                    warn!(
+                        "[task][{}] 分片{} CDN限流重试耗尽 ({}/{})",
+                        task.task_id, failed_seg.index, count, MAX_CDN_RETRIES
+                    );
+                    has_failure = true;
+                    continue;
+                }
+
+                // 指数退避 + 分片索引抖动，延迟后重新排队
+                let backoff_secs = 2u64.pow((*count).min(6));
+                let jitter_ms = ((failed_seg.index as u64) % 16) * 300;
+                let delay = Duration::from_secs(backoff_secs) + Duration::from_millis(jitter_ms);
+
+                info!(
+                    "[task][{}] 分片{} CDN限流重排队 #{} (延迟{:.1}s, 当前活跃{})",
+                    task.task_id,
+                    failed_seg.index,
+                    count,
+                    delay.as_secs_f64(),
+                    join_set.len()
+                );
+
+                // 重新排队 — 延迟后重新获取permit，被动降低并发
+                // 用 progress_snapshot 获取最新已下载字节 (修复 CDN 重试时 seg.downloaded 过期导致从头重下)
+                let mut seg = failed_seg;
+                let actual_downloaded = progress_snapshot
+                    .lock()
+                    .unwrap()
+                    .get(&seg.index)
+                    .copied()
+                    .unwrap_or(seg.downloaded);
+                seg.downloaded = actual_downloaded;
+
+                let semaphore = semaphore.clone();
+                let client = client.clone();
+                let url_rx = url_rx.clone();
+                let token = token.to_string();
+                let user_agent = user_agent.to_string();
+                let writer = writer.clone();
+                let tx = progress_tx.clone();
+                let tid = task.task_id.clone();
+                let pick_code = task.pick_code.clone();
+                let sig_rx = signal_rx.clone();
+                let url_refresh_req = url_refresh_requested.clone();
+                let app_clone = app.clone();
+
+                join_set.spawn(async move {
+                    // 先等待退避延迟 — 此时不持有permit，其他分片可以继续
+                    tokio::time::sleep(delay).await;
+                    // 检查是否已被取消/暂停
+                    {
+                        let signal = sig_rx.borrow().clone();
+                        if signal != DownloadSignal::Running {
+                            return Err((
+                                seg,
+                                DownloadError::TaskAborted(
+                                    if signal == DownloadSignal::Paused {
+                                        "paused"
+                                    } else {
+                                        "cancelled"
+                                    }
+                                    .to_string(),
+                                ),
+                            ));
+                        }
+                    }
+                    // 重新获取permit — 如果其他分片正在下载，这里会排队等待
+                    let permit = match semaphore.acquire_owned().await {
+                        Ok(p) => p,
+                        Err(_) => {
+                            return Err((
+                                seg,
+                                DownloadError::TaskAborted("semaphore closed".to_string()),
+                            ));
+                        }
+                    };
+                    match download_segment_with_retry(
+                        &client,
+                        url_rx,
+                        &token,
+                        &user_agent,
+                        &seg,
+                        &writer,
+                        supports_range,
+                        Some(tx),
+                        &tid,
+                        &pick_code,
+                        sig_rx,
+                        url_refresh_req,
+                        &app_clone,
+                    )
+                    .await
+                    {
+                        Ok(bytes) => {
+                            drop(permit);
+                            Ok((seg.index, bytes))
+                        }
+                        Err(e) => {
+                            drop(permit);
+                            Err((seg, e))
+                        }
+                    }
+                });
             }
             Ok(Err((failed_seg, _e))) => {
                 // 分片重试耗尽后失败 — 尝试重分配 (per D-10, D-11)
@@ -1642,10 +1801,18 @@ pub async fn resume_download(
         .max()
         .map(|v| v as u32)
         .unwrap_or(0);
+    // CDN限流重排队追踪 — 被动降低并发 (类似 aria2)
+    let mut cdn_retry_counts: HashMap<u16, u32> = HashMap::new();
+    const MAX_CDN_RETRIES: u32 = 50;
+    let mut last_success_time = std::time::Instant::now();
+    let mut task_url_refresh_count: u32 = 0;
+    const MAX_TASK_URL_REFRESHES: u32 = 10;
+    const ALL_STUCK_THRESHOLD_SECS: u64 = 60;
 
     while let Some(result) = join_set.join_next().await {
         match result {
             Ok(Ok((index, bytes))) => {
+                last_success_time = std::time::Instant::now();
                 if let Some(seg) = segments.iter_mut().find(|s| s.index == index) {
                     seg.status = SegmentStatus::Completed;
                     seg.downloaded = bytes;
@@ -1670,6 +1837,137 @@ pub async fn resume_download(
                 is_cancelled = true;
                 join_set.abort_all();
                 break;
+            }
+            Ok(Err((failed_seg, DownloadError::CdnRateLimit))) => {
+                // CDN限流 — 被动降低并发: 释放permit后延迟重新排队 (类似 aria2)
+                let count = cdn_retry_counts.entry(failed_seg.index).or_insert(0);
+                *count += 1;
+
+                let all_stuck_duration = last_success_time.elapsed().as_secs();
+                if all_stuck_duration > ALL_STUCK_THRESHOLD_SECS && join_set.is_empty() {
+                    task_url_refresh_count += 1;
+                    warn!(
+                        "[resume][{}] 所有分片停滞{}s, 触发任务级URL刷新 (第{}次)",
+                        task_id, all_stuck_duration, task_url_refresh_count
+                    );
+                    if task_url_refresh_count > MAX_TASK_URL_REFRESHES {
+                        warn!("[resume][{}] 任务级URL刷新耗尽, 标记失败", task_id);
+                        has_failure = true;
+                        continue;
+                    }
+                    if url_refresh_requested
+                        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_ok()
+                    {
+                        emit_url_expired(
+                            app,
+                            &UrlExpiredEvent {
+                                task_id: task_id.to_string(),
+                                pick_code: task_meta.pick_code.clone(),
+                            },
+                        );
+                    }
+                }
+
+                if *count > MAX_CDN_RETRIES {
+                    warn!(
+                        "[resume][{}] 分片{} CDN限流重试耗尽 ({}/{})",
+                        task_id, failed_seg.index, count, MAX_CDN_RETRIES
+                    );
+                    has_failure = true;
+                    continue;
+                }
+
+                let backoff_secs = 2u64.pow((*count).min(6));
+                let jitter_ms = ((failed_seg.index as u64) % 16) * 300;
+                let delay = Duration::from_secs(backoff_secs) + Duration::from_millis(jitter_ms);
+
+                info!(
+                    "[resume][{}] 分片{} CDN限流重排队 #{} (延迟{:.1}s, 当前活跃{})",
+                    task_id,
+                    failed_seg.index,
+                    count,
+                    delay.as_secs_f64(),
+                    join_set.len()
+                );
+
+                // 用 progress_snapshot 获取最新已下载字节 (修复 CDN 重试时 seg.downloaded 过期导致从头重下)
+                let mut seg = failed_seg;
+                let actual_downloaded = progress_snapshot
+                    .lock()
+                    .unwrap()
+                    .get(&seg.index)
+                    .copied()
+                    .unwrap_or(seg.downloaded);
+                seg.downloaded = actual_downloaded;
+
+                let semaphore = semaphore.clone();
+                let client = client.clone();
+                let url_rx = url_rx.clone();
+                let token = token.to_string();
+                let user_agent = user_agent.to_string();
+                let writer = writer.clone();
+                let tx = progress_tx.clone();
+                let tid = task_id.to_string();
+                let pick_code = task_meta.pick_code.clone();
+                let sig_rx = signal_rx.clone();
+                let url_refresh_req = url_refresh_requested.clone();
+                let app_clone = app.clone();
+
+                join_set.spawn(async move {
+                    tokio::time::sleep(delay).await;
+                    {
+                        let signal = sig_rx.borrow().clone();
+                        if signal != DownloadSignal::Running {
+                            return Err((
+                                seg,
+                                DownloadError::TaskAborted(
+                                    if signal == DownloadSignal::Paused {
+                                        "paused"
+                                    } else {
+                                        "cancelled"
+                                    }
+                                    .to_string(),
+                                ),
+                            ));
+                        }
+                    }
+                    let permit = match semaphore.acquire_owned().await {
+                        Ok(p) => p,
+                        Err(_) => {
+                            return Err((
+                                seg,
+                                DownloadError::TaskAborted("semaphore closed".to_string()),
+                            ));
+                        }
+                    };
+                    match download_segment_with_retry(
+                        &client,
+                        url_rx,
+                        &token,
+                        &user_agent,
+                        &seg,
+                        &writer,
+                        supports_range,
+                        Some(tx),
+                        &tid,
+                        &pick_code,
+                        sig_rx,
+                        url_refresh_req,
+                        &app_clone,
+                    )
+                    .await
+                    {
+                        Ok(bytes) => {
+                            drop(permit);
+                            Ok((seg.index, bytes))
+                        }
+                        Err(e) => {
+                            drop(permit);
+                            Err((seg, e))
+                        }
+                    }
+                });
             }
             Ok(Err((failed_seg, _e))) => {
                 // 分片重试耗尽后失败 — 尝试重分配 (per D-10, D-11)
