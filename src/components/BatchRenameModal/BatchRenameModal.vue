@@ -131,6 +131,7 @@
     getBackoffDelay,
     MAX_RATE_LIMIT_RETRY,
   } from '@/utils/rateLimit';
+  import type { DataTableColumns } from 'naive-ui';
 
   const show = defineModel('show', {
     type: Boolean,
@@ -388,12 +389,12 @@
       ),
     );
 
-  const previewColumns = computed(() => [
+  const previewColumns = computed<DataTableColumns<PreviewItem>>(() => [
     {
       title: '原文件名',
       key: 'oldName',
       ellipsis: { tooltip: true },
-      render: (row: PreviewItem) => {
+      render: (row) => {
         if (mode.value === 'replace' && findText.value) {
           return (
             <NHighlight
@@ -410,7 +411,7 @@
       title: '新文件名',
       key: 'newName',
       ellipsis: { tooltip: true },
-      render: (row: PreviewItem) => renderDiffSegments(row.newSegments, 'new'),
+      render: (row) => renderDiffSegments(row.newSegments, 'new'),
     },
   ]);
 
