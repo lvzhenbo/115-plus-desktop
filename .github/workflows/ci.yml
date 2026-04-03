@@ -59,8 +59,8 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Execute get-aria2 script
-        run: pnpm get-aria2
+      # - name: Execute get-aria2 script
+      #   run: pnpm get-aria2
 
       - name: Create .env.local file
         run: |
