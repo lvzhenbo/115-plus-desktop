@@ -1,15 +1,9 @@
-import {
-  addUri,
-  batchTellStatus,
-  forceRemove,
-  removeDownloadResult,
-  pause as pauseAria2,
-  unpause as unpauseAria2,
-  changeGlobalOption,
-} from '@/api/aria2';
+import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { fileDownloadUrl, fileList } from '@/api/file';
 import type { MyFile } from '@/api/types/file';
 import { useSettingStore, type DownLoadFile } from '@/store/setting';
+import { useUserStore } from '@/store/user';
 import {
   insertDownload,
   updateDownload,
@@ -19,6 +13,7 @@ import {
   getAllDownloads,
   getActiveGids,
   getChildDownloads,
+  getDownloadByGid,
   getIncompleteDownloads,
   getTopLevelDownloads,
 } from '@/db/downloads';
@@ -32,26 +27,45 @@ interface DownloadQueueItem {
   parentGid?: string;
 }
 
-/** 状态轮询间隔(ms) */
-const POLL_INTERVAL = 2000;
+/** Tauri Event: 下载进度 */
+interface DownloadProgressPayload {
+  task_id: string;
+  downloaded_bytes: number;
+  total_bytes: number;
+  speed: number;
+  eta_secs: number | null;
+}
 
-/**
- * 从 aria2 中清除已终结的任务记录
- */
-const cleanupAria2Task = async (gid: string) => {
-  if (gid.startsWith('failed-') || gid.startsWith('folder-')) return;
-  try {
-    await removeDownloadResult(gid);
-  } catch {
-    // 忽略
-  }
+/** Tauri Event: 任务状态变更 */
+interface DownloadTaskStatusPayload {
+  task_id: string;
+  status: 'Pending' | 'Active' | 'Paused' | 'Complete' | 'Error' | 'VerifyFailed';
+}
+
+/** Tauri Event: URL 过期 */
+interface UrlExpiredPayload {
+  task_id: string;
+  pick_code: string;
+}
+
+/** Rust TaskStatus → 前端 status 映射 */
+const mapRustStatus = (s: string): DownLoadFile['status'] => {
+  const map: Record<string, DownLoadFile['status']> = {
+    Active: 'active',
+    Paused: 'paused',
+    Complete: 'complete',
+    Error: 'error',
+    Pending: 'waiting',
+    VerifyFailed: 'error',
+  };
+  return map[s] ?? 'waiting';
 };
 
 /**
  * 下载管理器
  *
  * - SQLite 持久化下载列表，响应式 `displayList` 驱动 UI
- * - aria2 仅作为下载引擎，不使用 session；任务完成/失败后自动清理 aria2 记录
+ * - Tauri invoke 启动下载，Event 驱动进度/状态更新
  * - 需在 Home 页面调用 `init()` 完成初始化
  */
 export const useDownloadManager = createSharedComposable(() => {
@@ -60,87 +74,167 @@ export const useDownloadManager = createSharedComposable(() => {
   const displayList = ref<DownLoadFile[]>([]);
   const downloadQueue = ref<DownloadQueueItem[]>([]);
   const isProcessing = ref(false);
+  const unlisteners: UnlistenFn[] = [];
+
+  // ---- 文件夹子任务实时进度跟踪 ----
+  /** taskId → parentGid 映射 */
+  const childToParentMap = new Map<string, string>();
+  /** parentGid → Map<taskId, { downloaded, total, speed }> */
+  const folderChildProgress = new Map<
+    string,
+    Map<string, { downloaded: number; total: number; speed: number }>
+  >();
+
+  /** 注册子任务到内存追踪器 */
+  const registerChildTask = (taskId: string, parentGid: string, total: number) => {
+    childToParentMap.set(taskId, parentGid);
+    if (!folderChildProgress.has(parentGid)) {
+      folderChildProgress.set(parentGid, new Map());
+    }
+    folderChildProgress.get(parentGid)!.set(taskId, { downloaded: 0, total, speed: 0 });
+  };
+
+  /** 根据子任务追踪器聚合文件夹的速度/进度/ETA 到 displayList */
+  const updateFolderFromChildren = (parentGid: string) => {
+    const folder = displayList.value.find((d) => d.gid === parentGid);
+    if (!folder) return;
+    const children = folderChildProgress.get(parentGid);
+    if (!children || children.size === 0) return;
+
+    let totalSpeed = 0;
+    let totalDownloaded = 0;
+    children.forEach((c) => {
+      totalSpeed += c.speed;
+      totalDownloaded += c.downloaded;
+    });
+
+    folder.downloadSpeed = totalSpeed;
+    if (folder.size && folder.size > 0) {
+      folder.progress = Math.round((totalDownloaded / folder.size) * 10000) / 100;
+      folder.eta =
+        totalSpeed > 0 ? Math.ceil((folder.size - totalDownloaded) / totalSpeed) : undefined;
+    }
+  };
+
+  /** 根据 store 限速配置计算 bytes/sec */
+  const computeSpeedLimitBytes = (): number => {
+    if (!settingStore.downloadSetting.speedLimitEnabled) return 0;
+    const value = settingStore.downloadSetting.speedLimitValue;
+    const unit = settingStore.downloadSetting.speedLimitUnit;
+    return unit === 'MB/s' ? value * 1024 * 1024 : value * 1024;
+  };
 
   /** 从数据库刷新顶层列表 */
   const refreshDisplayList = async () => {
     displayList.value = await getTopLevelDownloads();
   };
 
-  // ---------- 状态轮询 ----------
+  // ---------- Tauri Event 监听 ----------
 
-  const {
-    pause: stopPolling,
-    resume: startPolling,
-    isActive: isPolling,
-  } = useTimeoutPoll(syncDownloadStatus, POLL_INTERVAL, { immediate: false });
-
-  /** 批量同步所有活跃任务的 aria2 状态，并聚合文件夹进度 */
-  async function syncDownloadStatus() {
-    const activeGids = await getActiveGids();
-
-    if (activeGids.length > 0) {
-      try {
-        const res = await batchTellStatus(activeGids);
-        const results = res.result;
-        if (Array.isArray(results)) {
-          for (const resultWrapper of results) {
-            const task = Array.isArray(resultWrapper) ? resultWrapper[0] : resultWrapper?.result;
-            if (!task?.gid) continue;
-
-            const totalLength = Number(task.totalLength) || 0;
-            const completedLength = Number(task.completedLength) || 0;
-            const downloadSpeed = Number(task.downloadSpeed) || 0;
-
-            const updates: Partial<DownLoadFile> = {
-              status: task.status,
-              downloadSpeed,
-            };
-
-            if (totalLength > 0) {
-              updates.size = totalLength;
-              updates.progress = Math.round((completedLength / totalLength) * 10000) / 100;
+  /** 注册 Tauri Event 监听器 */
+  const setupEventListeners = async () => {
+    // 下载进度事件 — 实时更新速度、进度、ETA
+    unlisteners.push(
+      await listen<DownloadProgressPayload>('download:progress', async (event) => {
+        const { task_id, downloaded_bytes, total_bytes, speed, eta_secs } = event.payload;
+        const item = displayList.value.find((d) => d.gid === task_id);
+        if (item) {
+          // 顶层单文件下载 — 直接更新
+          item.downloadSpeed = speed;
+          item.progress =
+            total_bytes > 0 ? Math.round((downloaded_bytes / total_bytes) * 10000) / 100 : 0;
+          item.eta = eta_secs != null ? Math.ceil(eta_secs) : undefined;
+          if (total_bytes > 0) item.size = total_bytes;
+        } else {
+          // 文件夹子任务 — 更新追踪器并聚合到父文件夹
+          let parentGid = childToParentMap.get(task_id);
+          if (!parentGid) {
+            // 可能是恢复的下载，从数据库查找 parentGid
+            const dl = await getDownloadByGid(task_id);
+            if (dl?.parentGid) {
+              parentGid = dl.parentGid;
+              registerChildTask(task_id, parentGid, total_bytes);
             }
-
-            if (task.files?.[0]?.path) {
-              updates.path = task.files[0].path;
+          }
+          if (parentGid) {
+            const children = folderChildProgress.get(parentGid);
+            if (children) {
+              children.set(task_id, { downloaded: downloaded_bytes, total: total_bytes, speed });
             }
+            updateFolderFromChildren(parentGid);
+          }
+        }
+      }),
+    );
 
-            if (downloadSpeed > 0 && totalLength > completedLength) {
-              updates.eta = Math.ceil((totalLength - completedLength) / downloadSpeed);
-            } else {
-              updates.eta = undefined;
-            }
+    // 任务状态事件 — 更新状态并持久化到 DB
+    unlisteners.push(
+      await listen<DownloadTaskStatusPayload>('download:task-status', async (event) => {
+        const { task_id, status } = event.payload;
+        const mappedStatus = mapRustStatus(status);
+        const updates: Partial<DownLoadFile> = { status: mappedStatus };
 
-            if (task.status === 'complete') {
-              updates.completedAt = Date.now();
-              updates.downloadSpeed = 0;
-              await updateDownload(task.gid, updates);
-              await cleanupAria2Task(task.gid);
-            } else if (task.status === 'error') {
-              updates.errorMessage = task.errorMessage || '下载出错';
-              updates.errorCode = task.errorCode;
-              updates.downloadSpeed = 0;
-              await updateDownload(task.gid, updates);
-              await cleanupAria2Task(task.gid);
-            } else {
-              await updateDownload(task.gid, updates);
+        if (mappedStatus === 'complete') {
+          updates.completedAt = Date.now();
+          updates.downloadSpeed = 0;
+          updates.progress = 100;
+        } else if (mappedStatus === 'error') {
+          updates.downloadSpeed = 0;
+          updates.errorMessage =
+            status === 'VerifyFailed' ? 'SHA1 校验失败，文件可能不完整' : '下载出错';
+        } else if (mappedStatus === 'paused') {
+          updates.downloadSpeed = 0;
+        }
+
+        // 同步更新子任务追踪器（保持内存数据与状态一致）
+        const parentGid = childToParentMap.get(task_id);
+        if (parentGid) {
+          const children = folderChildProgress.get(parentGid);
+          const child = children?.get(task_id);
+          if (child) {
+            child.speed = 0;
+            if (mappedStatus === 'complete') {
+              child.downloaded = child.total;
             }
           }
         }
-      } catch (e) {
-        console.error('批量获取状态失败:', e);
-      }
-    }
 
-    await aggregateFolderStatuses();
-    await refreshDisplayList();
+        // 状态变更时将内存中的实时进度持久化到 DB，防止 refreshDisplayList 后进度丢失
+        const item = displayList.value.find((d) => d.gid === task_id);
+        if (item) {
+          if (updates.progress == null && item.progress != null) {
+            updates.progress = item.progress;
+          }
+          if (updates.size == null && item.size) {
+            updates.size = item.size;
+          }
+        }
 
-    // 无活跃任务时停止轮询
-    const stillActive = await getActiveGids();
-    if (stillActive.length === 0) {
-      stopPolling();
-    }
-  }
+        await updateDownload(task_id, updates);
+        await aggregateFolderStatuses();
+        await refreshDisplayList();
+      }),
+    );
+
+    // URL 过期事件 — 自动刷新 URL
+    unlisteners.push(
+      await listen<UrlExpiredPayload>('download:url-expired', async (event) => {
+        const { task_id, pick_code } = event.payload;
+        try {
+          const res = await fileDownloadUrl({ pick_code });
+          const fileData = Object.values(res.data)[0];
+          if (fileData?.url?.url) {
+            await invoke('update_download_url', {
+              taskId: task_id,
+              url: fileData.url.url,
+            });
+          }
+        } catch (e) {
+          console.error('URL 刷新失败:', e);
+        }
+      }),
+    );
+  };
 
   /** 聚合文件夹内子任务的进度、速度、完成状态 */
   async function aggregateFolderStatuses() {
@@ -354,31 +448,49 @@ export const useDownloadManager = createSharedComposable(() => {
     }
   };
 
-  /** 获取下载链接并提交至 aria2 */
+  /** 获取下载链接并通过 Tauri 启动下载 */
   const downloadSingleFile = async (item: DownloadQueueItem) => {
     const { file, path, parentGid } = item;
+    const userStore = useUserStore();
 
     const res = await fileDownloadUrl({ pick_code: file.pc });
     const fileData = res.data[file.fid];
     if (!fileData) throw new Error(`获取文件 ${file.fn} 下载信息失败`);
 
-    const aria2res = await addUri(fileData.url.url, fileData.file_name, path);
-    if (aria2res.result) {
-      await insertDownload({
-        name: file.fn,
-        fid: file.fid,
-        pickCode: file.pc,
-        size: file.fs,
-        gid: aria2res.result,
-        status: 'active',
-        parentGid,
-        createdAt: Date.now(),
-      });
+    const downloadPath = settingStore.downloadSetting.downloadPath;
+    const savePath =
+      downloadPath + (path ? `/${path}/${fileData.file_name}` : `/${fileData.file_name}`);
 
-      if (!parentGid) {
-        await refreshDisplayList();
-      }
-      startPolling();
+    const taskId: string = await invoke('start_download', {
+      url: fileData.url.url,
+      fileName: fileData.file_name,
+      fileSize: file.fs,
+      savePath,
+      pickCode: file.pc,
+      expectedSha1: fileData.sha1,
+      token: userStore.accessToken,
+      userAgent: navigator.userAgent,
+      split: settingStore.downloadSetting.split,
+      maxConnectionsPerServer: settingStore.downloadSetting.maxConnectionsPerServer,
+    });
+
+    await insertDownload({
+      name: file.fn,
+      fid: file.fid,
+      pickCode: file.pc,
+      size: file.fs,
+      gid: taskId,
+      status: 'active',
+      parentGid,
+      path: savePath,
+      createdAt: Date.now(),
+    });
+
+    // 注册子任务到内存追踪器，使进度事件能实时聚合到文件夹
+    if (parentGid) {
+      registerChildTask(taskId, parentGid, file.fs);
+    } else {
+      await refreshDisplayList();
     }
   };
 
@@ -391,7 +503,6 @@ export const useDownloadManager = createSharedComposable(() => {
     } else {
       enqueueFile(file);
     }
-    startPolling();
   };
 
   /** 批量下载多个文件/文件夹 */
@@ -403,7 +514,6 @@ export const useDownloadManager = createSharedComposable(() => {
         enqueueFile(file);
       }
     }
-    startPolling();
   };
 
   /** 重试失败的下载任务 */
@@ -413,6 +523,7 @@ export const useDownloadManager = createSharedComposable(() => {
       return;
     }
 
+    const userStore = useUserStore();
     await deleteDownload(downloadFile.gid);
 
     try {
@@ -420,23 +531,35 @@ export const useDownloadManager = createSharedComposable(() => {
       const fileData = res.data[downloadFile.fid];
       if (!fileData) throw new Error('获取下载链接失败');
 
-      const aria2res = await addUri(fileData.url.url, fileData.file_name);
-      if (aria2res.result) {
-        await insertDownload({
-          ...downloadFile,
-          gid: aria2res.result,
-          status: 'active',
-          progress: 0,
-          downloadSpeed: 0,
-          errorMessage: undefined,
-          errorCode: undefined,
-          eta: undefined,
-          createdAt: Date.now(),
-          completedAt: undefined,
-        });
-        await refreshDisplayList();
-        startPolling();
-      }
+      const downloadPath = settingStore.downloadSetting.downloadPath;
+      const savePath = downloadFile.path || `${downloadPath}/${fileData.file_name}`;
+
+      const taskId: string = await invoke('start_download', {
+        url: fileData.url.url,
+        fileName: fileData.file_name,
+        fileSize: downloadFile.size,
+        savePath,
+        pickCode: downloadFile.pickCode,
+        expectedSha1: fileData.sha1,
+        token: userStore.accessToken,
+        userAgent: navigator.userAgent,
+        split: settingStore.downloadSetting.split,
+        maxConnectionsPerServer: settingStore.downloadSetting.maxConnectionsPerServer,
+      });
+
+      await insertDownload({
+        ...downloadFile,
+        gid: taskId,
+        status: 'active',
+        progress: 0,
+        downloadSpeed: 0,
+        errorMessage: undefined,
+        errorCode: undefined,
+        eta: undefined,
+        createdAt: Date.now(),
+        completedAt: undefined,
+      });
+      await refreshDisplayList();
     } catch (e) {
       console.error('重试下载失败:', e);
       throw e;
@@ -476,10 +599,9 @@ export const useDownloadManager = createSharedComposable(() => {
     await refreshDisplayList();
 
     processQueue();
-    startPolling();
   };
 
-  /** 移除下载任务（含 aria2 清理） */
+  /** 移除下载任务 */
   const removeTask = async (downloadFile: DownLoadFile) => {
     if (downloadFile.isFolder) {
       await removeFolderTask(downloadFile);
@@ -489,7 +611,7 @@ export const useDownloadManager = createSharedComposable(() => {
     await refreshDisplayList();
   };
 
-  /** 移除单个任务：取消 aria2 + 删除数据库记录 */
+  /** 移除单个任务：取消下载 + 删除数据库记录 */
   const removeSingleTask = async (downloadFile: DownLoadFile) => {
     try {
       if (
@@ -497,12 +619,10 @@ export const useDownloadManager = createSharedComposable(() => {
         downloadFile.status === 'waiting' ||
         downloadFile.status === 'paused'
       ) {
-        await forceRemove(downloadFile.gid);
-        await sleep(300);
-        await cleanupAria2Task(downloadFile.gid);
+        await invoke('cancel_download', { taskId: downloadFile.gid });
       }
     } catch {
-      // aria2 中可能已经不存在了
+      // 任务可能已经完成或不存在
     }
     await deleteDownload(downloadFile.gid);
   };
@@ -532,7 +652,7 @@ export const useDownloadManager = createSharedComposable(() => {
     const active = children.filter((d) => d.status === 'active' || d.status === 'waiting');
     for (const child of active) {
       try {
-        await pauseAria2(child.gid);
+        await invoke('pause_download', { taskId: child.gid });
       } catch (e) {
         console.error('暂停子任务失败:', e);
       }
@@ -542,13 +662,65 @@ export const useDownloadManager = createSharedComposable(() => {
   /** 恢复文件夹内所有已暂停的子任务 */
   const resumeFolder = async (folder: DownLoadFile) => {
     const children = await getChildDownloads(folder.gid);
+
+    // 将所有子任务（含已完成的）注册到内存追踪器，确保进度聚合准确
+    for (const child of children) {
+      if (!childToParentMap.has(child.gid)) {
+        registerChildTask(child.gid, folder.gid, child.size || 0);
+      }
+      // 已完成的子任务标记 downloaded = total
+      if (child.status === 'complete') {
+        const tracker = folderChildProgress.get(folder.gid);
+        const entry = tracker?.get(child.gid);
+        if (entry) {
+          entry.downloaded = entry.total;
+          entry.speed = 0;
+        }
+      }
+    }
+
     const paused = children.filter((d) => d.status === 'paused');
+    const userStore = useUserStore();
     for (const child of paused) {
       try {
-        await unpauseAria2(child.gid);
+        const res = await fileDownloadUrl({ pick_code: child.pickCode });
+        const fileData = res.data[child.fid];
+        if (fileData?.url?.url) {
+          await invoke('resume_download_task', {
+            taskId: child.gid,
+            url: fileData.url.url,
+            savePath: child.path,
+            token: userStore.accessToken,
+            userAgent: navigator.userAgent,
+            split: settingStore.downloadSetting.split,
+            maxConnectionsPerServer: settingStore.downloadSetting.maxConnectionsPerServer,
+          });
+        }
       } catch (e) {
         console.error('恢复子任务失败:', e);
       }
+    }
+  };
+
+  /** 恢复单个已暂停的下载任务（获取新 URL + resume_download_task） */
+  const resumeSingleFile = async (item: DownLoadFile) => {
+    const userStore = useUserStore();
+    try {
+      const res = await fileDownloadUrl({ pick_code: item.pickCode });
+      const fileData = res.data[item.fid];
+      if (fileData?.url?.url) {
+        await invoke('resume_download_task', {
+          taskId: item.gid,
+          url: fileData.url.url,
+          savePath: item.path,
+          token: userStore.accessToken,
+          userAgent: navigator.userAgent,
+          split: settingStore.downloadSetting.split,
+          maxConnectionsPerServer: settingStore.downloadSetting.maxConnectionsPerServer,
+        });
+      }
+    } catch (e) {
+      console.error('恢复下载失败:', e);
     }
   };
 
@@ -557,7 +729,6 @@ export const useDownloadManager = createSharedComposable(() => {
   const queueStatus = computed(() => ({
     queueLength: downloadQueue.value.length,
     isProcessing: isProcessing.value,
-    isPolling: isPolling.value,
   }));
 
   const downloadStats = computed(() => {
@@ -582,20 +753,14 @@ export const useDownloadManager = createSharedComposable(() => {
   /**
    * 初始化下载管理器（仅执行一次）
    *
-   * 将未完成任务标记为暂停，并同步 aria2 并行下载数为用户设置。
+   * 注册 Tauri Event 监听器，将未完成任务标记为暂停。
    */
   const init = async () => {
     if (initialized) return;
     initialized = true;
 
-    // 同步 aria2 最大并行下载数
-    try {
-      await changeGlobalOption({
-        'max-concurrent-downloads': String(settingStore.downloadSetting.maxConcurrent || 1),
-      });
-    } catch (e) {
-      console.error('同步 aria2 并行下载数失败:', e);
-    }
+    // 注册 Tauri Event 监听器
+    await setupEventListeners();
 
     // 将未完成的任务标记为暂停
     const incompleteTasks = await getIncompleteDownloads();
@@ -603,34 +768,37 @@ export const useDownloadManager = createSharedComposable(() => {
       await updateDownload(task.gid, { status: 'paused', downloadSpeed: 0 });
     }
     await refreshDisplayList();
-  };
 
-  // 用户修改并行下载数时，实时同步到 aria2
-  watch(
-    () => settingStore.downloadSetting.maxConcurrent,
-    async (val) => {
-      if (!initialized) return;
-      try {
-        await changeGlobalOption({
-          'max-concurrent-downloads': String(val || 1),
-        });
-      } catch (e) {
-        console.error('同步 aria2 并行下载数失败:', e);
-      }
-    },
-  );
+    // 初始化限速设置
+    const speedBytes = computeSpeedLimitBytes();
+    if (speedBytes > 0) {
+      await invoke('set_speed_limit', { limit: speedBytes });
+    }
+
+    // 监听限速设置变化，实时生效
+    watch(
+      () => [
+        settingStore.downloadSetting.speedLimitEnabled,
+        settingStore.downloadSetting.speedLimitValue,
+        settingStore.downloadSetting.speedLimitUnit,
+      ],
+      async () => {
+        const limit = computeSpeedLimitBytes();
+        await invoke('set_speed_limit', { limit });
+      },
+    );
+  };
 
   /** 暂停所有活跃的下载任务 */
   const pauseAllTasks = async () => {
     const activeGids = await getActiveGids();
     for (const gid of activeGids) {
       try {
-        await pauseAria2(gid);
+        await invoke('pause_download', { taskId: gid });
       } catch {
         // 任务可能已经完成或不存在
       }
     }
-    await syncDownloadStatus();
   };
 
   return {
@@ -643,9 +811,7 @@ export const useDownloadManager = createSharedComposable(() => {
     clearFinished,
     pauseFolder,
     resumeFolder,
-    startPolling,
-    stopPolling,
-    syncDownloadStatus,
+    resumeSingleFile,
     pauseAllTasks,
     queueStatus,
     downloadStats,

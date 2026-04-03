@@ -290,7 +290,7 @@ export const getIncompleteDownloads = async (): Promise<DownLoadFile[]> => {
 };
 
 /**
- * 查询活跃的 aria2 任务 gid 列表（用于状态轮询）
+ * 查询活跃的任务 gid 列表（用于状态轮询）
  */
 export const getActiveGids = async (): Promise<string[]> => {
   const d = await getDb();

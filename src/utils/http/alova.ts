@@ -5,7 +5,6 @@ import { createServerTokenAuthentication } from 'alova/client';
 import { useUserStoreWithOut } from '@/store/user';
 import type { DeviceCodeToTokenResponseData } from '@/api/types/user';
 import { refreshToken } from '@/api/user';
-import adapterFetch from 'alova/fetch';
 import { useSettingStoreWithOut } from '@/store/setting';
 import { createRateLimiter, sleep, getBackoffDelay, MAX_RATE_LIMIT_RETRY } from '@/utils/rateLimit';
 
@@ -114,19 +113,4 @@ export const alovaInst = createAlova({
       // 处理请求完成逻辑
     },
   }),
-});
-
-export const aria2Server = createAlova({
-  requestAdapter: adapterFetch(),
-  baseURL: `http://localhost:${settingStore.downloadSetting.aria2Port}`,
-  timeout: 40000,
-  responded: {
-    onSuccess: async (response, _method) => {
-      if (response.status !== 200) {
-        throw new Error(response.statusText);
-      }
-      const json: ResponseData<unknown> = await response.clone().json();
-      return json;
-    },
-  },
 });

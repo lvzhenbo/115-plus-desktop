@@ -163,6 +163,9 @@
         </NForm>
       </NTabPane>
       <NTabPane name="downloadSetting" tab="下载设置">
+        <NAlert title="注意" type="warning" class="mb-2">
+          理论上，115只允许两个连接，所以每服务器连接数超过2应该是无效的，不过还是按照之前的设置默认为16，如果下载出现问题可改为2。
+        </NAlert>
         <NForm label-placement="left" label-width="auto">
           <NFormItem label="下载目录" path="downloadSetting.downloadPath">
             <NInputGroup>
@@ -185,6 +188,41 @@
               :max="10"
               :step="1"
             />
+          </NFormItem>
+          <NFormItem label="分片数" path="downloadSetting.split">
+            <NInputNumber
+              v-model:value="settingStore.downloadSetting.split"
+              :min="1"
+              :max="64"
+              :step="1"
+            />
+          </NFormItem>
+          <NFormItem label="每服务器连接数" path="downloadSetting.maxConnectionsPerServer">
+            <NInputNumber
+              v-model:value="settingStore.downloadSetting.maxConnectionsPerServer"
+              :min="1"
+              :max="64"
+              :step="1"
+            />
+          </NFormItem>
+          <NFormItem label="下载限速" path="downloadSetting.speedLimitEnabled">
+            <NSwitch v-model:value="settingStore.downloadSetting.speedLimitEnabled" />
+            <NInputGroup v-if="settingStore.downloadSetting.speedLimitEnabled" class="ml-2">
+              <NInputNumber
+                v-model:value="settingStore.downloadSetting.speedLimitValue"
+                :min="1"
+                :max="settingStore.downloadSetting.speedLimitUnit === 'MB/s' ? 1000 : 102400"
+                :step="1"
+              />
+              <NSelect
+                v-model:value="settingStore.downloadSetting.speedLimitUnit"
+                :options="[
+                  { label: 'KB/s', value: 'KB/s' },
+                  { label: 'MB/s', value: 'MB/s' },
+                ]"
+                class="w-1/6!"
+              />
+            </NInputGroup>
           </NFormItem>
         </NForm>
       </NTabPane>

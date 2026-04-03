@@ -14,7 +14,7 @@ export interface DownLoadFile {
   eta?: number;
   /** 错误信息 */
   errorMessage?: string;
-  /** aria2 错误码 */
+  /** 错误码 */
   errorCode?: string;
   /** 创建时间戳 */
   createdAt?: number;
@@ -67,12 +67,21 @@ export const useSettingStore = defineStore(
     });
 
     const downloadSetting = ref({
-      aria2Port: 6800,
       downloadPath: '',
       /** 下载失败最大重试次数 */
       maxRetry: 5,
       /** 并行下载任务数 */
       maxConcurrent: 5,
+      /** 文件拆分的分片数 */
+      split: 16,
+      /** 每服务器最大并行连接数 */
+      maxConnectionsPerServer: 16,
+      /** 是否启用下载限速 */
+      speedLimitEnabled: false,
+      /** 限速数值（用户输入值，需结合 speedLimitUnit 换算） */
+      speedLimitValue: 10,
+      /** 限速单位 */
+      speedLimitUnit: 'MB/s' as 'KB/s' | 'MB/s',
     });
 
     const uploadSetting = ref({

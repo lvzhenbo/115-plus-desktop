@@ -89,7 +89,7 @@
   const appVersion = ref('');
   const tauriVersion = ref('');
 
-  const techStack = ['Tauri 2', 'Vue 3', 'Naive UI', 'Tailwind CSS', 'Alova', 'Aria2', 'Rust'];
+  const techStack = ['Tauri 2', 'Vue 3', 'Naive UI', 'Tailwind CSS', 'Alova', 'Rust'];
 
   onMounted(async () => {
     appVersion.value = await getVersion();

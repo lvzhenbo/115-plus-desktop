@@ -46,7 +46,7 @@
 </template>
 
 <script setup lang="tsx">
-  import { pause, unpause, pauseAll, unpauseAll } from '@/api/aria2';
+  import { invoke } from '@tauri-apps/api/core';
   import type { DownLoadFile } from '@/store/setting';
   import { useDownloadManager } from '@/composables/useDownloadManager';
   import {
@@ -68,6 +68,8 @@
     clearFinished,
     pauseFolder,
     resumeFolder,
+    resumeSingleFile,
+    pauseAllTasks,
     downloadStats,
     queueStatus,
   } = useDownloadManager();
@@ -211,7 +213,7 @@
                         if (row.isFolder) {
                           await pauseFolder(row);
                         } else {
-                          await pause(row.gid);
+                          await invoke('pause_download', { taskId: row.gid });
                         }
                       } catch (e) {
                         console.error(e);
@@ -238,7 +240,7 @@
                         if (row.isFolder) {
                           await resumeFolder(row);
                         } else {
-                          await unpause(row.gid);
+                          await resumeSingleFile(row);
                         }
                       } catch (e) {
                         console.error(e);
@@ -354,7 +356,7 @@
 
   const handlePauseAll = async () => {
     try {
-      await pauseAll();
+      await pauseAllTasks();
       message.success('已暂停所有下载');
     } catch (e) {
       console.error(e);
@@ -363,7 +365,14 @@
 
   const handleResumeAll = async () => {
     try {
-      await unpauseAll();
+      const pausedItems = displayList.value.filter((d) => d.status === 'paused' && !d.isFolder);
+      for (const item of pausedItems) {
+        await resumeSingleFile(item);
+      }
+      const pausedFolders = displayList.value.filter((d) => d.status === 'paused' && d.isFolder);
+      for (const folder of pausedFolders) {
+        await resumeFolder(folder);
+      }
       message.success('已恢复所有下载');
     } catch (e) {
       console.error(e);

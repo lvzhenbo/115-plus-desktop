@@ -139,7 +139,6 @@
   } from '@vicons/antd';
   import OfflineDownloadModal from './components/OfflineDownloadModal/OfflineDownloadModal.vue';
   import SearchModal from './components/SearchModal/SearchModal.vue';
-  import { getVersion } from '@/api/aria2';
   import { useSettingStore } from '@/store/setting';
   import { downloadDir } from '@tauri-apps/api/path';
   import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -258,10 +257,7 @@
   );
 
   onMounted(async () => {
-    const port: number = await invoke('get_port');
-    settingStore.downloadSetting.aria2Port = port;
     getUserInfo();
-    getAria2Version();
     if (!settingStore.downloadSetting.downloadPath) {
       settingStore.downloadSetting.downloadPath = await downloadDir();
     }
@@ -302,16 +298,6 @@
       const res = await userInfo();
       userStore.userInfo = res.data;
     } catch (_error) {}
-  };
-
-  const getAria2Version = async () => {
-    try {
-      await getVersion();
-      message.success('aria2服务连接成功！');
-    } catch (error) {
-      message.error('aria2服务连接失败');
-      console.error(error);
-    }
   };
 </script>
 

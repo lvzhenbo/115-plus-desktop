@@ -101,7 +101,7 @@
   // ============ 下载 ============
 
   const handleDownload = async (file: MyFile) => {
-    message.info('正在获取下载链接，并推送到aria2下载，可在下载列表中查看下载进度');
+    message.info('正在获取下载链接，可在下载列表中查看下载进度');
     try {
       await downloadFile(file);
     } catch (error) {

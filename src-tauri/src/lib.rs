@@ -1,17 +1,33 @@
+use std::sync::Arc;
 use tauri::{AppHandle, Manager};
+use tauri_plugin_log::{Target, TargetKind, TimezoneStrategy};
 use tauri_plugin_window_state::StateFlags;
 
-mod aria2;
 mod database;
+mod download;
 mod upload;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    Target::new(TargetKind::Stdout),
+                    Target::new(TargetKind::LogDir {
+                        file_name: Some("logs".to_string()),
+                    }),
+                    Target::new(TargetKind::Webview),
+                ])
+                .level(log::LevelFilter::Info)
+                .timezone_strategy(TimezoneStrategy::UseLocal)
+                .max_file_size(50_000)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepAll)
+                .build(),
+        )
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
         .plugin(
             tauri_plugin_window_state::Builder::new()
@@ -30,25 +46,23 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            // 应用启动时启动 aria2c
-            if let Err(e) = aria2::start_aria2_service(app.handle()) {
-                eprintln!("启动 aria2c 服务失败: {}", e);
-            }
+            log::info!("应用启动, 版本={}", app.package_info().version);
+
+            // Initialize .oofp progress file manager
+            let progress_file = Arc::new(download::persistence::ProgressFile::new());
+            app.manage(progress_file);
+
+            // Create global HTTP client for downloads (connection pooling + HTTP/2 multiplexing)
+            let http_client = reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("Failed to build HTTP client");
+            app.manage(http_client);
+
+            log::info!("应用初始化完成");
             Ok(())
         })
-        .on_window_event(|app_handle, event| {
-            // 当最后一个窗口关闭时，关闭 aria2c
-            if let tauri::WindowEvent::Destroyed = event {
-                if app_handle.webview_windows().len() < 1 {
-                    if let Err(e) = aria2::stop_aria2_service() {
-                        eprintln!("关闭 aria2c 服务失败: {}", e);
-                    }
-                }
-            }
-        })
         .invoke_handler(tauri::generate_handler![
-            aria2::get_port,
-            aria2::stop_aria2,
             upload::compute_file_hash,
             upload::compute_partial_sha1,
             upload::upload_to_oss,
@@ -56,7 +70,13 @@ pub fn run() {
             upload::cancel_upload,
             upload::resume_upload,
             upload::scan_directory,
-            upload::get_file_size
+            upload::get_file_size,
+            download::http::pause_download,
+            download::http::cancel_download,
+            download::http::update_download_url,
+            download::http::start_download,
+            download::http::resume_download_task,
+            download::http::set_speed_limit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

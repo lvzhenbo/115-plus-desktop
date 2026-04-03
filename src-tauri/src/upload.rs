@@ -5,6 +5,7 @@ use ali_oss_rs::multipart_common::{
 };
 use ali_oss_rs::object::ObjectOperations;
 use ali_oss_rs::object_common::{Callback, CallbackBodyType, PutObjectOptionsBuilder};
+use log::{error, info, warn};
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
@@ -52,6 +53,7 @@ pub struct OssUploadInitEvent {
 /// 计算文件的完整 SHA1 和前 128KB SHA1
 #[tauri::command]
 pub async fn compute_file_hash(file_path: String) -> Result<FileHashResult, String> {
+    info!("[hash] 开始计算文件哈希: {}", file_path);
     tokio::task::spawn_blocking(move || {
         let mut file =
             std::fs::File::open(&file_path).map_err(|e| format!("打开文件失败: {}", e))?;
@@ -150,6 +152,10 @@ pub async fn upload_to_oss(
     oss_upload_id: Option<String>,
     token_expiration_ms: Option<u64>,
 ) -> Result<String, String> {
+    info!(
+        "[upload][{}] 开始上传 file={} bucket={} object={} oss_upload_id={:?}",
+        upload_id, file_path, bucket, object, oss_upload_id
+    );
     let (tx, rx) = watch::channel(UploadSignal::Running);
     {
         let mut signals = UPLOAD_SIGNALS.lock().unwrap();
@@ -180,18 +186,25 @@ pub async fn upload_to_oss(
         signals.remove(&upload_id);
     }
 
+    match &result {
+        Ok(_) => info!("[upload][{}] 上传完成", upload_id),
+        Err(e) => error!("[upload][{}] 上传失败: {}", upload_id, e),
+    }
+
     result
 }
 
 /// 暂停上传任务
 #[tauri::command]
 pub fn pause_upload(upload_id: String) -> Result<(), String> {
+    info!("[upload][{}] 暂停上传", upload_id);
     let signals = UPLOAD_SIGNALS.lock().unwrap();
     if let Some(tx) = signals.get(&upload_id) {
         tx.send(UploadSignal::Paused)
             .map_err(|e| format!("发送暂停信号失败: {}", e))?;
         Ok(())
     } else {
+        warn!("[upload][{}] 暂停失败: 未找到上传任务", upload_id);
         Err("未找到上传任务".to_string())
     }
 }
@@ -199,12 +212,14 @@ pub fn pause_upload(upload_id: String) -> Result<(), String> {
 /// 取消上传任务
 #[tauri::command]
 pub fn cancel_upload(upload_id: String) -> Result<(), String> {
+    info!("[upload][{}] 取消上传", upload_id);
     let signals = UPLOAD_SIGNALS.lock().unwrap();
     if let Some(tx) = signals.get(&upload_id) {
         tx.send(UploadSignal::Cancelled)
             .map_err(|e| format!("发送取消信号失败: {}", e))?;
         Ok(())
     } else {
+        warn!("[upload][{}] 取消失败: 未找到上传任务", upload_id);
         Err("未找到上传任务".to_string())
     }
 }
@@ -228,6 +243,11 @@ async fn upload_file_impl(
     let file_meta =
         std::fs::metadata(&file_path).map_err(|e| format!("获取文件信息失败: {}", e))?;
     let file_size = file_meta.len();
+    info!(
+        "[upload][{}] 文件大小={:.1}MB",
+        upload_id,
+        file_size as f64 / 1024.0 / 1024.0
+    );
 
     // STS 凭证过期时间（毫秒时间戳），提前 5 分钟视为过期以留出安全余量
     let token_deadline_ms: Option<u64> =
@@ -260,6 +280,11 @@ async fn upload_file_impl(
 
     // 如果文件小于分片大小且没有需要续传的 oss_upload_id，使用简单上传
     if file_size <= part_size && oss_upload_id.is_none() {
+        info!(
+            "[upload][{}] 使用简单上传 (文件 <= {}MB)",
+            upload_id,
+            part_size / 1024 / 1024
+        );
         return simple_upload(
             &app,
             &upload_id,
@@ -279,6 +304,12 @@ async fn upload_file_impl(
     let mut uploaded_size: u64 = 0;
     let mut completed_parts: std::collections::HashSet<u32> = std::collections::HashSet::new();
 
+    info!(
+        "[upload][{}] 使用分片上传 part_size={}MB total_parts={}",
+        upload_id,
+        part_size / 1024 / 1024,
+        total_parts
+    );
     let current_oss_upload_id = if let Some(ref existing_id) = oss_upload_id {
         // 查询已上传的分片
         match client.list_parts(&bucket, &object, existing_id, None).await {
@@ -368,6 +399,7 @@ async fn upload_file_impl(
                 .unwrap_or_default()
                 .as_millis() as u64;
             if now_ms >= deadline_ms {
+                warn!("[upload][{}] STS 凭证即将过期", upload_id);
                 return Err("token_expired".to_string());
             }
         }
@@ -572,12 +604,14 @@ async fn simple_upload(
 /// 恢复上传任务信号为运行状态
 #[tauri::command]
 pub fn resume_upload(upload_id: String) -> Result<(), String> {
+    info!("[upload][{}] 恢复上传", upload_id);
     let signals = UPLOAD_SIGNALS.lock().unwrap();
     if let Some(tx) = signals.get(&upload_id) {
         tx.send(UploadSignal::Running)
             .map_err(|e| format!("发送恢复信号失败: {}", e))?;
         Ok(())
     } else {
+        warn!("[upload][{}] 恢复失败: 未找到上传任务", upload_id);
         Err("未找到上传任务".to_string())
     }
 }

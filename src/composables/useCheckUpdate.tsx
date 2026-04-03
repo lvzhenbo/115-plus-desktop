@@ -1,7 +1,6 @@
 import type { Update } from '@tauri-apps/plugin-updater';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
-import { invoke } from '@tauri-apps/api/core';
 import { useSettingStore } from '@/store/setting';
 import { useDownloadManager } from '@/composables/useDownloadManager';
 import { useUploadManager } from '@/composables/useUploadManager';
@@ -128,11 +127,10 @@ export const useCheckUpdate = () => {
       if (!userConfirmed) return;
     }
 
-    // 暂停所有任务并停止 aria2，避免进程占用导致 Windows 安装失败
+    // 暂停所有任务，避免进程占用导致 Windows 安装失败
     const { pauseAllTasks: pauseAllDownloads } = useDownloadManager();
     const { pauseAllTasks: pauseAllUploads } = useUploadManager();
     await Promise.all([pauseAllDownloads(), pauseAllUploads()]);
-    await invoke('stop_aria2');
     await update.install();
     await relaunch();
   }
@@ -146,7 +144,6 @@ export const useCheckUpdate = () => {
 
     try {
       const update = await check({ proxy });
-      console.log(update);
 
       if (!update) {
         if (!silent) {
