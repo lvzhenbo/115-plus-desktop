@@ -1,9 +1,12 @@
 <template>
-  <NModal v-model:show="show" preset="card" class="w-180!" title="批量重命名">
-    <NTabs v-model:value="mode" type="segment" animated>
-      <!-- 查找替换 -->
-      <NTabPane name="replace" tab="查找替换">
-        <NScrollbar class="max-h-45">
+  <NModal v-model:show="show" preset="card" class="w-[80vw]!" title="批量重命名">
+    <NAlert title="注意" type="warning" class="mb-2">
+      由于115并没有提供批量重命名的接口，所以采用并发方式，而115又做了限流措施，所以需要等待一段时间，并且可能因多次操作而触发限流，建议短时间内不要频繁批量重命名，如触发限流，请到115网页进行验证解除限流后再继续操作。
+    </NAlert>
+    <div class="flex">
+      <NTabs v-model:value="mode" type="card" placement="left" pane-class="w-100!">
+        <!-- 查找替换 -->
+        <NTabPane name="replace" tab="查找替换">
           <NSpace vertical>
             <NInput
               v-model:value="findText"
@@ -41,22 +44,18 @@
             </NSpace>
             <NText v-if="regexError" type="error" class="text-xs">{{ regexError }}</NText>
           </NSpace>
-        </NScrollbar>
-      </NTabPane>
+        </NTabPane>
 
-      <!-- 添加前后缀 -->
-      <NTabPane name="affix" tab="添加前后缀">
-        <NScrollbar class="max-h-45">
+        <!-- 添加前后缀 -->
+        <NTabPane name="affix" tab="添加前后缀">
           <NSpace vertical>
             <NInput v-model:value="prefix" placeholder="添加前缀" clearable />
             <NInput v-model:value="suffix" placeholder="添加后缀（扩展名前）" clearable />
           </NSpace>
-        </NScrollbar>
-      </NTabPane>
+        </NTabPane>
 
-      <!-- 序号重命名 -->
-      <NTabPane name="sequential" tab="序号重命名">
-        <NScrollbar class="max-h-45">
+        <!-- 序号重命名 -->
+        <NTabPane name="sequential" tab="序号重命名">
           <NSpace vertical>
             <NInput v-model:value="seqTemplate" placeholder="命名模板，如：文件_{n}" clearable>
               <template #suffix>
@@ -79,12 +78,10 @@
               <template #prefix>起始序号</template>
             </NInputNumber>
           </NSpace>
-        </NScrollbar>
-      </NTabPane>
+        </NTabPane>
 
-      <!-- 大小写转换 -->
-      <NTabPane name="case" tab="大小写转换">
-        <NScrollbar class="max-h-45">
+        <!-- 大小写转换 -->
+        <NTabPane name="case" tab="大小写转换">
           <NRadioGroup v-model:value="caseMode">
             <NSpace vertical>
               <NRadio value="upper">全部大写（ABC）</NRadio>
@@ -96,20 +93,19 @@
               <NRadio value="extUpper">仅扩展名大写</NRadio>
             </NSpace>
           </NRadioGroup>
-        </NScrollbar>
-      </NTabPane>
-    </NTabs>
-
-    <!-- 预览 -->
-    <NDivider style="margin: 12px 0">预览</NDivider>
-    <NDataTable
-      :columns="previewColumns"
-      :data="previewList"
-      :row-key="(row: PreviewItem) => row.fid"
-      :max-height="200"
-      size="small"
-    />
-
+        </NTabPane>
+      </NTabs>
+      <!-- 预览 -->
+      <div class="ml-2">
+        <NDataTable
+          :columns="previewColumns"
+          :data="previewList"
+          :row-key="(row: PreviewItem) => row.fid"
+          flex-height
+          class="h-[60vh]"
+        />
+      </div>
+    </div>
     <template #action>
       <NSpace justify="end">
         <NButton @click="show = false">取消</NButton>
