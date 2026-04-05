@@ -1,7 +1,9 @@
 {
-  "*.{js,jsx,ts,tsx}": [
-    "prettier --cache --ignore-unknown  --write",
-    "eslint --cache --fix --cache-location ./node_modules/.cache/.eslintcache"
+  "*.{js,cjs,mjs,jsx,ts,cts,mts,tsx,vue}": [
+    "prettier --cache --cache-strategy content --cache-location ./node_modules/.cache/.prettiercache --ignore-unknown --write",
+    "eslint --cache --cache-strategy content --fix --cache-location ./node_modules/.cache/.eslintcache"
   ],
-  "*.md": ["prettier --cache --ignore-unknown --write"]
+  "*.{json,jsonc,yml,yaml,md,mdx,html,css,scss,less}": [
+    "prettier --cache --cache-strategy content --cache-location ./node_modules/.cache/.prettiercache --ignore-unknown --write"
+  ]
 }

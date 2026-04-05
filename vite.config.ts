@@ -7,7 +7,6 @@ import Components from 'unplugin-vue-components/vite';
 import { NaiveUiResolver } from 'unplugin-vue-components/resolvers';
 import MotionResolver from 'motion-v/resolver';
 import tailwindcss from '@tailwindcss/vite';
-import { fileURLToPath } from 'node:url';
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -64,9 +63,7 @@ export default defineConfig(async () => ({
     },
   },
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-    },
+    tsconfigPaths: true,
   },
   build: {
     chunkSizeWarningLimit: 1000,
