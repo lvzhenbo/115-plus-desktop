@@ -37,7 +37,7 @@
     "date-fns": "^4.1.0",
     "filesize": "^11.0.15",
     "hls.js": "^1.6.15",
-    "marked": "^17.0.6",
+    "marked": "^18.0.0",
     "media-captions": "^0.0.18",
     "motion-v": "^2.2.0",
     "naive-ui": "^2.44.1",
@@ -73,7 +73,7 @@
     "typescript": "^6.0.2",
     "unplugin-auto-import": "^21.0.0",
     "unplugin-vue-components": "^32.0.0",
-    "vite": "^8.0.5",
+    "vite": "^8.0.7",
     "vite-plugin-vue-devtools": "^8.1.1",
     "vue-eslint-parser": "^10.4.0",
     "vue-tsc": "^3.2.6"
