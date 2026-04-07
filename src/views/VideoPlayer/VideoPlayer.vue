@@ -20,7 +20,7 @@
         <!-- 视频加载中 -->
         <AnimatePresence>
           <div
-            v-if="waiting || seeking"
+            v-if="showLoading"
             key="loading"
             v-motion
             :animate="{ opacity: 1 }"
@@ -140,6 +140,28 @@
   const isHovered = useElementHover(controlsRef);
   const { playing, currentTime, duration, volume, muted, rate, seeking, waiting, ended } =
     useMediaControls(videoRef);
+
+  // 加载遮罩延迟 300ms 显示（类似 YouTube，避免快速缓冲闪烁，同时给居中提示留出展示时间）
+  const showLoading = ref(false);
+  const { start: startLoadingTimer, stop: stopLoadingTimer } = useTimeoutFn(
+    () => {
+      showLoading.value = true;
+    },
+    300,
+    { immediate: false },
+  );
+  watch(
+    () => waiting.value || seeking.value,
+    (isLoading) => {
+      if (isLoading) {
+        startLoadingTimer();
+      } else {
+        stopLoadingTimer();
+        showLoading.value = false;
+      }
+    },
+  );
+
   const firstLoaded = ref(true);
   const controlsVisible = ref(true);
   const { start: startControlsHideTimer, stop: stopControlsHideTimer } = useTimeoutFn(() => {

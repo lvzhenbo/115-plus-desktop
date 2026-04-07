@@ -29,13 +29,14 @@
 </template>
 
 <script setup lang="ts">
+  import { FastForwardOutlined, FastBackwardOutlined } from '@vicons/antd';
   import {
-    PlayCircleOutlined,
-    PauseCircleOutlined,
-    FastForwardOutlined,
-    FastBackwardOutlined,
-  } from '@vicons/antd';
-  import { VolumeUpFilled, VolumeDownFilled, VolumeMuteFilled } from '@vicons/material';
+    VolumeUpFilled,
+    VolumeDownFilled,
+    VolumeMuteFilled,
+    PlayArrowFilled,
+    PauseFilled,
+  } from '@vicons/material';
   import { vMotion } from 'motion-v';
   import type { Component } from 'vue';
 
@@ -51,9 +52,9 @@
   const indicatorIcon = computed<Component | null>(() => {
     switch (indicatorType.value) {
       case 'play':
-        return PlayCircleOutlined;
+        return PlayArrowFilled;
       case 'pause':
-        return PauseCircleOutlined;
+        return PauseFilled;
       case 'forward':
         return FastForwardOutlined;
       case 'backward':
