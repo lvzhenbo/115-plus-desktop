@@ -11,6 +11,7 @@
           ref="videoRef"
           class="w-full h-full object-contain cursor-pointer"
           :class="{ 'cursor-none!': !controlsVisible && playing }"
+          :style="videoRotationStyle"
           @click="handleClick"
           @dblclick="handleDblClick"
         ></video>
@@ -46,6 +47,8 @@
             </NEllipsis>
           </div>
         </AnimatePresence>
+        <!-- 居中提示 -->
+        <CenterIndicator ref="centerIndicatorRef" />
         <!-- 字幕显示层 -->
         <SubtitleLayer
           ref="subtitleLayerRef"
@@ -66,130 +69,36 @@
             :exit="{ opacity: 0, y: 20 }"
             class="absolute bottom-0 left-0 w-full px-4 py-2 bg-linear-to-t from-black/90 to-transparent z-20 box-border"
           >
-            <div class="flex items-center mb-2">
-              <NTooltip :show="showTooltip" :x="tooltipX" :y="height - 70" placement="top">
-                {{ formatTime(hoverTime) }}
-              </NTooltip>
-              <div
-                ref="progressBarRef"
-                class="flex-1 h-1.5 bg-white/20 rounded cursor-pointer relative group"
-                @mousedown="handleProgressMouseDown"
-                @mousemove="handleProgressHover"
-                @mouseenter="showTooltip = true"
-                @mouseleave="showTooltip = false"
-              >
-                <!-- 播放进度条 -->
-                <NEl
-                  class="h-full bg-(--primary-color) rounded absolute top-0 left-0"
-                  :style="{ width: `${progress}%` }"
-                ></NEl>
-                <!-- 进度条拖动手柄 -->
-                <NEl
-                  class="h-3 w-3 rounded-full bg-(--primary-color) absolute top-1/2 -translate-y-1/2 -ml-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
-                  :class="{ 'opacity-100!': isDraggingProgress }"
-                  :style="{ left: `${progress}%` }"
-                ></NEl>
-              </div>
-              <div class="ml-4 text-white text-sm min-w-25 text-right tabular-nums">
-                {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
-              </div>
-            </div>
-            <!-- 控制栏 -->
-            <div class="flex items-center">
-              <!-- 控制栏左侧 -->
-              <div class="flex items-center gap-1">
-                <NButton
-                  quaternary
-                  circle
-                  :disabled="!hasPreviousVideo"
-                  @click="handlePreviousVideo"
-                >
-                  <template #icon>
-                    <NIcon size="24" class="text-white"><StepBackwardOutlined /></NIcon>
-                  </template>
-                </NButton>
-                <NButton quaternary circle @click="playing = !playing">
-                  <template #icon>
-                    <NIcon size="24" class="text-white">
-                      <PauseCircleOutlined v-if="playing" />
-                      <PlayCircleOutlined v-else />
-                    </NIcon>
-                  </template>
-                </NButton>
-                <NButton quaternary circle :disabled="!hasNextVideo" @click="handleNextVideo">
-                  <template #icon>
-                    <NIcon size="24" class="text-white"><StepForwardOutlined /></NIcon>
-                  </template>
-                </NButton>
-                <NButton quaternary circle @click="toggleMute">
-                  <template #icon>
-                    <NIcon size="24" class="text-white">
-                      <VolumeMuteFilled v-if="muted" />
-                      <VolumeUpFilled v-else-if="volumeLevel > 50" />
-                      <VolumeDownFilled v-else />
-                    </NIcon>
-                  </template>
-                </NButton>
-                <NSlider
-                  v-model:value="volumeLevel"
-                  class="w-30! ml-2"
-                  :min="0"
-                  :max="100"
-                  @update:value="changeVolume"
-                />
-              </div>
-              <!-- 控制栏右侧 -->
-              <div class="flex items-center ml-auto gap-1">
-                <!-- 分辨率选择 -->
-                <NPopselect
-                  v-model:value="currentResolution"
-                  :options="resolutions"
-                  @update:value="changeResolution"
-                >
-                  <NButton quaternary round size="small" class="text-white!">
-                    {{ currentResolutionLabel }}
-                  </NButton>
-                </NPopselect>
-                <!-- 播放速度选择 -->
-                <NPopselect
-                  v-model:value="rate"
-                  :options="playbackSpeeds"
-                  @update:value="changePlaybackSpeed"
-                >
-                  <NButton quaternary round size="small" class="text-white!"> {{ rate }}x </NButton>
-                </NPopselect>
-                <!-- 字幕选择 -->
-                <NPopselect
-                  v-if="subtitleList.length > 0"
-                  v-model:value="currentSubtitleValue"
-                  :options="subtitleOptions"
-                >
-                  <NButton quaternary round size="small" class="text-white!">
-                    {{ currentSubtitleLabel }}
-                  </NButton>
-                </NPopselect>
-                <!-- 播放列表 -->
-                <NButton
-                  quaternary
-                  circle
-                  :disabled="!videoList.length"
-                  @click="videoListShow = !videoListShow"
-                >
-                  <template #icon>
-                    <NIcon size="24" class="text-white"><UnorderedListOutlined /></NIcon>
-                  </template>
-                </NButton>
-                <!-- 全屏切换 -->
-                <NButton quaternary circle class="hidden md:flex" @click="toggleFullscreen">
-                  <template #icon>
-                    <NIcon size="24" class="text-white">
-                      <FullscreenExitOutlined v-if="isFullscreen" />
-                      <FullscreenOutlined v-else />
-                    </NIcon>
-                  </template>
-                </NButton>
-              </div>
-            </div>
+            <ControlBar
+              v-model:playing="playing"
+              v-model:muted="muted"
+              v-model:volume-level="volumeLevel"
+              v-model:rate="rate"
+              v-model:current-resolution="currentResolution"
+              v-model:current-subtitle-value="currentSubtitleValue"
+              v-model:video-list-show="videoListShow"
+              :current-time="currentTime"
+              :duration="duration"
+              :progress="progress"
+              :is-fullscreen="isFullscreen"
+              :has-previous-video="hasPreviousVideo"
+              :has-next-video="hasNextVideo"
+              :resolutions="resolutions"
+              :subtitle-list="subtitleList"
+              :video-list-length="videoList.length"
+              @previous-video="handlePreviousVideo"
+              @next-video="handleNextVideo"
+              @toggle-fullscreen="toggleFullscreen"
+              @change-resolution="changeResolution"
+              @change-playback-speed="changePlaybackSpeed"
+              @rotate-video="rotateVideo"
+              @seek="seek"
+              @toggle-play="centerIndicatorRef?.show(playing ? 'play' : 'pause')"
+              @toggle-mute="centerIndicatorRef?.show(muted ? 'mute' : 'volume', volumeLevel)"
+              @change-volume="
+                (v: number) => centerIndicatorRef?.show(v === 0 ? 'mute' : 'volume', v)
+              "
+            />
           </div>
         </AnimatePresence>
       </div>
@@ -206,16 +115,6 @@
 <script setup lang="ts">
   import Hls from 'hls.js';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-  import {
-    PlayCircleOutlined,
-    PauseCircleOutlined,
-    StepBackwardOutlined,
-    StepForwardOutlined,
-    FullscreenOutlined,
-    FullscreenExitOutlined,
-    UnorderedListOutlined,
-  } from '@vicons/antd';
-  import { VolumeDownFilled, VolumeMuteFilled, VolumeUpFilled } from '@vicons/material';
   import { emit, listen } from '@tauri-apps/api/event';
   import type { MyFile } from '@/api/types/file';
   import { saveVideoHistory, videoHistory, videoPlayUrl, videoSubtitle } from '@/api/video';
@@ -224,19 +123,19 @@
   import { type SelectOption } from 'naive-ui';
   import CustomLoader from './customLoader';
   import type { VideoURL } from '@/api/types/video';
+  import CenterIndicator from './components/CenterIndicator/CenterIndicator.vue';
+  import ControlBar from './components/ControlBar/ControlBar.vue';
   import VideoListDrawer from './components/VideoListDrawer/VideoListDrawer.vue';
   import SubtitleLayer from './components/SubtitleLayer/SubtitleLayer.vue';
   import { useSettingStore } from '@/store/setting';
   import { vMotion } from 'motion-v';
 
   const settingStore = useSettingStore();
-  const { height } = useWindowSize();
   const message = useMessage();
   const videoContainer = ref<HTMLElement | null>(null);
   const videoRef = ref<HTMLVideoElement | null>(null);
   const controlsRef = ref<HTMLElement | null>(null);
   const isHovered = useElementHover(controlsRef);
-  const progressBarRef = ref<HTMLElement | null>(null);
   const { playing, currentTime, duration, volume, muted, rate, seeking, waiting, ended } =
     useMediaControls(videoRef);
   const firstLoaded = ref(true);
@@ -247,21 +146,6 @@
   const isFullscreen = ref(false);
   const resolutions = ref<SelectOption[]>([]);
   const currentResolution = ref<number>(0);
-  const currentResolutionLabel = computed(() => {
-    const resolution = resolutions.value.find((res) => res.value === currentResolution.value);
-    return resolution ? resolution.label : '';
-  });
-  const playbackSpeeds: SelectOption[] = [
-    { label: '5x', value: 5 },
-    { label: '4x', value: 4 },
-    { label: '3x', value: 3 },
-    { label: '2x', value: 2 },
-    { label: '1.5x', value: 1.5 },
-    { label: '1.25x', value: 1.25 },
-    { label: '1x', value: 1 },
-    { label: '0.75x', value: 0.75 },
-    { label: '0.5x', value: 0.5 },
-  ];
   let hls: Hls | null = null;
   const file = ref<MyFile | null>(null);
   const pickCode = ref('');
@@ -269,7 +153,54 @@
   const videoUrlList = ref<VideoURL[]>([]);
   const historyTime = ref(0);
   const videoListShow = ref(false);
-  const isDraggingProgress = ref(false);
+
+  // 视频旋转相关（参考 xgplayer rotate 插件：90°/270° 时交换视频元素宽高）
+  const rotation = ref(0);
+  const videoRotationStyle = computed(() => {
+    const deg = rotation.value;
+    if (deg === 0) return {};
+    const isVertical = deg % 180 !== 0;
+    const container = videoContainer.value;
+
+    if (!isVertical || !container) {
+      return {
+        transform: `rotate(${deg}deg)`,
+        transition: 'transform 0.3s ease',
+      };
+    }
+
+    // 90°/270° 时交换宽高，flex 居中自动处理定位
+    const cW = container.clientWidth;
+    const cH = container.clientHeight;
+
+    return {
+      width: `${cH}px`,
+      height: `${cW}px`,
+      transform: `rotate(${deg}deg)`,
+      transition: 'transform 0.3s ease',
+    };
+  });
+
+  const rotateVideo = () => {
+    if (rotation.value === 270) {
+      // 先动画到 360°，过渡结束后重置为 0°
+      rotation.value = 360;
+      nextTick(() => {
+        const el = videoRef.value;
+        if (!el) return;
+        const onEnd = () => {
+          el.removeEventListener('transitionend', onEnd);
+          rotation.value = 0;
+        };
+        el.addEventListener('transitionend', onEnd, { once: true });
+      });
+    } else {
+      rotation.value = (rotation.value + 90) % 360;
+    }
+  };
+
+  // 居中提示
+  const centerIndicatorRef = useTemplateRef('centerIndicatorRef');
 
   // 字幕相关
   const subtitleLayerRef = useTemplateRef('subtitleLayerRef');
@@ -430,18 +361,6 @@
     }
   };
 
-  // 字幕选项（用于 NPopselect）
-  const subtitleOptions = computed(() => {
-    const options: SelectOption[] = [{ label: '关闭字幕', value: '__off__' }];
-    subtitleList.value.forEach((s) => {
-      options.push({
-        label: s.title || s.language || s.file_name || '未知字幕',
-        value: s.sid,
-      });
-    });
-    return options;
-  });
-
   const currentSubtitleValue = computed({
     get: () =>
       subtitleEnabled.value && currentSubtitleSid.value ? currentSubtitleSid.value : '__off__',
@@ -452,12 +371,6 @@
         changeSubtitle(val);
       }
     },
-  });
-
-  const currentSubtitleLabel = computed(() => {
-    if (!subtitleEnabled.value || !currentSubtitleSid.value) return '字幕';
-    const subtitle = subtitleList.value.find((s) => s.sid === currentSubtitleSid.value);
-    return subtitle ? subtitle.title || subtitle.language || '字幕' : '字幕';
   });
 
   // 定时保存播放历史
@@ -520,15 +433,6 @@
       if (videoList.value.length >= res.count) break;
       offset += limit;
     }
-  };
-
-  // 格式化时间显示
-  const formatTime = (time: number): string => {
-    if (!Number.isFinite(time) || time < 0) return '00:00:00';
-    const hours = Math.floor(time / 3600);
-    const minutes = Math.floor((time % 3600) / 60);
-    const seconds = Math.floor(time % 60);
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   };
 
   // 加载视频
@@ -641,6 +545,7 @@
     () => {
       if (clickCount === 1) {
         playing.value = !playing.value;
+        centerIndicatorRef.value?.show(playing.value ? 'play' : 'pause');
       }
       clickCount = 0;
     },
@@ -679,51 +584,6 @@
   };
   useEventListener(videoContainer, 'mousemove', handleMouseMove);
 
-  // 进度条点击与拖拽
-  const handleProgressMouseDown = (e: MouseEvent) => {
-    if (!videoRef.value || !progressBarRef.value) return;
-
-    isDraggingProgress.value = true;
-    const wasPlaying = playing.value;
-    if (wasPlaying) playing.value = false;
-
-    const seekToPosition = (clientX: number) => {
-      const rect = progressBarRef.value!.getBoundingClientRect();
-      const position = Math.max(0, Math.min((clientX - rect.left) / rect.width, 1));
-      seek(position * duration.value);
-    };
-
-    // 立即跳转到点击位置
-    seekToPosition(e.clientX);
-
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      seekToPosition(moveEvent.clientX);
-    };
-
-    const onMouseUp = () => {
-      isDraggingProgress.value = false;
-      if (wasPlaying) playing.value = true;
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-    };
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  };
-
-  // Tooltip 相关
-  const showTooltip = ref(false);
-  const tooltipX = ref(0);
-  const hoverTime = ref(0);
-
-  const handleProgressHover = (e: MouseEvent) => {
-    if (!progressBarRef.value || !duration.value) return;
-    const rect = progressBarRef.value.getBoundingClientRect();
-    const position = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1));
-    hoverTime.value = position * duration.value;
-    tooltipX.value = e.clientX;
-  };
-
   // 键盘快捷键（带累加跳转）
   const keyPressInterval = 300;
   const arrowLeftCount = ref(0);
@@ -732,6 +592,7 @@
 
   const { start: resetArrowLeftCount } = useTimeoutFn(() => {
     if (arrowLeftCount.value > 0) {
+      centerIndicatorRef.value?.show('backward', skipSeconds * arrowLeftCount.value);
       seek(currentTime.value - skipSeconds * arrowLeftCount.value);
       arrowLeftCount.value = 0;
     }
@@ -739,6 +600,7 @@
 
   const { start: resetArrowRightCount } = useTimeoutFn(() => {
     if (arrowRightCount.value > 0) {
+      centerIndicatorRef.value?.show('forward', skipSeconds * arrowRightCount.value);
       seek(currentTime.value + skipSeconds * arrowRightCount.value);
       arrowRightCount.value = 0;
     }
@@ -768,7 +630,10 @@
 
   // 空格切换播放/暂停
   watch(space!, (pressed) => {
-    if (pressed && videoRef.value) playing.value = !playing.value;
+    if (pressed && videoRef.value) {
+      playing.value = !playing.value;
+      centerIndicatorRef.value?.show(playing.value ? 'play' : 'pause');
+    }
   });
 
   // 左方向键后退
@@ -789,17 +654,28 @@
 
   // 上方向键增加音量
   watch(arrowUp!, (pressed) => {
-    if (pressed) changeVolume(Math.min(volumeLevel.value + 5, 100));
+    if (pressed) {
+      const newVol = Math.min(volumeLevel.value + 5, 100);
+      changeVolume(newVol);
+      centerIndicatorRef.value?.show('volume', newVol);
+    }
   });
 
   // 下方向键减小音量
   watch(arrowDown!, (pressed) => {
-    if (pressed) changeVolume(Math.max(volumeLevel.value - 5, 0));
+    if (pressed) {
+      const newVol = Math.max(volumeLevel.value - 5, 0);
+      changeVolume(newVol);
+      centerIndicatorRef.value?.show(newVol === 0 ? 'mute' : 'volume', newVol);
+    }
   });
 
   // M 键静音切换
   watch(mKey!, (pressed) => {
-    if (pressed) toggleMute();
+    if (pressed) {
+      toggleMute();
+      centerIndicatorRef.value?.show(muted.value ? 'mute' : 'volume', volumeLevel.value);
+    }
   });
 
   // 调整音量
@@ -837,6 +713,7 @@
     if (videoRef.value) {
       rate.value = speed;
       videoRef.value.playbackRate = speed;
+      centerIndicatorRef.value?.show('speed', speed);
     }
   };
 
