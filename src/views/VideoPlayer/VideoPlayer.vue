@@ -9,9 +9,11 @@
       >
         <video
           ref="videoRef"
+          v-motion
+          :animate="videoRotationAnimate"
+          :transition="{ duration: 0.3 }"
           class="w-full h-full object-contain cursor-pointer"
           :class="{ 'cursor-none!': !controlsVisible && playing }"
-          :style="videoRotationStyle"
           @click="handleClick"
           @dblclick="handleDblClick"
         ></video>
@@ -154,49 +156,42 @@
   const historyTime = ref(0);
   const videoListShow = ref(false);
 
-  // 视频旋转相关（参考 xgplayer rotate 插件：90°/270° 时交换视频元素宽高）
+  // 视频旋转相关（使用 motion-v 动画库）
+  // rotation 持续累加（0, 90, 180, ...），motion 始终正向插值，无需 wrap-around hack
   const rotation = ref(0);
-  const videoRotationStyle = computed(() => {
+  const videoRotationAnimate = computed(() => {
     const deg = rotation.value;
-    if (deg === 0) return {};
-    const isVertical = deg % 180 !== 0;
+    if (deg === 0) return { rotate: 0, scale: 1 };
+
+    const effectiveDeg = ((deg % 360) + 360) % 360;
+    const isVertical = effectiveDeg % 180 !== 0;
     const container = videoContainer.value;
+    const video = videoRef.value;
 
     if (!isVertical || !container) {
-      return {
-        transform: `rotate(${deg}deg)`,
-        transition: 'transform 0.3s ease',
-      };
+      return { rotate: deg, scale: 1 };
     }
 
-    // 90°/270° 时交换宽高，flex 居中自动处理定位
     const cW = container.clientWidth;
     const cH = container.clientHeight;
 
-    return {
-      width: `${cH}px`,
-      height: `${cW}px`,
-      transform: `rotate(${deg}deg)`,
-      transition: 'transform 0.3s ease',
-    };
+    let scaleVal: number;
+    if (video && video.videoWidth > 0 && video.videoHeight > 0) {
+      const vW = video.videoWidth;
+      const vH = video.videoHeight;
+      const fitScale = Math.min(cW / vW, cH / vH);
+      const renderedW = vW * fitScale;
+      const renderedH = vH * fitScale;
+      scaleVal = Math.min(cW / renderedH, cH / renderedW);
+    } else {
+      scaleVal = cH / cW;
+    }
+
+    return { rotate: deg, scale: scaleVal };
   });
 
   const rotateVideo = () => {
-    if (rotation.value === 270) {
-      // 先动画到 360°，过渡结束后重置为 0°
-      rotation.value = 360;
-      nextTick(() => {
-        const el = videoRef.value;
-        if (!el) return;
-        const onEnd = () => {
-          el.removeEventListener('transitionend', onEnd);
-          rotation.value = 0;
-        };
-        el.addEventListener('transitionend', onEnd, { once: true });
-      });
-    } else {
-      rotation.value = (rotation.value + 90) % 360;
-    }
+    rotation.value += 90;
   };
 
   // 居中提示
