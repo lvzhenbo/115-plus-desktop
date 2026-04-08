@@ -125,11 +125,15 @@
       key: 'downloadSpeed',
       width: 140,
       render(row) {
-        if (row.status === 'active') {
+        if (row.status === 'active' || row.status === 'pausing') {
           return (
             <div>
-              <div>{formatSpeed(row.downloadSpeed || 0)}</div>
-              {row.eta ? <div class="text-xs text-gray-400">剩余 {formatEta(row.eta)}</div> : null}
+              <div>
+                {row.status === 'pausing' ? '暂停中...' : formatSpeed(row.downloadSpeed || 0)}
+              </div>
+              {row.status === 'active' && row.eta ? (
+                <div class="text-xs text-gray-400">剩余 {formatEta(row.eta)}</div>
+              ) : null}
             </div>
           );
         }
@@ -166,10 +170,15 @@
           );
         } else if (row.status === 'waiting') {
           return <NText type="warning">等待中</NText>;
-        } else if (row.status === 'active') {
+        } else if (row.status === 'active' || row.status === 'pausing') {
           return (
             <div>
-              <NProgress type="line" percentage={Math.floor(row.progress || 0)} processing />
+              <NProgress
+                type="line"
+                percentage={Math.floor(row.progress || 0)}
+                processing={row.status === 'active'}
+                status={row.status === 'pausing' ? 'warning' : undefined}
+              />
               {fileCountInfo}
             </div>
           );
@@ -203,16 +212,19 @@
         return (
           <NSpace>
             {(() => {
-              if (row.status === 'active') {
+              if (row.status === 'active' || row.status === 'pausing') {
                 return (
                   <NButton
                     text
                     type="warning"
+                    disabled={row.status === 'pausing'}
                     onClick={async () => {
                       try {
                         if (row.isFolder) {
                           await pauseFolder(row);
                         } else {
+                          // 立即设置状态为"暂停中"
+                          row.status = 'pausing';
                           await invoke('pause_download', { taskId: row.gid });
                         }
                       } catch (e) {
@@ -226,7 +238,7 @@
                           <PauseCircleOutlined />
                         </NIcon>
                       ),
-                      default: () => '暂停',
+                      default: () => (row.status === 'pausing' ? '暂停中' : '暂停'),
                     }}
                   </NButton>
                 );

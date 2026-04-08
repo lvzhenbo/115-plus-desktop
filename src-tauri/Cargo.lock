@@ -3115,6 +3115,7 @@ name = "oof-plus-desktop"
 version = "1.0.7"
 dependencies = [
  "ali-oss-rs",
+ "chrono",
  "fs2",
  "futures-util",
  "lazy_static",

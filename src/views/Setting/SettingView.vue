@@ -197,9 +197,9 @@
               :step="1"
             />
           </NFormItem>
-          <NFormItem label="每服务器连接数" path="downloadSetting.maxConnectionsPerServer">
+          <NFormItem label="全局连接并发数" path="downloadSetting.maxGlobalConnections">
             <NInputNumber
-              v-model:value="settingStore.downloadSetting.maxConnectionsPerServer"
+              v-model:value="settingStore.downloadSetting.maxGlobalConnections"
               :min="1"
               :max="64"
               :step="1"

@@ -11,8 +11,8 @@ pub const DEFAULT_SEGMENT_COUNT: u16 = 16;
 pub struct DownloadConfig {
     /// 文件拆分的总分片数 (aria2 split)
     pub split: u16,
-    /// 每服务器最大并行连接数 (aria2 max-connection-per-server)
-    pub max_connections_per_server: u16,
+    /// 全局最大并发连接数
+    pub max_global_connections: u16,
     /// 全局下载速度上限 (bytes/sec), 0 = 不限速 (per D-04)
     pub speed_limit: u64,
 }
@@ -21,7 +21,7 @@ impl Default for DownloadConfig {
     fn default() -> Self {
         Self {
             split: DEFAULT_SEGMENT_COUNT, // 16
-            max_connections_per_server: 16,
+            max_global_connections: 16,
             speed_limit: 0,
         }
     }

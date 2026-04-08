@@ -103,16 +103,20 @@ export const useDownloadManager = createSharedComposable(() => {
 
     let totalSpeed = 0;
     let totalDownloaded = 0;
+    let totalChildrenSize = 0;
     children.forEach((c) => {
       totalSpeed += c.speed;
       totalDownloaded += c.downloaded;
+      totalChildrenSize += c.total;
     });
 
+    // 取 folder.size（含全部子文件）和已跟踪子文件 total 之和的较大值作为分母
+    const totalSize = Math.max(folder.size || 0, totalChildrenSize);
     folder.downloadSpeed = totalSpeed;
-    if (folder.size && folder.size > 0) {
-      folder.progress = Math.min(100, Math.round((totalDownloaded / folder.size) * 10000) / 100);
+    if (totalSize > 0) {
+      folder.progress = Math.min(100, Math.round((totalDownloaded / totalSize) * 10000) / 100);
       folder.eta =
-        totalSpeed > 0 ? Math.ceil((folder.size - totalDownloaded) / totalSpeed) : undefined;
+        totalSpeed > 0 ? Math.ceil((totalSize - totalDownloaded) / totalSpeed) : undefined;
     }
   };
 
@@ -124,9 +128,30 @@ export const useDownloadManager = createSharedComposable(() => {
     return unit === 'MB/s' ? value * 1024 * 1024 : value * 1024;
   };
 
-  /** 从数据库刷新顶层列表 */
+  /** 从数据库刷新顶层列表，并用内存中的实时进度覆盖文件夹的滞后数据 */
   const refreshDisplayList = async () => {
+    // 保存当前处于 'pausing' 状态的任务 gid 集合
+    // 'pausing' 是前端临时状态（未持久化到 DB），refresh 后需要恢复
+    const pausingGids = new Set(
+      displayList.value.filter((d) => d.status === 'pausing').map((d) => d.gid),
+    );
+
     displayList.value = await getTopLevelDownloads();
+
+    // 恢复 'pausing' 状态：DB 中仍为 'active' 但前端已标记为 'pausing' 的任务
+    if (pausingGids.size > 0) {
+      for (const item of displayList.value) {
+        if (pausingGids.has(item.gid) && item.status === 'active') {
+          item.status = 'pausing';
+        }
+      }
+    }
+
+    // 从 DB 加载后，立即用 folderChildProgress 实时数据覆盖文件夹进度/速度/ETA，
+    // 防止 DB 滞后数据导致进度闪回
+    for (const [parentGid] of folderChildProgress) {
+      updateFolderFromChildren(parentGid);
+    }
   };
 
   // ---------- Tauri Event 监听 ----------
@@ -199,7 +224,14 @@ export const useDownloadManager = createSharedComposable(() => {
               child.downloaded = child.total;
             }
           }
+          // 暂停时立即刷新文件夹聚合速度（清零已暂停子任务的速度贡献）
+          if (mappedStatus === 'paused') {
+            updateFolderFromChildren(parentGid);
+          }
         }
+
+        // pausing 状态不需要 DB 持久化，是临时前端状态
+        // 当后端返回 paused 时自然覆盖
 
         // 状态变更时将内存中的实时进度持久化到 DB，防止 refreshDisplayList 后进度丢失
         const item = displayList.value.find((d) => d.gid === task_id);
@@ -250,32 +282,59 @@ export const useDownloadManager = createSharedComposable(() => {
 
       const completed = children.filter((d) => d.status === 'complete').length;
       const failed = children.filter((d) => d.status === 'error').length;
-      const activeChildren = children.filter((d) => d.status === 'active');
+      const activeChildren = children.filter(
+        (d) => d.status === 'active' || d.status === 'pausing',
+      );
       const paused = children.filter((d) => d.status === 'paused').length;
 
-      const totalSize = children.reduce((sum, d) => sum + (d.size || 0), 0);
-      const completedSize = children.reduce((sum, d) => {
-        if (d.status === 'complete') return sum + (d.size || 0);
-        if (d.progress && d.size) return sum + (d.size * d.progress) / 100;
-        return sum;
-      }, 0);
+      // 优先使用 folderChildProgress 内存中的实时进度数据
+      const realtimeChildren = folderChildProgress.get(folder.gid);
+      let totalSize: number;
+      let completedSize: number;
+      let dlSpeed: number;
 
-      const dlSpeed = activeChildren.reduce((sum, d) => sum + (d.downloadSpeed || 0), 0);
+      if (realtimeChildren && realtimeChildren.size > 0) {
+        totalSize = 0;
+        completedSize = 0;
+        dlSpeed = 0;
+        realtimeChildren.forEach((c) => {
+          totalSize += c.total;
+          completedSize += c.downloaded;
+          dlSpeed += c.speed;
+        });
+        // 确保 totalSize 不小于 DB 中已知的总大小（有些子任务可能尚未注册到实时追踪器）
+        const dbTotalSize = children.reduce((sum, d) => sum + (d.size || 0), 0);
+        totalSize = Math.max(totalSize, dbTotalSize);
+      } else {
+        totalSize = children.reduce((sum, d) => sum + (d.size || 0), 0);
+        completedSize = children.reduce((sum, d) => {
+          if (d.status === 'complete') return sum + (d.size || 0);
+          if (d.progress && d.size) return sum + (d.size * d.progress) / 100;
+          return sum;
+        }, 0);
+        dlSpeed = activeChildren.reduce((sum, d) => sum + (d.downloadSpeed || 0), 0);
+      }
+
+      // 不允许缩小 folder.size — enqueueFolder 设置的才是全量文件总大小
+      const finalSize = Math.max(totalSize, folder.size || 0);
 
       const updates: Partial<DownLoadFile> = {
         completedFiles: completed,
         failedFiles: failed,
-        size: totalSize > 0 ? totalSize : folder.size,
+        size: finalSize > 0 ? finalSize : folder.size,
         progress:
-          totalSize > 0 ? Math.min(100, Math.round((completedSize / totalSize) * 10000) / 100) : 0,
+          finalSize > 0 ? Math.min(100, Math.round((completedSize / finalSize) * 10000) / 100) : 0,
         downloadSpeed: dlSpeed,
         eta:
-          dlSpeed > 0 && totalSize > completedSize
-            ? Math.ceil((totalSize - completedSize) / dlSpeed)
+          dlSpeed > 0 && finalSize > completedSize
+            ? Math.ceil((finalSize - completedSize) / dlSpeed)
             : undefined,
       };
 
-      if (completed + failed === children.length && children.length > 0) {
+      // 检查队列中是否还有该文件夹的待处理子任务
+      const hasQueuedChildren = downloadQueue.value.some((q) => q.parentGid === folder.gid);
+
+      if (completed + failed === children.length && children.length > 0 && !hasQueuedChildren) {
         if (failed > 0) {
           updates.status = 'error';
           updates.errorMessage = `${failed} 个文件下载失败`;
@@ -285,8 +344,10 @@ export const useDownloadManager = createSharedComposable(() => {
           updates.completedAt = folder.completedAt ?? Date.now();
           updates.downloadSpeed = 0;
         }
-      } else if (paused > 0 && activeChildren.length === 0) {
-        updates.status = 'paused';
+      } else if (paused > 0 && activeChildren.length === 0 && !hasQueuedChildren) {
+        // 有子任务正在暂停中时显示 pausing，全部暂停完成后才显示 paused
+        const pausingChildren = children.filter((d) => d.status === 'pausing').length;
+        updates.status = pausingChildren > 0 ? 'pausing' : 'paused';
       } else {
         updates.status = 'active';
       }
@@ -412,6 +473,10 @@ export const useDownloadManager = createSharedComposable(() => {
           downloadQueue.value.push(item);
         } else {
           console.error(`下载失败，已超过最大重试次数: ${item.file.fn}`, error);
+          const downloadPath = settingStore.downloadSetting.downloadPath;
+          const failedPath = item.path
+            ? `${downloadPath}/${item.path}/${item.file.fn}`
+            : `${downloadPath}/${item.file.fn}`;
           await insertDownload({
             name: item.file.fn,
             fid: item.file.fid,
@@ -420,6 +485,7 @@ export const useDownloadManager = createSharedComposable(() => {
             gid: `failed-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             status: 'error',
             parentGid: item.parentGid,
+            path: failedPath,
             errorMessage: isRateLimitError(error)
               ? '服务器限流，请稍后重试'
               : '获取下载链接失败，请稍后重试',
@@ -474,7 +540,7 @@ export const useDownloadManager = createSharedComposable(() => {
       token: userStore.accessToken,
       userAgent: navigator.userAgent,
       split: settingStore.downloadSetting.split,
-      maxConnectionsPerServer: settingStore.downloadSetting.maxConnectionsPerServer,
+      maxGlobalConnections: settingStore.downloadSetting.maxGlobalConnections,
     });
 
     await insertDownload({
@@ -547,7 +613,7 @@ export const useDownloadManager = createSharedComposable(() => {
         token: userStore.accessToken,
         userAgent: navigator.userAgent,
         split: settingStore.downloadSetting.split,
-        maxConnectionsPerServer: settingStore.downloadSetting.maxConnectionsPerServer,
+        maxGlobalConnections: settingStore.downloadSetting.maxGlobalConnections,
       });
 
       await insertDownload({
@@ -586,6 +652,21 @@ export const useDownloadManager = createSharedComposable(() => {
     }
 
     for (const child of failedChildren) {
+      // 从存储的完整路径中提取相对目录路径，确保重试时下载到正确位置
+      const downloadPath = settingStore.downloadSetting.downloadPath;
+      let relativePath: string | undefined;
+      if (child.path) {
+        const prefix = downloadPath.replace(/\\/g, '/') + '/';
+        const normalized = child.path.replace(/\\/g, '/');
+        if (normalized.startsWith(prefix)) {
+          const rest = normalized.slice(prefix.length);
+          const lastSlash = rest.lastIndexOf('/');
+          if (lastSlash > 0) {
+            relativePath = rest.slice(0, lastSlash);
+          }
+        }
+      }
+
       downloadQueue.value.push({
         file: {
           fid: child.fid,
@@ -594,6 +675,7 @@ export const useDownloadManager = createSharedComposable(() => {
           fs: child.size,
           fc: '1',
         } as MyFile,
+        path: relativePath,
         retryCount: 0,
         parentGid: folder.gid,
       });
@@ -625,6 +707,7 @@ export const useDownloadManager = createSharedComposable(() => {
     try {
       if (
         downloadFile.status === 'active' ||
+        downloadFile.status === 'pausing' ||
         downloadFile.status === 'waiting' ||
         downloadFile.status === 'paused'
       ) {
@@ -657,6 +740,34 @@ export const useDownloadManager = createSharedComposable(() => {
 
   /** 暂停文件夹内所有活跃子任务 */
   const pauseFolder = async (folder: DownLoadFile) => {
+    // 立即设置文件夹状态为"暂停中"
+    const folderItem = displayList.value.find((d) => d.gid === folder.gid);
+    if (folderItem) folderItem.status = 'pausing';
+
+    // 1. 从下载队列中移除该文件夹的待处理子任务（阻止 processQueue 继续启动新下载）
+    const queuedItems = downloadQueue.value.filter((q) => q.parentGid === folder.gid);
+    downloadQueue.value = downloadQueue.value.filter((q) => q.parentGid !== folder.gid);
+
+    // 2. 为未启动的队列项创建 DB 记录（状态为 paused），使 resumeFolder 能发现并恢复它们
+    const downloadPath = settingStore.downloadSetting.downloadPath;
+    for (const item of queuedItems) {
+      const savePath = item.path
+        ? `${downloadPath}/${item.path}/${item.file.fn}`
+        : `${downloadPath}/${item.file.fn}`;
+      await insertDownload({
+        name: item.file.fn,
+        fid: item.file.fid,
+        pickCode: item.file.pc,
+        size: item.file.fs,
+        gid: `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        status: 'paused',
+        parentGid: folder.gid,
+        path: savePath,
+        createdAt: Date.now(),
+      });
+    }
+
+    // 3. 暂停已在 Rust 端运行的活跃子任务
     const children = await getChildDownloads(folder.gid);
     const active = children.filter((d) => d.status === 'active' || d.status === 'waiting');
     for (const child of active) {
@@ -672,25 +783,68 @@ export const useDownloadManager = createSharedComposable(() => {
   const resumeFolder = async (folder: DownLoadFile) => {
     const children = await getChildDownloads(folder.gid);
 
-    // 将所有子任务（含已完成的）注册到内存追踪器，确保进度聚合准确
+    // 分离未启动的排队项（pauseFolder 保存的）和已有 Rust 进度的任务
+    const paused = children.filter((d) => d.status === 'paused');
+    const pendingChildren = paused.filter((d) => d.gid.startsWith('pending-'));
+    const resumableChildren = paused.filter((d) => !d.gid.startsWith('pending-'));
+
+    // 将已有 Rust 进度的子任务注册到内存追踪器
     for (const child of children) {
+      if (child.gid.startsWith('pending-')) continue; // 即将被重新入队，跳过注册
       if (!childToParentMap.has(child.gid)) {
         registerChildTask(child.gid, folder.gid, child.size || 0);
       }
-      // 已完成的子任务标记 downloaded = total
-      if (child.status === 'complete') {
-        const tracker = folderChildProgress.get(folder.gid);
-        const entry = tracker?.get(child.gid);
-        if (entry) {
+      const tracker = folderChildProgress.get(folder.gid);
+      const entry = tracker?.get(child.gid);
+      if (entry) {
+        // 用 DB 中的真实 size 更新 total（避免初始注册时 size 为 0）
+        if (child.size && child.size > 0) {
+          entry.total = child.size;
+        }
+        if (child.status === 'complete') {
           entry.downloaded = entry.total;
+          entry.speed = 0;
+        } else if (child.progress && child.size) {
+          // 用 DB 中的进度恢复已下载字节数，避免从 0 开始导致速度异常
+          entry.downloaded = (child.size * child.progress) / 100;
           entry.speed = 0;
         }
       }
     }
 
-    const paused = children.filter((d) => d.status === 'paused');
+    // 未启动的排队项：删除 DB 占位记录，重新加入下载队列
+    const downloadPath = settingStore.downloadSetting.downloadPath;
+    for (const child of pendingChildren) {
+      let relativePath: string | undefined;
+      if (child.path) {
+        const prefix = downloadPath.replace(/\\/g, '/') + '/';
+        const normalized = child.path.replace(/\\/g, '/');
+        if (normalized.startsWith(prefix)) {
+          const rest = normalized.slice(prefix.length);
+          const lastSlash = rest.lastIndexOf('/');
+          if (lastSlash > 0) {
+            relativePath = rest.slice(0, lastSlash);
+          }
+        }
+      }
+      await deleteDownload(child.gid);
+      downloadQueue.value.push({
+        file: {
+          fid: child.fid,
+          fn: child.name,
+          pc: child.pickCode,
+          fs: child.size,
+          fc: '1',
+        } as MyFile,
+        path: relativePath,
+        retryCount: 0,
+        parentGid: folder.gid,
+      });
+    }
+
+    // 已有 Rust 进度的任务：获取新 URL 并恢复
     const userStore = useUserStore();
-    for (const child of paused) {
+    for (const child of resumableChildren) {
       try {
         const res = await fileDownloadUrl({ pick_code: child.pickCode });
         const fileData = res.data[child.fid];
@@ -702,12 +856,17 @@ export const useDownloadManager = createSharedComposable(() => {
             token: userStore.accessToken,
             userAgent: navigator.userAgent,
             split: settingStore.downloadSetting.split,
-            maxConnectionsPerServer: settingStore.downloadSetting.maxConnectionsPerServer,
+            maxGlobalConnections: settingStore.downloadSetting.maxGlobalConnections,
           });
         }
       } catch (e) {
         console.error('恢复子任务失败:', e);
       }
+    }
+
+    // 如果有未启动的排队项，启动队列处理
+    if (pendingChildren.length > 0) {
+      processQueue();
     }
   };
 
@@ -725,7 +884,7 @@ export const useDownloadManager = createSharedComposable(() => {
           token: userStore.accessToken,
           userAgent: navigator.userAgent,
           split: settingStore.downloadSetting.split,
-          maxConnectionsPerServer: settingStore.downloadSetting.maxConnectionsPerServer,
+          maxGlobalConnections: settingStore.downloadSetting.maxGlobalConnections,
         });
       }
     } catch (e) {
@@ -742,7 +901,7 @@ export const useDownloadManager = createSharedComposable(() => {
 
   const downloadStats = computed(() => {
     const list = displayList.value;
-    const active = list.filter((d) => d.status === 'active');
+    const active = list.filter((d) => d.status === 'active' || d.status === 'pausing');
     const totalSpeed = active.reduce((sum, d) => sum + (d.downloadSpeed || 0), 0);
     return {
       activeCount: active.length,
@@ -800,6 +959,13 @@ export const useDownloadManager = createSharedComposable(() => {
 
   /** 暂停所有活跃的下载任务 */
   const pauseAllTasks = async () => {
+    // 立即设置所有活跃任务状态为"暂停中"
+    for (const item of displayList.value) {
+      if (item.status === 'active') {
+        item.status = 'pausing';
+      }
+    }
+
     const activeGids = await getActiveGids();
     for (const gid of activeGids) {
       try {

@@ -6,7 +6,7 @@ export interface DownLoadFile {
   gid: string;
   size: number;
   pickCode: string;
-  status?: 'active' | 'waiting' | 'paused' | 'complete' | 'error' | 'removed';
+  status?: 'active' | 'waiting' | 'paused' | 'pausing' | 'complete' | 'error' | 'removed';
   progress?: number;
   path?: string;
   downloadSpeed?: number;
@@ -74,8 +74,8 @@ export const useSettingStore = defineStore(
       maxConcurrent: 5,
       /** 文件拆分的分片数 */
       split: 16,
-      /** 每服务器最大并行连接数 */
-      maxConnectionsPerServer: 16,
+      /** 全局最大并发连接数 */
+      maxGlobalConnections: 16,
       /** 是否启用下载限速 */
       speedLimitEnabled: false,
       /** 限速数值（用户输入值，需结合 speedLimitUnit 换算） */
