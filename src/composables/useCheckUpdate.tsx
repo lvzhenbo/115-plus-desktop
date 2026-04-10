@@ -7,10 +7,101 @@ import { useUploadManager } from '@/composables/useUploadManager';
 import { getActiveUploads } from '@/db/uploads';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { filesize } from 'filesize';
-import { NA, NButton, NH3, NLi, NP, NScrollbar, NText, NUl } from 'naive-ui';
-import { marked, type Token, type Tokens } from 'marked';
+import {
+  NA,
+  NAlert,
+  NBlockquote,
+  NButton,
+  NH3,
+  NLi,
+  NOl,
+  NP,
+  NScrollbar,
+  NText,
+  NUl,
+} from 'naive-ui';
+import {
+  Marked,
+  type Token,
+  type TokenizerExtension,
+  type TokenizerThis,
+  type Tokens,
+} from 'marked';
 
 const isChecking = ref(false);
+
+type GfmAlertKind = 'note' | 'tip' | 'important' | 'warning' | 'caution';
+
+const GFM_ALERT_META = {
+  note: { title: '提示', type: 'info' },
+  tip: { title: '建议', type: 'success' },
+  important: { title: '重要', type: 'warning' },
+  warning: { title: '警告', type: 'warning' },
+  caution: { title: '注意', type: 'error' },
+} as const;
+
+type GfmAlertType = (typeof GFM_ALERT_META)[GfmAlertKind]['type'];
+
+interface GfmAlertToken extends Tokens.Generic {
+  type: 'gfmAlert';
+  raw: string;
+  alertType: GfmAlertType;
+  title: string;
+  tokens: Token[];
+}
+
+type ReleaseNoteToken = Token | GfmAlertToken;
+
+const GFM_ALERT_START_RE = / {0,3}>[ \t]?\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i;
+const GFM_ALERT_BLOCK_RE = /^(?: {0,3}>[^\n]*(?:\n|$))+/;
+const GFM_ALERT_HEADER_RE = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(.*)$/i;
+
+function extractGfmAlert(src: string) {
+  const raw = src.match(GFM_ALERT_BLOCK_RE)?.[0];
+  if (!raw) return null;
+
+  const lines = raw
+    .replace(/\n$/, '')
+    .split('\n')
+    .map((line) => line.replace(/^ {0,3}>[ \t]?/, ''));
+  const [headerLine = '', ...bodyLines] = lines;
+  const headerMatch = headerLine.match(GFM_ALERT_HEADER_RE);
+
+  if (!headerMatch) return null;
+
+  const [, kindRaw, firstLine = ''] = headerMatch;
+  const kind = kindRaw.toLowerCase() as GfmAlertKind;
+  const body = (firstLine ? [firstLine, ...bodyLines] : bodyLines).join('\n');
+
+  return { raw, body, kind };
+}
+
+const gfmAlertExtension: TokenizerExtension = {
+  name: 'gfmAlert',
+  level: 'block',
+  start(this: TokenizerThis, src: string) {
+    return src.match(GFM_ALERT_START_RE)?.index;
+  },
+  tokenizer(this: TokenizerThis, src: string) {
+    const alert = extractGfmAlert(src);
+    if (!alert) return;
+
+    const meta = GFM_ALERT_META[alert.kind];
+    const token: GfmAlertToken = {
+      type: 'gfmAlert',
+      raw: alert.raw,
+      alertType: meta.type,
+      title: meta.title,
+      tokens: [],
+    };
+
+    this.lexer.blockTokens(alert.body, token.tokens);
+    return token;
+  },
+};
+
+const releaseNotesParser = new Marked({ gfm: true });
+releaseNotesParser.use({ extensions: [gfmAlertExtension] });
 
 export const useCheckUpdate = () => {
   const message = useMessage();
@@ -21,17 +112,29 @@ export const useCheckUpdate = () => {
   function renderInlineTokens(tokens: Token[]): VNode[] {
     return tokens.map((token) => {
       switch (token.type) {
+        case 'escape': {
+          const escaped = token as Tokens.Escape;
+          return <>{escaped.text}</>;
+        }
         case 'text': {
-          const t = token as Tokens.Text;
-          if (t.tokens) return <>{renderInlineTokens(t.tokens)}</>;
-          return <>{t.text}</>;
+          const text = token as Tokens.Text;
+          if (text.tokens) return <>{renderInlineTokens(text.tokens)}</>;
+          return <>{text.text}</>;
         }
         case 'strong':
           return <NText strong>{renderInlineTokens((token as Tokens.Strong).tokens)}</NText>;
         case 'em':
           return <NText italic>{renderInlineTokens((token as Tokens.Em).tokens)}</NText>;
+        case 'del':
+          return <NText delete>{renderInlineTokens((token as Tokens.Del).tokens)}</NText>;
+        case 'br':
+          return <NText>{'\n'}</NText>;
         case 'codespan':
           return <NText code>{(token as Tokens.Codespan).text}</NText>;
+        case 'image': {
+          const image = token as Tokens.Image;
+          return <NText>{image.raw}</NText>;
+        }
         case 'link': {
           const link = token as Tokens.Link;
           return (
@@ -44,26 +147,64 @@ export const useCheckUpdate = () => {
     });
   }
 
-  function renderTokens(tokens: Token[]): VNode[] {
+  function renderTokens(tokens: ReleaseNoteToken[]): VNode[] {
     return tokens.map((token) => {
       switch (token.type) {
+        case 'space':
+          return <></>;
+        case 'text': {
+          const text = token as Tokens.Text;
+          if (text.tokens) return <>{renderInlineTokens(text.tokens)}</>;
+          return <>{text.text}</>;
+        }
+        case 'gfmAlert': {
+          const alert = token as GfmAlertToken;
+          return (
+            <NAlert class="my-3" type={alert.alertType} title={alert.title}>
+              {renderTokens(alert.tokens as ReleaseNoteToken[])}
+            </NAlert>
+          );
+        }
         case 'heading': {
           const heading = token as Tokens.Heading;
-          return <NH3 style="margin: 12px 0 8px">{renderInlineTokens(heading.tokens)}</NH3>;
+          return <NH3>{renderInlineTokens(heading.tokens)}</NH3>;
+        }
+        case 'hr':
+          return <NP class="whitespace-pre-wrap">{(token as Tokens.Hr).raw}</NP>;
+        case 'code': {
+          const code = token as Tokens.Code;
+          return <NP class="whitespace-pre-wrap">{code.raw}</NP>;
+        }
+        case 'blockquote': {
+          const quote = token as Tokens.Blockquote;
+          return <NBlockquote>{renderTokens(quote.tokens as ReleaseNoteToken[])}</NBlockquote>;
         }
         case 'paragraph': {
           const para = token as Tokens.Paragraph;
-          return <NP>{renderInlineTokens(para.tokens)}</NP>;
+          return <NP class="whitespace-pre-wrap">{renderInlineTokens(para.tokens)}</NP>;
         }
         case 'list': {
           const list = token as Tokens.List;
+          if (list.ordered) {
+            return (
+              <NOl>
+                {list.items.map((item, index) => (
+                  <NLi key={index}>{renderTokens(item.tokens as ReleaseNoteToken[])}</NLi>
+                ))}
+              </NOl>
+            );
+          }
+
           return (
             <NUl>
-              {list.items.map((item) => (
-                <NLi>{renderInlineTokens(item.tokens)}</NLi>
+              {list.items.map((item, index) => (
+                <NLi key={index}>{renderTokens(item.tokens as ReleaseNoteToken[])}</NLi>
               ))}
             </NUl>
           );
+        }
+        case 'table': {
+          return <NP class="whitespace-pre-wrap">{(token as Tokens.Table).raw}</NP>;
         }
         default:
           return <>{(token as Tokens.Generic).raw}</>;
@@ -73,10 +214,8 @@ export const useCheckUpdate = () => {
 
   function renderBody(body: string | undefined) {
     if (!body) return () => '暂无更新说明';
-    const tokens = marked.lexer(body);
-    return () => (
-      <NScrollbar style="max-height: 60vh">{renderTokens(tokens as Token[])}</NScrollbar>
-    );
+    const tokens = releaseNotesParser.lexer(body) as unknown as ReleaseNoteToken[];
+    return () => <NScrollbar class="max-h-[60vh]">{renderTokens(tokens)}</NScrollbar>;
   }
 
   async function confirmAndInstall(update: Update) {

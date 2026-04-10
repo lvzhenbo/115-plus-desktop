@@ -1,12 +1,17 @@
-name: "Release"
+name: 'Release'
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release type or explicit version (e.g. patch, minor, major, 1.2.3)"
+        description: 'Release type or explicit version (e.g. patch, minor, major, 1.2.3)'
         required: true
-        default: "patch"
+        default: 'patch'
+        type: string
+      release_notes:
+        description: "Optional Markdown prefix for release notes; supports GFM alerts and uses \\n for line breaks"
+        required: false
+        default: '> [!NOTE]\n> Add manual release notes here'
         type: string
 
 jobs:
@@ -48,12 +53,19 @@ jobs:
 
           CHANGELOG=$(awk '/^## \[/{if(c++) exit}c' CHANGELOG.md)
 
+          if [ -n "$RELEASE_NOTES_RAW" ] && [ "$RELEASE_NOTES_RAW" != "$RELEASE_NOTES_TEMPLATE" ]; then
+            RELEASE_NOTES=$(printf '%b' "$RELEASE_NOTES_RAW")
+            CHANGELOG=$(printf '%s\n\n%s' "$RELEASE_NOTES" "$CHANGELOG")
+          fi
+
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
           echo "changelog<<$EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "$EOF" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NOTES_RAW: ${{ inputs.release_notes }}
+          RELEASE_NOTES_TEMPLATE: '> [!NOTE]\n> Add manual release notes here'
 
   build:
     needs: bump
@@ -63,14 +75,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: "macos-latest"
-            args: "--target aarch64-apple-darwin"
-          - platform: "macos-latest"
-            args: "--target x86_64-apple-darwin"
-          - platform: "ubuntu-latest"
-            args: ""
-          - platform: "windows-latest"
-            args: ""
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+          - platform: 'ubuntu-latest'
+            args: ''
+          - platform: 'windows-latest'
+            args: ''
 
     runs-on: ${{ matrix.platform }}
 
@@ -99,7 +111,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: "./src-tauri -> target"
+          workspaces: './src-tauri -> target'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
@@ -128,7 +140,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
-          releaseName: "115+ v__VERSION__"
+          releaseName: '115+ v__VERSION__'
           releaseBody: ${{ needs.bump.outputs.changelog }}
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
