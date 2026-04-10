@@ -1,5 +1,4 @@
 use chrono::Local;
-use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 use tauri_plugin_window_state::StateFlags;
@@ -9,6 +8,7 @@ mod download;
 mod upload;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[allow(deprecated)]
 pub fn run() {
     let log_file_name = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
 
@@ -38,30 +38,20 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let _ = show_window(app);
+            if let Err(err) = show_window(app) {
+                log::warn!("单实例唤醒主窗口失败：{}", err);
+            }
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_pinia::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:downloads.db", database::downloads_migrations())
                 .add_migrations("sqlite:uploads.db", database::uploads_migrations())
                 .build(),
         )
         .setup(|app| {
-            log::info!("应用启动, 版本={}", app.package_info().version);
-
-            // Initialize .oofp progress file manager
-            let progress_file = Arc::new(download::persistence::ProgressFile::new());
-            app.manage(progress_file);
-
-            // Create global HTTP client for downloads (connection pooling + HTTP/2 multiplexing)
-            let http_client = reqwest::Client::builder()
-                .connect_timeout(std::time::Duration::from_secs(30))
-                .build()
-                .expect("Failed to build HTTP client");
-            app.manage(http_client);
-
+            log::info!("应用启动，版本={}", app.package_info().version);
+            download::init(app).map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
             log::info!("应用初始化完成");
             Ok(())
         })
@@ -74,24 +64,53 @@ pub fn run() {
             upload::resume_upload,
             upload::scan_directory,
             upload::get_file_size,
-            download::http::pause_download,
-            download::http::cancel_download,
-            download::http::update_download_url,
-            download::http::start_download,
-            download::http::resume_download_task,
-            download::http::set_speed_limit,
+            download::store::download_insert_task,
+            download::store::download_batch_insert_tasks,
+            download::store::download_update_task,
+            download::store::download_delete_task,
+            download::store::download_delete_child_tasks,
+            download::store::download_delete_finished_tasks,
+            download::store::download_get_top_level_tasks,
+            download::store::download_get_all_tasks,
+            download::store::download_get_task_by_gid,
+            download::store::download_get_child_tasks,
+            download::store::download_get_incomplete_tasks,
+            download::store::download_get_active_gids,
+            download::store::download_has_active_tasks,
+            download::store::download_get_download_stats,
+            download::events::download_provide_url,
+            download::queue::download_enqueue_file,
+            download::queue::download_set_max_concurrent,
+            download::queue::download_set_speed_limit,
+            download::queue::download_pause_task,
+            download::queue::download_cancel_task,
+            download::queue::download_resume_task,
+            download::queue::download_retry_task,
+            download::queue::download_enqueue_folder,
+            download::queue::download_pause_folder,
+            download::queue::download_resume_folder,
+            download::queue::download_cancel_folder,
+            download::queue::download_retry_folder,
+            download::queue::download_pause_all,
+            download::queue::download_resume_all,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap_or_else(|err| panic!("Tauri 应用运行失败：{}", err));
 }
 
-fn show_window(app: &AppHandle) {
+fn show_window(app: &AppHandle) -> Result<(), String> {
     let windows = app.webview_windows();
-
-    windows
+    let window = windows
         .values()
         .next()
-        .expect("Sorry, no window found")
+        .ok_or_else(|| "未找到可用的主窗口".to_string())?;
+
+    window
+        .show()
+        .map_err(|err| format!("显示主窗口失败：{}", err))?;
+    window
         .set_focus()
-        .expect("Can't Bring Window to Focus");
+        .map_err(|err| format!("聚焦主窗口失败：{}", err))?;
+
+    Ok(())
 }

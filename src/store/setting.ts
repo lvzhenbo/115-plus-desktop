@@ -6,7 +6,16 @@ export interface DownLoadFile {
   gid: string;
   size: number;
   pickCode: string;
-  status?: 'active' | 'waiting' | 'paused' | 'pausing' | 'complete' | 'error' | 'removed';
+  status?:
+    | 'active'
+    | 'waiting'
+    | 'paused'
+    | 'pausing'
+    | 'complete'
+    | 'error'
+    | 'partial_error'
+    | 'verify_failed'
+    | 'removed';
   progress?: number;
   path?: string;
   downloadSpeed?: number;

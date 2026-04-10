@@ -70,6 +70,7 @@
     resumeFolder,
     resumeSingleFile,
     pauseAllTasks,
+    resumeAllTasks,
     downloadStats,
     queueStatus,
   } = useDownloadManager();
@@ -156,12 +157,20 @@
           </div>
         ) : null;
 
-        if (row.status === 'error') {
+        if (
+          row.status === 'error' ||
+          row.status === 'partial_error' ||
+          row.status === 'verify_failed'
+        ) {
           return (
             <div>
               <NTooltip>
                 {{
-                  trigger: () => <NText type="error">下载失败</NText>,
+                  trigger: () => (
+                    <NText type="error">
+                      {row.status === 'verify_failed' ? 'SHA1校验失败' : '下载失败'}
+                    </NText>
+                  ),
                   default: () => row.errorMessage || '未知错误',
                 }}
               </NTooltip>
@@ -225,7 +234,7 @@
                         } else {
                           // 立即设置状态为"暂停中"
                           row.status = 'pausing';
-                          await invoke('pause_download', { taskId: row.gid });
+                          await invoke('download_pause_task', { gid: row.gid });
                         }
                       } catch (e) {
                         console.error(e);
@@ -269,7 +278,11 @@
                     }}
                   </NButton>
                 );
-              } else if (row.status === 'error') {
+              } else if (
+                row.status === 'error' ||
+                row.status === 'partial_error' ||
+                row.status === 'verify_failed'
+              ) {
                 return (
                   <NButton
                     text
@@ -377,14 +390,7 @@
 
   const handleResumeAll = async () => {
     try {
-      const pausedItems = displayList.value.filter((d) => d.status === 'paused' && !d.isFolder);
-      for (const item of pausedItems) {
-        await resumeSingleFile(item);
-      }
-      const pausedFolders = displayList.value.filter((d) => d.status === 'paused' && d.isFolder);
-      for (const folder of pausedFolders) {
-        await resumeFolder(folder);
-      }
+      await resumeAllTasks();
       message.success('已恢复所有下载');
     } catch (e) {
       console.error(e);

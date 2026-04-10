@@ -1,35 +1,7 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-pub fn downloads_migrations() -> Vec<Migration> {
-    vec![Migration {
-        version: 1,
-        description: "create_downloads_table",
-        sql: "CREATE TABLE IF NOT EXISTS downloads (
-                            gid TEXT PRIMARY KEY,
-                            fid TEXT NOT NULL,
-                            name TEXT NOT NULL,
-                            pick_code TEXT NOT NULL,
-                            size INTEGER NOT NULL DEFAULT 0,
-                            status TEXT NOT NULL DEFAULT 'active',
-                            progress REAL NOT NULL DEFAULT 0,
-                            path TEXT,
-                            download_speed INTEGER NOT NULL DEFAULT 0,
-                            eta INTEGER,
-                            error_message TEXT,
-                            error_code TEXT,
-                            created_at INTEGER,
-                            completed_at INTEGER,
-                            is_folder INTEGER NOT NULL DEFAULT 0,
-                            is_collecting INTEGER NOT NULL DEFAULT 0,
-                            parent_gid TEXT,
-                            total_files INTEGER,
-                            completed_files INTEGER,
-                            failed_files INTEGER
-                        );",
-        kind: MigrationKind::Up,
-    }]
-}
-
+/// uploads.db 迁移（由 tauri-plugin-sql 管理，前端直接读写）
+/// downloads.db 迁移已移至 task_store.rs，由 rusqlite Actor 管理
 pub fn uploads_migrations() -> Vec<Migration> {
     vec![Migration {
         version: 1,

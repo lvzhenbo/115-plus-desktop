@@ -15,13 +15,16 @@ pub struct FileWriter {
 }
 
 impl Clone for FileWriter {
-    /// 每次 clone 打开独立的文件句柄，避免多分片共享同一把 Mutex
-    /// 导致 tokio 工作线程阻塞的性能问题
+    /// 每次 clone 都重新打开一个独立句柄，避免多分片共享同一把 Mutex。
+    ///
+    /// 这样可以减少串行写入带来的 tokio 工作线程阻塞。
     fn clone(&self) -> Self {
         let file = File::options()
             .write(true)
             .open(&self.path)
-            .expect("FileWriter::clone: failed to reopen file");
+            .unwrap_or_else(|err| {
+                panic!("复制文件写入器失败，无法重新打开 {}：{}", self.path, err)
+            });
         Self {
             path: self.path.clone(),
             file: Mutex::new(file),
@@ -44,7 +47,7 @@ impl FileWriter {
         Ok(())
     }
 
-    /// 创建文件、预分配大小并打开写入句柄 (per D-06)
+    /// 创建目标文件、预分配空间并返回写入器。
     pub fn create(path: &str, file_size: u64) -> Result<Self, DownloadError> {
         let p = Path::new(path);
         if let Some(parent) = p.parent() {
@@ -80,7 +83,7 @@ impl FileWriter {
         })
     }
 
-    /// 在指定偏移位置写入全部数据 (per D-13)
+    /// 在指定偏移位置写入完整字节块。
     pub fn write_at(&self, offset: u64, data: &[u8]) -> Result<(), DownloadError> {
         let mut file = self.file.lock().unwrap();
         file.seek(SeekFrom::Start(offset))
@@ -90,7 +93,7 @@ impl FileWriter {
         Ok(())
     }
 
-    /// 将缓冲写入刷盘，确保断电后 DB 记录的进度与文件数据一致
+    /// 将已写入数据刷盘，尽量保证断电或崩溃后进度记录仍与磁盘一致。
     pub fn sync_data(&self) -> Result<(), DownloadError> {
         let file = self.file.lock().unwrap();
         file.sync_data().map_err(DownloadError::Io)?;

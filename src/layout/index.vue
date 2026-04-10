@@ -146,7 +146,6 @@
   import { useDownloadManager } from '@/composables/useDownloadManager';
   import { useUploadManager } from '@/composables/useUploadManager';
   import { useCheckUpdate } from '@/composables/useCheckUpdate';
-  import { hasActiveDownloads } from '@/db/downloads';
   import { getActiveUploads } from '@/db/uploads';
 
   const route = useRoute();
@@ -233,7 +232,7 @@
   const settingStore = useSettingStore();
   const offlineDownloadShow = ref(false);
   const searchShow = ref(false);
-  const { pauseAllTasks: pauseAllDownloads } = useDownloadManager();
+  const { pauseAllTasks: pauseAllDownloads, hasActiveDownloads } = useDownloadManager();
   const { pauseAllTasks: pauseAllUploads } = useUploadManager();
   const { checkForUpdate } = useCheckUpdate();
 
@@ -245,8 +244,8 @@
 
   /** 检查是否有活跃任务 */
   const hasActiveTasks = async () => {
-    const [downloads, uploads] = await Promise.all([hasActiveDownloads(), getActiveUploads()]);
-    return downloads || uploads.length > 0;
+    const uploads = await getActiveUploads();
+    return hasActiveDownloads.value || uploads.length > 0;
   };
 
   watch(

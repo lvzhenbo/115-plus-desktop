@@ -4,7 +4,6 @@ import { relaunch } from '@tauri-apps/plugin-process';
 import { useSettingStore } from '@/store/setting';
 import { useDownloadManager } from '@/composables/useDownloadManager';
 import { useUploadManager } from '@/composables/useUploadManager';
-import { hasActiveDownloads } from '@/db/downloads';
 import { getActiveUploads } from '@/db/uploads';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { filesize } from 'filesize';
@@ -111,8 +110,9 @@ export const useCheckUpdate = () => {
     });
 
     // 检查是否有活跃任务，有则弹出确认
-    const [downloads, uploads] = await Promise.all([hasActiveDownloads(), getActiveUploads()]);
-    const hasActive = downloads || uploads.length > 0;
+    const { hasActiveDownloads } = useDownloadManager();
+    const uploads = await getActiveUploads();
+    const hasActive = hasActiveDownloads.value || uploads.length > 0;
 
     if (hasActive) {
       const userConfirmed = await ask(
