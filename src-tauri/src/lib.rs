@@ -1,11 +1,71 @@
 use chrono::Local;
+use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
+use tauri_plugin_pinia::ManagerExt as PiniaManagerExt;
 use tauri_plugin_window_state::StateFlags;
 
 mod database;
 mod download;
 mod upload;
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum AppLogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+impl Default for AppLogLevel {
+    fn default() -> Self {
+        Self::Info
+    }
+}
+
+impl From<AppLogLevel> for log::LevelFilter {
+    fn from(value: AppLogLevel) -> Self {
+        match value {
+            AppLogLevel::Trace => log::LevelFilter::Trace,
+            AppLogLevel::Debug => log::LevelFilter::Debug,
+            AppLogLevel::Info => log::LevelFilter::Info,
+            AppLogLevel::Warn => log::LevelFilter::Warn,
+            AppLogLevel::Error => log::LevelFilter::Error,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct GeneralSettingState {
+    #[serde(default)]
+    log_level: AppLogLevel,
+}
+
+fn set_log_level(level: AppLogLevel) {
+    log::set_max_level(level.into());
+}
+
+fn bind_log_level_to_setting_store<R: tauri::Runtime, M: Manager<R>>(
+    manager: &M,
+) -> tauri_plugin_pinia::Result<()> {
+    manager.with_store("setting", |store| {
+        let general_setting = store.get_or("generalSetting", GeneralSettingState::default());
+        set_log_level(general_setting.log_level);
+
+        store.watch(|app| {
+            let general_setting =
+                app.pinia()
+                    .get_or("setting", "generalSetting", GeneralSettingState::default());
+            set_log_level(general_setting.log_level);
+            Ok(())
+        });
+    })?;
+
+    Ok(())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(deprecated)]
@@ -24,7 +84,7 @@ pub fn run() {
                 ])
                 .rotation_strategy(RotationStrategy::KeepAll)
                 .max_file_size(50_000_000) // 50MB
-                .level(log::LevelFilter::Info)
+                .level(log::LevelFilter::Trace)
                 .timezone_strategy(TimezoneStrategy::UseLocal)
                 .build(),
         )
@@ -50,6 +110,7 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            bind_log_level_to_setting_store(app)?;
             log::info!("应用启动，版本={}", app.package_info().version);
             download::init(app).map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
             log::info!("应用初始化完成");

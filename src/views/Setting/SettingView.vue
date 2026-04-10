@@ -39,6 +39,12 @@
               <template #suffix> 次/秒 </template>
             </NInputNumber>
           </NFormItem>
+          <NFormItem label="应用日志级别" path="generalSetting.logLevel">
+            <NSelect
+              v-model:value="settingStore.generalSetting.logLevel"
+              :options="LOG_LEVEL_OPTIONS"
+            />
+          </NFormItem>
         </NForm>
       </NTabPane>
       <NTabPane name="videoPlayerSetting" tab="视频播放器设置">
@@ -251,7 +257,7 @@
 </template>
 
 <script setup lang="ts">
-  import { useSettingStore } from '@/store/setting';
+  import { useSettingStore, type AppLogLevel } from '@/store/setting';
   import type { SliderProps } from 'naive-ui';
   import { open } from '@tauri-apps/plugin-dialog';
   import { generateTextShadow } from '@/utils/subtitleStyleUtils';
@@ -260,6 +266,13 @@
   const settingStore = useSettingStore();
 
   const formatTooltip: SliderProps['formatTooltip'] = (v) => `${(v * 100).toFixed(0)}%`;
+  const LOG_LEVEL_OPTIONS: { label: string; value: AppLogLevel }[] = [
+    { label: 'Trace', value: 'trace' },
+    { label: 'Debug', value: 'debug' },
+    { label: 'Info', value: 'info' },
+    { label: 'Warn', value: 'warn' },
+    { label: 'Error', value: 'error' },
+  ];
 
   /** 字幕预览样式 */
   const subtitlePreviewStyle = computed<CSSProperties>(() => {

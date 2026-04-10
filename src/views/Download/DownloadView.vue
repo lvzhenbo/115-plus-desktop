@@ -47,8 +47,7 @@
 
 <script setup lang="tsx">
   import { invoke } from '@tauri-apps/api/core';
-  import type { DownLoadFile } from '@/store/setting';
-  import { useDownloadManager } from '@/composables/useDownloadManager';
+  import { useDownloadManager, type DownLoadFile } from '@/composables/useDownloadManager';
   import {
     DeleteOutlined,
     FolderOutlined,

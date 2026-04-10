@@ -2,8 +2,51 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { fileDownloadUrl, fileList } from '@/api/file';
 import type { MyFile } from '@/api/types/file';
-import { useSettingStore, type DownLoadFile } from '@/store/setting';
+import { useSettingStore } from '@/store/setting';
 import { useUserStore } from '@/store/user';
+
+export interface DownLoadFile {
+  fid: string;
+  name: string;
+  gid: string;
+  size: number;
+  pickCode: string;
+  status?:
+    | 'active'
+    | 'waiting'
+    | 'paused'
+    | 'pausing'
+    | 'complete'
+    | 'error'
+    | 'partial_error'
+    | 'verify_failed'
+    | 'removed';
+  progress?: number;
+  path?: string;
+  downloadSpeed?: number;
+  /** 预计剩余时间 (秒) */
+  eta?: number;
+  /** 错误信息 */
+  errorMessage?: string;
+  /** 错误码 */
+  errorCode?: string;
+  /** 创建时间戳 */
+  createdAt?: number;
+  /** 完成时间戳 */
+  completedAt?: number;
+  /** 是否为文件夹下载任务 */
+  isFolder?: boolean;
+  /** 文件夹正在收集文件列表 */
+  isCollecting?: boolean;
+  /** 父文件夹任务的 gid（标记为子文件） */
+  parentGid?: string;
+  /** 文件夹内总文件数 */
+  totalFiles?: number;
+  /** 文件夹内已完成文件数 */
+  completedFiles?: number;
+  /** 文件夹内失败文件数 */
+  failedFiles?: number;
+}
 
 /** download:progress 事件的单项进度快照 (camelCase, 来自 Rust ProgressItem) */
 interface ProgressItem {

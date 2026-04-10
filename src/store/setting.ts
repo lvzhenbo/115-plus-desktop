@@ -1,47 +1,6 @@
 import store from '.';
 
-export interface DownLoadFile {
-  fid: string;
-  name: string;
-  gid: string;
-  size: number;
-  pickCode: string;
-  status?:
-    | 'active'
-    | 'waiting'
-    | 'paused'
-    | 'pausing'
-    | 'complete'
-    | 'error'
-    | 'partial_error'
-    | 'verify_failed'
-    | 'removed';
-  progress?: number;
-  path?: string;
-  downloadSpeed?: number;
-  /** 预计剩余时间 (秒) */
-  eta?: number;
-  /** 错误信息 */
-  errorMessage?: string;
-  /** 错误码 */
-  errorCode?: string;
-  /** 创建时间戳 */
-  createdAt?: number;
-  /** 完成时间戳 */
-  completedAt?: number;
-  /** 是否为文件夹下载任务 */
-  isFolder?: boolean;
-  /** 文件夹正在收集文件列表 */
-  isCollecting?: boolean;
-  /** 父文件夹任务的 gid（标记为子文件） */
-  parentGid?: string;
-  /** 文件夹内总文件数 */
-  totalFiles?: number;
-  /** 文件夹内已完成文件数 */
-  completedFiles?: number;
-  /** 文件夹内失败文件数 */
-  failedFiles?: number;
-}
+export type AppLogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error';
 
 export const useSettingStore = defineStore(
   'setting',
@@ -62,6 +21,8 @@ export const useSettingStore = defineStore(
       updateProxy: '',
       /** 115接口速率限制（每秒请求数，0为不限制） */
       apiRateLimit: 2,
+      /** 应用日志级别 */
+      logLevel: 'info' as AppLogLevel,
     });
 
     const videoPlayerSetting = ref({
