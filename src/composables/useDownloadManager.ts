@@ -79,6 +79,13 @@ interface FolderFileItem {
   path: string;
 }
 
+interface FolderDownloadTarget {
+  gid?: string;
+  fid: string;
+  name: string;
+  pickCode: string;
+}
+
 /** progressCache 中的快照（per D-02，防止 state-sync 进度回跳） */
 interface ProgressSnapshot {
   speed: number;
@@ -103,8 +110,9 @@ export const useDownloadManager = createSharedComposable(() => {
 
   const displayList = ref<DownLoadFile[]>([]);
   const progressCache = new Map<string, ProgressSnapshot>();
-  const collectingItems = new Map<string, DownLoadFile>();
+  const cancelledFolderCollections = new Set<string>();
   const unlisteners: UnlistenFn[] = [];
+  const FOLDER_COLLECTION_ABORTED = 'folder-collection-aborted';
 
   /** 根据 store 限速配置计算 bytes/sec */
   const computeSpeedLimitBytes = (): number => {
@@ -158,13 +166,6 @@ export const useDownloadManager = createSharedComposable(() => {
               if (snap.failedFiles != null) item.failedFiles = snap.failedFiles;
               if (snap.totalFiles != null) item.totalFiles = snap.totalFiles;
             }
-          }
-        }
-
-        // 合并 collectingItems 占位项
-        for (const placeholder of collectingItems.values()) {
-          if (!displayList.value.some((d) => d.gid === placeholder.gid)) {
-            displayList.value.unshift(placeholder);
           }
         }
 
@@ -272,15 +273,24 @@ export const useDownloadManager = createSharedComposable(() => {
     folderId: string,
     currentPath: string,
     result: { file: MyFile; path: string }[],
+    parentGid: string,
     offset = 0,
   ) => {
+    if (cancelledFolderCollections.has(parentGid)) {
+      throw new Error(FOLDER_COLLECTION_ABORTED);
+    }
+
     const res = await fileList({ cid: folderId, show_dir: 1, offset, limit: 1150 });
+
+    if (cancelledFolderCollections.has(parentGid)) {
+      throw new Error(FOLDER_COLLECTION_ABORTED);
+    }
 
     for (const item of res.data) {
       if (item.fc === '0') {
         // 子文件夹：拼接相对路径继续递归
         const subPath = currentPath ? `${currentPath}/${item.fn}` : item.fn;
-        await collectFolderFiles(item.fid, subPath, result);
+        await collectFolderFiles(item.fid, subPath, result, parentGid);
       } else {
         // 文件：path 为相对于文件夹根目录的完整文件路径（含文件名）
         const filePath = currentPath ? `${currentPath}/${item.fn}` : item.fn;
@@ -289,7 +299,86 @@ export const useDownloadManager = createSharedComposable(() => {
     }
 
     if (offset + res.data.length < res.count) {
-      await collectFolderFiles(folderId, currentPath, result, offset + 1150);
+      await collectFolderFiles(folderId, currentPath, result, parentGid, offset + 1150);
+    }
+  };
+
+  const markFolderCollectionFailed = async (parentGid: string, errorMessage: string) => {
+    try {
+      await invoke('download_fail_folder_collection', { parentGid, errorMessage });
+    } catch (e) {
+      console.error('更新文件夹收集失败状态失败:', e);
+    }
+  };
+
+  const isFolderCollectionRetry = (item: DownLoadFile) =>
+    item.isFolder &&
+    !item.isCollecting &&
+    (item.totalFiles ?? 0) === 0 &&
+    (item.completedFiles ?? 0) === 0 &&
+    (item.failedFiles ?? 0) === 0;
+
+  const enqueueCollectedFolder = async (
+    folder: FolderDownloadTarget,
+    reuseExistingTask = false,
+  ) => {
+    const parentGid = folder.gid ?? `folder-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const parentPath = `${settingStore.downloadSetting.downloadPath}/${folder.name}`;
+
+    cancelledFolderCollections.delete(parentGid);
+
+    if (reuseExistingTask) {
+      await invoke('download_restart_folder_collection', { parentGid });
+    } else {
+      await invoke('download_create_folder_task', {
+        parentGid,
+        parentFid: folder.fid,
+        parentName: folder.name,
+        parentPickCode: folder.pickCode,
+        parentPath,
+      });
+    }
+
+    const allFiles: { file: MyFile; path: string }[] = [];
+    try {
+      await collectFolderFiles(folder.fid, '', allFiles, parentGid);
+    } catch (e) {
+      if (e instanceof Error && e.message === FOLDER_COLLECTION_ABORTED) {
+        cancelledFolderCollections.delete(parentGid);
+        return;
+      }
+
+      console.error('收集文件夹文件失败:', e);
+      await markFolderCollectionFailed(parentGid, '获取文件列表失败');
+      throw e instanceof Error ? e : new Error('获取文件列表失败');
+    }
+
+    if (cancelledFolderCollections.delete(parentGid)) {
+      return;
+    }
+
+    const files: FolderFileItem[] = allFiles.map((f) => ({
+      fid: f.file.fid,
+      name: f.file.fn,
+      pickCode: f.file.pc,
+      size: f.file.fs,
+      path: f.path,
+    }));
+
+    try {
+      await invoke('download_enqueue_folder', {
+        parentGid,
+        parentFid: folder.fid,
+        parentName: folder.name,
+        parentPickCode: folder.pickCode,
+        parentPath,
+        files,
+        ...getDownloadParams(),
+      });
+    } catch (e) {
+      console.error('创建文件夹下载任务失败:', e);
+      await markFolderCollectionFailed(parentGid, '创建下载任务失败');
+      throw e instanceof Error ? e : new Error('创建下载任务失败');
     }
   };
 
@@ -300,57 +389,10 @@ export const useDownloadManager = createSharedComposable(() => {
     const downloadPath = settingStore.downloadSetting.downloadPath;
 
     if (file.fc === '0') {
-      // 文件夹下载 — 本地占位 + 收集 + download_enqueue_folder（per D-03）
-      const parentGid = `folder-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const placeholder: DownLoadFile = {
-        gid: parentGid,
+      await enqueueCollectedFolder({
         fid: file.fid,
         name: file.fn,
         pickCode: file.pc,
-        size: 0,
-        status: 'active',
-        isFolder: true,
-        isCollecting: true,
-        totalFiles: 0,
-        completedFiles: 0,
-        failedFiles: 0,
-        path: downloadPath ? `${downloadPath}/${file.fn}` : undefined,
-        createdAt: Date.now(),
-      };
-      collectingItems.set(parentGid, placeholder);
-      displayList.value.unshift(placeholder);
-
-      const allFiles: { file: MyFile; path: string }[] = [];
-      try {
-        // 从空路径开始递归，path 为相对于文件夹根目录的路径（含文件名）
-        await collectFolderFiles(file.fid, '', allFiles);
-      } catch (e) {
-        console.error('收集文件夹文件失败:', e);
-        placeholder.status = 'error';
-        placeholder.isCollecting = false;
-        placeholder.errorMessage = '获取文件列表失败';
-        return;
-      }
-
-      collectingItems.delete(parentGid);
-      displayList.value = displayList.value.filter((d) => d.gid !== parentGid);
-
-      if (allFiles.length === 0) return;
-
-      const files: FolderFileItem[] = allFiles.map((f) => ({
-        fid: f.file.fid,
-        name: f.file.fn,
-        pickCode: f.file.pc,
-        size: f.file.fs,
-        path: f.path,
-      }));
-
-      await invoke('download_enqueue_folder', {
-        parentGid,
-        parentName: file.fn,
-        parentPath: `${downloadPath}/${file.fn}`,
-        files,
-        ...getDownloadParams(),
       });
     } else {
       // 单文件下载
@@ -383,10 +425,22 @@ export const useDownloadManager = createSharedComposable(() => {
   /** 重试失败的下载任务 */
   const retryDownload = async (downloadFile: DownLoadFile) => {
     if (downloadFile.isFolder) {
-      await invoke('download_retry_folder', {
-        parentGid: downloadFile.gid,
-        ...getDownloadParams(),
-      });
+      if (isFolderCollectionRetry(downloadFile)) {
+        await enqueueCollectedFolder(
+          {
+            gid: downloadFile.gid,
+            fid: downloadFile.fid,
+            name: downloadFile.name,
+            pickCode: downloadFile.pickCode,
+          },
+          true,
+        );
+      } else {
+        await invoke('download_retry_folder', {
+          parentGid: downloadFile.gid,
+          ...getDownloadParams(),
+        });
+      }
     } else {
       await invoke('download_retry_task', { gid: downloadFile.gid, ...getDownloadParams() });
     }
@@ -395,6 +449,9 @@ export const useDownloadManager = createSharedComposable(() => {
   /** 移除下载任务 */
   const removeTask = async (downloadFile: DownLoadFile) => {
     if (downloadFile.isFolder) {
+      if (downloadFile.isCollecting) {
+        cancelledFolderCollections.add(downloadFile.gid);
+      }
       await invoke('download_cancel_folder', { parentGid: downloadFile.gid });
     } else {
       await invoke('download_cancel_task', { gid: downloadFile.gid });
@@ -414,6 +471,7 @@ export const useDownloadManager = createSharedComposable(() => {
 
   /** 暂停文件夹下载 */
   const pauseFolder = async (folder: DownLoadFile) => {
+    if (folder.isCollecting) return;
     const folderItem = displayList.value.find((d) => d.gid === folder.gid);
     if (folderItem) folderItem.status = 'pausing';
     await invoke('download_pause_folder', { parentGid: folder.gid });

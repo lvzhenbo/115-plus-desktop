@@ -1390,9 +1390,119 @@ pub async fn download_enqueue_file(
 ///
 /// 原子性创建父任务、批量子任务并一次性推入队列。
 #[tauri::command]
+pub async fn download_create_folder_task(
+    parent_gid: String,
+    parent_fid: String,
+    parent_name: String,
+    parent_pick_code: String,
+    parent_path: String,
+    db: tauri::State<'_, DbHandle>,
+    event_bridge: tauri::State<'_, EventBridge>,
+) -> Result<String, DmError> {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    db.insert_task(StoreDownloadTask {
+        gid: parent_gid.clone(),
+        fid: parent_fid,
+        name: parent_name.clone(),
+        pick_code: parent_pick_code,
+        size: 0,
+        status: "active".to_string(),
+        progress: 0.0,
+        path: Some(parent_path),
+        download_speed: 0,
+        eta: None,
+        error_message: None,
+        error_code: None,
+        created_at: Some(now_ms),
+        completed_at: None,
+        is_folder: true,
+        is_collecting: true,
+        parent_gid: None,
+        total_files: Some(0),
+        completed_files: Some(0),
+        failed_files: Some(0),
+    })
+    .await?;
+
+    event_bridge.notify_state_change();
+    info!("[文件夹收集] 已创建 collecting 任务 gid={}", parent_gid);
+    Ok(parent_gid)
+}
+
+#[tauri::command]
+pub async fn download_restart_folder_collection(
+    parent_gid: String,
+    db: tauri::State<'_, DbHandle>,
+    event_bridge: tauri::State<'_, EventBridge>,
+) -> Result<(), DmError> {
+    db.update_task(
+        parent_gid.clone(),
+        TaskUpdate {
+            status: Some("active".to_string()),
+            progress: Some(0.0),
+            size: Some(0),
+            download_speed: Some(0),
+            eta: Some(None),
+            error_message: Some(None),
+            error_code: Some(None),
+            completed_at: Some(None),
+            is_folder: Some(true),
+            is_collecting: Some(true),
+            total_files: Some(Some(0)),
+            completed_files: Some(Some(0)),
+            failed_files: Some(Some(0)),
+            ..TaskUpdate::default()
+        },
+    )
+    .await?;
+
+    event_bridge.notify_state_change();
+    info!("[文件夹收集] 已重置 collecting 任务 gid={}", parent_gid);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn download_fail_folder_collection(
+    parent_gid: String,
+    error_message: String,
+    db: tauri::State<'_, DbHandle>,
+    event_bridge: tauri::State<'_, EventBridge>,
+) -> Result<(), DmError> {
+    db.update_task(
+        parent_gid.clone(),
+        TaskUpdate {
+            status: Some("error".to_string()),
+            progress: Some(0.0),
+            download_speed: Some(0),
+            eta: Some(None),
+            error_message: Some(Some(error_message.clone())),
+            error_code: Some(None),
+            completed_at: Some(None),
+            is_folder: Some(true),
+            is_collecting: Some(false),
+            ..TaskUpdate::default()
+        },
+    )
+    .await?;
+
+    event_bridge.notify_state_change();
+    info!(
+        "[文件夹收集] collecting 任务失败 gid={} error={}",
+        parent_gid, error_message
+    );
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn download_enqueue_folder(
     parent_gid: String,
+    parent_fid: String,
     parent_name: String,
+    parent_pick_code: String,
     parent_path: String,
     files: Vec<FolderFileItem>,
     token: String,
@@ -1409,9 +1519,6 @@ pub async fn download_enqueue_folder(
             files.len()
         )));
     }
-    if files.is_empty() {
-        return Err(DmError::Internal("文件夹内没有可下载的文件".to_string()));
-    }
     for f in &files {
         if f.path.contains("..") || f.path.starts_with('/') || f.path.starts_with('\\') {
             return Err(DmError::Internal(format!("检测到非法子路径：{}", f.path)));
@@ -1424,31 +1531,76 @@ pub async fn download_enqueue_folder(
         .as_millis() as i64;
     let total_files = files.len() as i64;
     let total_size: i64 = files.iter().map(|f| f.size).sum();
+    let final_status = if files.is_empty() {
+        "complete"
+    } else {
+        "active"
+    };
+    let final_progress = if files.is_empty() { 100.0 } else { 0.0 };
+    let final_completed_at = if files.is_empty() { Some(now_ms) } else { None };
 
-    // 1. 先创建父文件夹任务。
-    db.insert_task(StoreDownloadTask {
-        gid: parent_gid.clone(),
-        fid: String::new(),
-        name: parent_name.clone(),
-        pick_code: String::new(),
-        size: total_size,
-        status: "active".to_string(),
-        progress: 0.0,
-        path: Some(parent_path.clone()),
-        download_speed: 0,
-        eta: None,
-        error_message: None,
-        error_code: None,
-        created_at: Some(now_ms),
-        completed_at: None,
-        is_folder: true,
-        is_collecting: false,
-        parent_gid: None,
-        total_files: Some(total_files),
-        completed_files: Some(0),
-        failed_files: Some(0),
-    })
-    .await?;
+    // 1. 先创建或更新父文件夹任务。
+    if db.get_task_by_gid(parent_gid.clone()).await?.is_some() {
+        db.update_task(
+            parent_gid.clone(),
+            TaskUpdate {
+                fid: Some(parent_fid.clone()),
+                name: Some(parent_name.clone()),
+                pick_code: Some(parent_pick_code.clone()),
+                size: Some(total_size),
+                status: Some(final_status.to_string()),
+                progress: Some(final_progress),
+                path: Some(Some(parent_path.clone())),
+                download_speed: Some(0),
+                eta: Some(None),
+                error_message: Some(None),
+                error_code: Some(None),
+                completed_at: Some(final_completed_at),
+                is_folder: Some(true),
+                is_collecting: Some(false),
+                total_files: Some(Some(total_files)),
+                completed_files: Some(Some(0)),
+                failed_files: Some(Some(0)),
+                ..TaskUpdate::default()
+            },
+        )
+        .await?;
+    } else {
+        db.insert_task(StoreDownloadTask {
+            gid: parent_gid.clone(),
+            fid: parent_fid,
+            name: parent_name.clone(),
+            pick_code: parent_pick_code,
+            size: total_size,
+            status: final_status.to_string(),
+            progress: final_progress,
+            path: Some(parent_path.clone()),
+            download_speed: 0,
+            eta: None,
+            error_message: None,
+            error_code: None,
+            created_at: Some(now_ms),
+            completed_at: final_completed_at,
+            is_folder: true,
+            is_collecting: false,
+            parent_gid: None,
+            total_files: Some(total_files),
+            completed_files: Some(0),
+            failed_files: Some(0),
+        })
+        .await?;
+    }
+
+    if files.is_empty() {
+        std::fs::create_dir_all(&parent_path)
+            .map_err(|e| DmError::Internal(format!("创建空文件夹失败: {}", e)))?;
+        event_bridge.notify_state_change();
+        info!(
+            "[入队] 空文件夹已完成 gid={} path={}",
+            parent_gid, parent_path
+        );
+        return Ok(parent_gid);
+    }
 
     // 2. 批量构造子任务记录和对应的入队请求。
     let mut child_tasks = Vec::with_capacity(files.len());
@@ -2038,6 +2190,27 @@ async fn recover_tasks(
 
     // 3. 根据子任务状态推导父文件夹的恢复后状态，并重建文件夹聚合状态。
     for folder in &folder_tasks {
+        if folder.is_collecting {
+            if let Err(e) = db
+                .update_task(
+                    folder.gid.clone(),
+                    TaskUpdate {
+                        status: Some("error".to_string()),
+                        download_speed: Some(0),
+                        eta: Some(None),
+                        error_message: Some(Some("文件夹文件收集已中断，请重试".to_string())),
+                        error_code: Some(None),
+                        is_collecting: Some(false),
+                        ..TaskUpdate::default()
+                    },
+                )
+                .await
+            {
+                error!("[恢复] 更新 collecting 文件夹失败 {}: {e}", folder.gid);
+            }
+            continue;
+        }
+
         let has_error_child = file_tasks
             .iter()
             .filter(|t| t.parent_gid.as_deref() == Some(&*folder.gid))

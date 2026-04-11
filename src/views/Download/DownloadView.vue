@@ -220,7 +220,7 @@
         return (
           <NSpace>
             {(() => {
-              if (row.status === 'active' || row.status === 'pausing') {
+              if ((row.status === 'active' || row.status === 'pausing') && !row.isCollecting) {
                 return (
                   <NButton
                     text
