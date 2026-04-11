@@ -29,10 +29,6 @@
     "core:event:allow-emit",
     "core:event:allow-emit-to",
     "dialog:default",
-    "sql:default",
-    "sql:allow-execute",
-    "sql:allow-select",
-    "sql:allow-load",
     "updater:default",
     "process:default"
   ]

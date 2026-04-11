@@ -1,7 +1,7 @@
 <template>
   <div class="p-4">
     <NSpace class="mb-4" align="center">
-      <NButton type="primary" @click="handleClear">
+      <NButton type="primary" :disabled="isBatchOperating" @click="handleClear">
         <template #icon>
           <NIcon>
             <ClearOutlined />
@@ -9,7 +9,11 @@
         </template>
         清除已完成
       </NButton>
-      <NButton @click="handlePauseAll">
+      <NButton
+        :disabled="isBatchOperating || !hasPausableTasks"
+        :loading="isPausingAll"
+        @click="handlePauseAll"
+      >
         <template #icon>
           <NIcon>
             <PauseCircleOutlined />
@@ -17,7 +21,11 @@
         </template>
         全部暂停
       </NButton>
-      <NButton @click="handleResumeAll">
+      <NButton
+        :disabled="isBatchOperating || !hasResumableTasks"
+        :loading="isResumingAll"
+        @click="handleResumeAll"
+      >
         <template #icon>
           <NIcon>
             <PlayCircleOutlined />
@@ -45,8 +53,8 @@
 </template>
 
 <script setup lang="tsx">
-  import type { UploadFile } from '@/db/uploads';
   import { useUploadManager } from '@/composables/useUploadManager';
+  import type { UploadFile } from '@/composables/useUploadManager';
   import {
     DeleteOutlined,
     FolderOutlined,
@@ -63,10 +71,15 @@
   const {
     displayList,
     pauseTask,
+    pauseAllTasks,
     resumeTask,
+    resumeAllTasks,
     retryTask,
     removeTask,
     clearFinished,
+    isBatchOperating,
+    isPausingAll,
+    isResumingAll,
     queueStatus,
     uploadStats,
   } = useUploadManager();
@@ -74,6 +87,25 @@
   const dialog = useDialog();
   const router = useRouter();
 
+  const hasPausableTasks = computed(() =>
+    displayList.value.some(
+      (item) =>
+        item.status === 'pending' || item.status === 'hashing' || item.status === 'uploading',
+    ),
+  );
+  const hasResumableTasks = computed(() =>
+    displayList.value.some((item) => item.status === 'paused'),
+  );
+
+  const getActionErrorMessage = (error: unknown, fallback: string) => {
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+
+    return fallback;
+  };
+
+  // 上传状态和 Naive UI 文本/颜色展示的映射关系。
   const statusTextMap: Record<
     string,
     { text: string; type: 'info' | 'warning' | 'error' | 'success' }
@@ -81,12 +113,14 @@
     pending: { text: '等待中', type: 'warning' },
     hashing: { text: '计算哈希...', type: 'info' },
     uploading: { text: '上传中', type: 'info' },
+    pausing: { text: '暂停中...', type: 'warning' },
     paused: { text: '已暂停', type: 'warning' },
     complete: { text: '上传完成', type: 'success' },
     error: { text: '上传失败', type: 'error' },
     cancelled: { text: '已取消', type: 'warning' },
   };
 
+  // 列定义只关心展示与交互，真实状态切换全部委托给 useUploadManager。
   const columns: DataTableColumns<UploadFile> = [
     {
       title: '文件名',
@@ -153,15 +187,17 @@
               {fileCountInfo}
             </div>
           );
+        } else if (row.status === 'pausing') {
+          return (
+            <div>
+              <NProgress type="line" percentage={Math.floor(row.progress || 0)} status="warning" />
+              {fileCountInfo}
+            </div>
+          );
         } else if (row.status === 'paused') {
           return (
             <div>
-              <NProgress
-                type="line"
-                percentage={Math.floor(row.progress || 0)}
-                status="warning"
-                indicator-placement="inside"
-              />
+              <NProgress type="line" percentage={Math.floor(row.progress || 0)} status="warning" />
               {fileCountInfo}
             </div>
           );
@@ -190,17 +226,20 @@
               if (
                 row.status === 'uploading' ||
                 row.status === 'hashing' ||
-                row.status === 'pending'
+                row.status === 'pending' ||
+                row.status === 'pausing'
               ) {
                 return (
                   <NButton
                     text
                     type="warning"
+                    disabled={isBatchOperating.value || row.status === 'pausing'}
                     onClick={async () => {
                       try {
                         await pauseTask(row);
                       } catch (e) {
                         console.error(e);
+                        message.error(getActionErrorMessage(e, '暂停上传失败'));
                       }
                     }}
                   >
@@ -210,7 +249,7 @@
                           <PauseCircleOutlined />
                         </NIcon>
                       ),
-                      default: () => '暂停',
+                      default: () => (row.status === 'pausing' ? '暂停中' : '暂停'),
                     }}
                   </NButton>
                 );
@@ -219,12 +258,14 @@
                   <NButton
                     text
                     type="primary"
+                    disabled={isBatchOperating.value}
                     onClick={async () => {
                       try {
                         await resumeTask(row);
                         message.success('已恢复上传');
                       } catch (e) {
                         console.error(e);
+                        message.error(getActionErrorMessage(e, '恢复上传失败'));
                       }
                     }}
                   >
@@ -243,13 +284,14 @@
                   <NButton
                     text
                     type="info"
+                    disabled={isBatchOperating.value}
                     onClick={async () => {
                       try {
                         await retryTask(row);
                         message.success('重试任务已添加');
                       } catch (e) {
                         console.error(e);
-                        message.error('重试失败');
+                        message.error(getActionErrorMessage(e, '重试失败'));
                       }
                     }}
                   >
@@ -308,6 +350,7 @@
             <NButton
               text
               type="error"
+              disabled={isBatchOperating.value}
               onClick={() => {
                 dialog.warning({
                   title: '是否确认删除该上传任务？',
@@ -320,6 +363,7 @@
                       message.success('上传任务已删除');
                     } catch (e) {
                       console.error(e);
+                      message.error(getActionErrorMessage(e, '删除上传任务失败'));
                     }
                   },
                 });
@@ -340,43 +384,45 @@
     },
   ];
 
+  // 清理已完成/失败任务会交给后端统一删除，页面这里只负责确认交互。
   const handleClear = () => {
     dialog.warning({
       title: '是否确认清除已完成的上传任务？',
       content: '包括已完成和已失败的上传任务',
       positiveText: '确定',
       negativeText: '取消',
-      onPositiveClick: () => {
-        clearFinished();
-        message.success('上传任务已清除');
+      onPositiveClick: async () => {
+        try {
+          await clearFinished();
+          message.success('上传任务已清除');
+        } catch (e) {
+          console.error(e);
+          message.error(getActionErrorMessage(e, '清除上传任务失败'));
+        }
       },
     });
   };
 
+  // 全部暂停直接走后端确认式 pause-all，确保文件上传和文件夹收集都真正停下来后再提示成功。
   const handlePauseAll = async () => {
-    for (const item of displayList.value) {
-      if (item.status === 'uploading' || item.status === 'hashing' || item.status === 'pending') {
-        try {
-          await pauseTask(item);
-        } catch (e) {
-          console.error(e);
-        }
-      }
+    try {
+      await pauseAllTasks();
+      message.success('已暂停所有上传');
+    } catch (e) {
+      console.error(e);
+      message.error(getActionErrorMessage(e, '暂停全部上传失败'));
     }
-    message.success('已暂停所有上传');
   };
 
+  // 全部继续直接走后端统一恢复入口，和全部暂停一样由后端控制实际完成时机。
   const handleResumeAll = async () => {
-    for (const item of displayList.value) {
-      if (item.status === 'paused') {
-        try {
-          await resumeTask(item);
-        } catch (e) {
-          console.error(e);
-        }
-      }
+    try {
+      await resumeAllTasks();
+      message.success('已恢复所有上传');
+    } catch (e) {
+      console.error(e);
+      message.error(getActionErrorMessage(e, '恢复全部上传失败'));
     }
-    message.success('已恢复所有上传');
   };
 </script>
 

@@ -193,12 +193,7 @@
         } else if (row.status === 'paused') {
           return (
             <div>
-              <NProgress
-                type="line"
-                percentage={Math.floor(row.progress || 0)}
-                status="warning"
-                indicator-placement="inside"
-              />
+              <NProgress type="line" percentage={Math.floor(row.progress || 0)} status="warning" />
               {fileCountInfo}
             </div>
           );

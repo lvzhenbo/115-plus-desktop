@@ -146,11 +146,11 @@
   import { useDownloadManager } from '@/composables/useDownloadManager';
   import { useUploadManager } from '@/composables/useUploadManager';
   import { useCheckUpdate } from '@/composables/useCheckUpdate';
-  import { getActiveUploads } from '@/db/uploads';
 
   const route = useRoute();
   const userStore = useUserStore();
   const collapsed = ref(false);
+  // 侧边栏入口和路由一一对应，保持应用级导航收口在布局层。
   const menuOptions: MenuOption[] = [
     {
       label: () => <RouterLink to="/home">我的文件</RouterLink>,
@@ -228,12 +228,20 @@
       return 0;
     }
   });
-  const message = useMessage();
   const settingStore = useSettingStore();
   const offlineDownloadShow = ref(false);
   const searchShow = ref(false);
-  const { pauseAllTasks: pauseAllDownloads, hasActiveDownloads } = useDownloadManager();
-  const { pauseAllTasks: pauseAllUploads } = useUploadManager();
+  // 布局层直接初始化并消费下载/上传管理器。
+  const {
+    init: initDownloadManager,
+    pauseAllTasks: pauseAllDownloads,
+    hasActiveDownloads,
+  } = useDownloadManager();
+  const {
+    init: initUploadManager,
+    pauseAllTasks: pauseAllUploads,
+    hasActiveUploads,
+  } = useUploadManager();
   const { checkForUpdate } = useCheckUpdate();
 
   /** 暂停所有任务并关闭窗口 */
@@ -242,12 +250,7 @@
     await getCurrentWindow().destroy();
   };
 
-  /** 检查是否有活跃任务 */
-  const hasActiveTasks = async () => {
-    const uploads = await getActiveUploads();
-    return hasActiveDownloads.value || uploads.length > 0;
-  };
-
+  // 保持菜单高亮与当前路由一致。
   watch(
     () => route.name,
     (newVal) => {
@@ -261,14 +264,9 @@
       settingStore.downloadSetting.downloadPath = await downloadDir();
     }
 
-    // 启动时自动检查更新
-    if (settingStore.generalSetting.autoCheckUpdate) {
-      checkForUpdate({ silent: true });
-    }
-
     // 监听窗口关闭事件
     await getCurrentWindow().onCloseRequested(async (event) => {
-      const active = await hasActiveTasks();
+      const active = hasActiveDownloads.value || hasActiveUploads.value;
       if (!active) return; // 无活跃任务直接关闭
 
       if (settingStore.generalSetting.skipExitConfirm) {
@@ -290,8 +288,17 @@
         await pauseAndClose();
       }
     });
+
+    // 初始化下载和上传管理器，确保在应用启动时就能正确加载和管理任务。
+    await Promise.all([initDownloadManager(), initUploadManager()]);
+
+    // 启动时自动检查更新
+    if (settingStore.generalSetting.autoCheckUpdate) {
+      void checkForUpdate({ silent: true });
+    }
   });
 
+  // 布局层统一拉取一次用户资料，避免各个页面重复请求。
   const getUserInfo = async () => {
     try {
       const res = await userInfo();

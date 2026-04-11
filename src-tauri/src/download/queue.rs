@@ -1,9 +1,9 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use log::{debug, error, info, warn};
-use tokio::sync::{Notify, Semaphore, mpsc, watch};
+use tokio::sync::{Notify, Semaphore, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 
 use tauri::AppHandle;
@@ -15,6 +15,7 @@ use super::store::{DbHandle, DmError, DownloadTask as StoreDownloadTask, TaskUpd
 use super::types::{DownloadConfig, DownloadError, TaskAbortReason};
 
 const ERR_QUEUE_CHANNEL_CLOSED: &str = "下载队列不可用：调度通道已关闭";
+const ERR_PAUSE_ALL_REPLY_DROPPED: &str = "下载队列不可用：暂停确认通道已断开";
 
 // ==================== 类型定义 ====================
 
@@ -77,7 +78,9 @@ pub enum ControlCommand {
     ResumeFolderChildren(Vec<EnqueueRequest>),
     RetryFolderChildren(Vec<EnqueueRequest>),
     /// 全部暂停 — 冻结队列 + 暂停所有活跃任务 (per CTL-05, D-01, D-03)
-    PauseAll,
+    PauseAll {
+        completion: oneshot::Sender<()>,
+    },
     /// 全部继续 — 解冻队列 + 恢复所有暂停任务 (per CTL-06, D-06)
     ResumeAll {
         token: String,
@@ -113,6 +116,14 @@ impl TaskCompletion {
             | Self::Cancelled { gid } => gid,
         }
     }
+}
+
+/// 一次“全部暂停”在点击瞬间锁定的活跃任务快照。
+///
+/// 只等待这批已经在运行的下载任务真正停下来；暂停期间新进入 waiting 的任务不属于本次
+/// 快照，不应拖慢更新安装或退出关闭。
+struct PauseAllSnapshot {
+    active_gids: HashSet<String>,
 }
 
 // ==================== 队列调度器 ====================
@@ -261,10 +272,14 @@ impl TaskQueue {
 
     /// 全部暂停 — 冻结队列 + 暂停所有活跃任务 (per CTL-05, D-05)
     pub async fn pause_all(&self) -> Result<(), DmError> {
+        let (tx, rx) = oneshot::channel();
         self.control_tx
-            .send(ControlCommand::PauseAll)
+            .send(ControlCommand::PauseAll { completion: tx })
             .await
-            .map_err(|_| DmError::Internal(ERR_QUEUE_CHANNEL_CLOSED.into()))
+            .map_err(|_| DmError::Internal(ERR_QUEUE_CHANNEL_CLOSED.into()))?;
+
+        rx.await
+            .map_err(|_| DmError::Internal(ERR_PAUSE_ALL_REPLY_DROPPED.into()))
     }
 
     /// 全部继续 — 解冻队列 + 恢复所有暂停任务 (per CTL-06, D-05)
@@ -313,6 +328,8 @@ async fn queue_loop(
     let mut active: HashMap<String, JoinHandle<()>> = HashMap::new();
     let mut signals: HashMap<String, watch::Sender<DownloadSignal>> = HashMap::new();
     let mut child_to_parent: HashMap<String, String> = HashMap::new();
+    let mut pause_all_waiters: Vec<oneshot::Sender<()>> = Vec::new();
+    let mut pause_all_snapshot: Option<PauseAllSnapshot> = None;
 
     // 分片级并发控制器，替代旧的全局下载信号量。
     let mut current_segment_limit: usize = 0;
@@ -561,18 +578,34 @@ async fn queue_loop(
                             waiting.push_back(req);
                         }
                     }
-                    ControlCommand::PauseAll => {
+                    ControlCommand::PauseAll { completion } => {
                         info!("[队列] 全部暂停");
                         frozen.store(true, Ordering::SeqCst);
+
+                        if pause_all_snapshot.is_some() {
+                            pause_all_waiters.push(completion);
+                            continue;
+                        }
+
+                        let active_count = active.len();
+                        if active_count > 0 {
+                            pause_all_snapshot = Some(PauseAllSnapshot {
+                                active_gids: active.keys().cloned().collect(),
+                            });
+                            pause_all_waiters.push(completion);
+                        } else {
+                            let _ = completion.send(());
+                        }
 
                         // 遍历所有活跃任务发送暂停信号 (per D-03, D-04: 只给 active 发信号)
                         for (_gid, tx) in signals.iter() {
                             let _ = tx.send(DownloadSignal::Paused);
                         }
 
-                        // 将等待中的任务也写回 paused。
+                        // 将等待中的任务迁出内存队列并写回 paused，避免 resume_all 之后重复入队。
                         // frozen 只是内存态标记，若不持久化会影响崩溃恢复判断。
-                        for req in &waiting {
+                        let paused_waiting: Vec<EnqueueRequest> = waiting.drain(..).collect();
+                        for req in &paused_waiting {
                             if let Err(e) = db.update_task(
                                 req.gid.clone(),
                                 TaskUpdate {
@@ -592,8 +625,8 @@ async fn queue_loop(
                         for parent_gid in child_to_parent.values() {
                             parent_gids.insert(parent_gid.clone());
                         }
-                        // child_to_parent 只覆盖活跃任务，等待中的子任务要额外扫描。
-                        for req in &waiting {
+                        // child_to_parent 只覆盖活跃任务，刚暂停的等待中子任务要额外扫描。
+                        for req in &paused_waiting {
                             if let Some(ref parent) = req.parent_gid {
                                 parent_gids.insert(parent.clone());
                             }
@@ -618,7 +651,7 @@ async fn queue_loop(
                         state_sync_notify.notify_one();
                         info!(
                             "[队列] 全部暂停完成: {}个活跃已发信号, {}个等待已暂停, {}个文件夹已暂停",
-                            signals.len(), waiting.len(), parent_gids.len()
+                            active_count, paused_waiting.len(), parent_gids.len()
                         );
                     }
                     ControlCommand::ResumeAll { token, user_agent, split, max_global_connections } => {
@@ -935,6 +968,35 @@ async fn queue_loop(
                 // 被 set_max_concurrent 唤醒，下一轮循环检查出队
             }
         }
+
+        try_finish_pause_all(&active, &mut pause_all_waiters, &mut pause_all_snapshot);
+    }
+}
+
+fn try_finish_pause_all(
+    active: &HashMap<String, JoinHandle<()>>,
+    waiters: &mut Vec<oneshot::Sender<()>>,
+    snapshot: &mut Option<PauseAllSnapshot>,
+) {
+    if waiters.is_empty() {
+        return;
+    }
+
+    let Some(current_snapshot) = snapshot.as_ref() else {
+        return;
+    };
+
+    if current_snapshot
+        .active_gids
+        .iter()
+        .any(|gid| active.contains_key(gid))
+    {
+        return;
+    }
+
+    *snapshot = None;
+    for waiter in waiters.drain(..) {
+        let _ = waiter.send(());
     }
 }
 

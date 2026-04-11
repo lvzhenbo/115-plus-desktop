@@ -97,18 +97,6 @@ pub struct TaskUpdate {
     pub failed_files: Option<Option<i64>>,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DownloadStats {
-    pub active_count: i64,
-    pub total_speed: i64,
-    pub completed: i64,
-    pub failed: i64,
-    pub paused: i64,
-    pub waiting: i64,
-    pub total: i64,
-}
-
 // ==================== 数据库迁移 ====================
 // 使用 PRAGMA user_version 追踪迁移版本，支持后续增量迁移。
 // 规则：每个版本对应一个迁移步骤，只在新数据库或低版本时执行。
@@ -235,9 +223,6 @@ enum DbRequest {
     GetTopLevelTasks {
         reply: oneshot::Sender<Result<Vec<DownloadTask>, DmError>>,
     },
-    GetAllTasks {
-        reply: oneshot::Sender<Result<Vec<DownloadTask>, DmError>>,
-    },
     GetTaskByGid {
         gid: String,
         reply: oneshot::Sender<Result<Option<DownloadTask>, DmError>>,
@@ -256,18 +241,6 @@ enum DbRequest {
         field: String,
         delta: i64,
         reply: oneshot::Sender<Result<(), DmError>>,
-    },
-    GetIncompleteTasks {
-        reply: oneshot::Sender<Result<Vec<DownloadTask>, DmError>>,
-    },
-    GetActiveGids {
-        reply: oneshot::Sender<Result<Vec<String>, DmError>>,
-    },
-    HasActiveTasks {
-        reply: oneshot::Sender<Result<bool, DmError>>,
-    },
-    GetDownloadStats {
-        reply: oneshot::Sender<Result<DownloadStats, DmError>>,
     },
     GetPausedTopLevelTasks {
         reply: oneshot::Sender<Result<Vec<DownloadTask>, DmError>>,
@@ -322,9 +295,6 @@ impl DbHandle {
                     DbRequest::GetTopLevelTasks { reply } => {
                         let _ = reply.send(get_top_level_tasks_impl(&conn));
                     }
-                    DbRequest::GetAllTasks { reply } => {
-                        let _ = reply.send(get_all_tasks_impl(&conn));
-                    }
                     DbRequest::GetTaskByGid { gid, reply } => {
                         let _ = reply.send(get_task_by_gid_impl(&conn, &gid));
                     }
@@ -347,18 +317,6 @@ impl DbHandle {
                     } => {
                         let _ =
                             reply.send(increment_folder_counter_impl(&conn, &gid, &field, delta));
-                    }
-                    DbRequest::GetIncompleteTasks { reply } => {
-                        let _ = reply.send(get_incomplete_tasks_impl(&conn));
-                    }
-                    DbRequest::GetActiveGids { reply } => {
-                        let _ = reply.send(get_active_gids_impl(&conn));
-                    }
-                    DbRequest::HasActiveTasks { reply } => {
-                        let _ = reply.send(has_active_tasks_impl(&conn));
-                    }
-                    DbRequest::GetDownloadStats { reply } => {
-                        let _ = reply.send(get_download_stats_impl(&conn));
                     }
                     DbRequest::GetPausedTopLevelTasks { reply } => {
                         let _ = reply.send(get_paused_top_level_tasks_impl(&conn));
@@ -425,11 +383,6 @@ impl DbHandle {
             .await
     }
 
-    pub async fn get_all_tasks(&self) -> Result<Vec<DownloadTask>, DmError> {
-        self.send_request(|reply| DbRequest::GetAllTasks { reply })
-            .await
-    }
-
     pub async fn get_task_by_gid(&self, gid: String) -> Result<Option<DownloadTask>, DmError> {
         self.send_request(|reply| DbRequest::GetTaskByGid { gid, reply })
             .await
@@ -468,28 +421,8 @@ impl DbHandle {
         .await
     }
 
-    pub async fn get_incomplete_tasks(&self) -> Result<Vec<DownloadTask>, DmError> {
-        self.send_request(|reply| DbRequest::GetIncompleteTasks { reply })
-            .await
-    }
-
     pub async fn get_recoverable_tasks(&self) -> Result<Vec<DownloadTask>, DmError> {
         self.send_request(|reply| DbRequest::GetRecoverableTasks { reply })
-            .await
-    }
-
-    pub async fn get_active_gids(&self) -> Result<Vec<String>, DmError> {
-        self.send_request(|reply| DbRequest::GetActiveGids { reply })
-            .await
-    }
-
-    pub async fn has_active_tasks(&self) -> Result<bool, DmError> {
-        self.send_request(|reply| DbRequest::HasActiveTasks { reply })
-            .await
-    }
-
-    pub async fn get_download_stats(&self) -> Result<DownloadStats, DmError> {
-        self.send_request(|reply| DbRequest::GetDownloadStats { reply })
             .await
     }
 
@@ -673,14 +606,6 @@ fn get_top_level_tasks_impl(conn: &Connection) -> Result<Vec<DownloadTask>, DmEr
     Ok(tasks)
 }
 
-fn get_all_tasks_impl(conn: &Connection) -> Result<Vec<DownloadTask>, DmError> {
-    let mut stmt = conn.prepare("SELECT * FROM downloads ORDER BY created_at DESC")?;
-    let tasks = stmt
-        .query_map([], |row| row_to_task(row))?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(tasks)
-}
-
 fn get_task_by_gid_impl(conn: &Connection, gid: &str) -> Result<Option<DownloadTask>, DmError> {
     let mut stmt = conn.prepare("SELECT * FROM downloads WHERE gid = ?1")?;
     let mut rows = stmt.query_map(rusqlite::params![gid], |row| row_to_task(row))?;
@@ -744,21 +669,6 @@ fn increment_folder_counter_impl(
     Ok(())
 }
 
-fn get_incomplete_tasks_impl(conn: &Connection) -> Result<Vec<DownloadTask>, DmError> {
-    let mut stmt = conn.prepare(
-        "SELECT * FROM downloads
-         WHERE is_folder = 0
-           AND gid NOT LIKE 'failed-%'
-           AND gid NOT LIKE 'folder-%'
-           AND status NOT IN ('complete', 'error', 'removed')
-         ORDER BY created_at ASC",
-    )?;
-    let tasks = stmt
-        .query_map([], |row| row_to_task(row))?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(tasks)
-}
-
 fn get_recoverable_tasks_impl(conn: &Connection) -> Result<Vec<DownloadTask>, DmError> {
     let mut stmt = conn.prepare(
         "SELECT * FROM downloads
@@ -770,75 +680,6 @@ fn get_recoverable_tasks_impl(conn: &Connection) -> Result<Vec<DownloadTask>, Dm
         .query_map([], |row| row_to_task(row))?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(tasks)
-}
-
-fn get_active_gids_impl(conn: &Connection) -> Result<Vec<String>, DmError> {
-    let mut stmt = conn.prepare(
-        "SELECT gid FROM downloads
-         WHERE is_folder = 0
-           AND gid NOT LIKE 'failed-%'
-           AND gid NOT LIKE 'folder-%'
-           AND status IN ('active', 'waiting', 'paused')",
-    )?;
-    let gids = stmt
-        .query_map([], |row| row.get(0))?
-        .collect::<Result<Vec<String>, _>>()?;
-    Ok(gids)
-}
-
-fn has_active_tasks_impl(conn: &Connection) -> Result<bool, DmError> {
-    let mut stmt = conn.prepare(
-        "SELECT COUNT(*) FROM downloads
-         WHERE (is_folder = 0 AND gid NOT LIKE 'failed-%' AND status IN ('active', 'waiting', 'paused'))
-            OR (is_folder = 1 AND is_collecting = 1)",
-    )?;
-    let count: i64 = stmt.query_row([], |row| row.get(0))?;
-    Ok(count > 0)
-}
-
-fn get_download_stats_impl(conn: &Connection) -> Result<DownloadStats, DmError> {
-    let mut stmt = conn.prepare(
-        "SELECT status, COUNT(*) as cnt, COALESCE(SUM(download_speed), 0) as total_speed
-         FROM downloads
-         WHERE parent_gid IS NULL
-         GROUP BY status",
-    )?;
-
-    let mut stats = DownloadStats {
-        active_count: 0,
-        total_speed: 0,
-        completed: 0,
-        failed: 0,
-        paused: 0,
-        waiting: 0,
-        total: 0,
-    };
-
-    let rows = stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, i64>(1)?,
-            row.get::<_, i64>(2)?,
-        ))
-    })?;
-
-    for row in rows {
-        let (status, cnt, total_speed) = row?;
-        stats.total += cnt;
-        match status.as_str() {
-            "active" => {
-                stats.active_count = cnt;
-                stats.total_speed = total_speed;
-            }
-            "complete" => stats.completed = cnt,
-            "error" => stats.failed = cnt,
-            "paused" => stats.paused = cnt,
-            "waiting" => stats.waiting = cnt,
-            _ => {}
-        }
-    }
-
-    Ok(stats)
 }
 
 fn get_paused_top_level_tasks_impl(conn: &Connection) -> Result<Vec<DownloadTask>, DmError> {
@@ -854,47 +695,6 @@ fn get_paused_top_level_tasks_impl(conn: &Connection) -> Result<Vec<DownloadTask
 // ==================== Tauri Commands ====================
 
 #[tauri::command]
-pub async fn download_insert_task(
-    task: DownloadTask,
-    db: tauri::State<'_, DbHandle>,
-) -> Result<(), DmError> {
-    db.insert_task(task).await
-}
-
-#[tauri::command]
-pub async fn download_batch_insert_tasks(
-    tasks: Vec<DownloadTask>,
-    db: tauri::State<'_, DbHandle>,
-) -> Result<(), DmError> {
-    db.batch_insert_tasks(tasks).await
-}
-
-#[tauri::command]
-pub async fn download_update_task(
-    gid: String,
-    updates: TaskUpdate,
-    db: tauri::State<'_, DbHandle>,
-) -> Result<(), DmError> {
-    db.update_task(gid, updates).await
-}
-
-#[tauri::command]
-pub async fn download_delete_task(
-    gid: String,
-    db: tauri::State<'_, DbHandle>,
-) -> Result<(), DmError> {
-    db.delete_task(gid).await
-}
-
-#[tauri::command]
-pub async fn download_delete_child_tasks(
-    parent_gid: String,
-    db: tauri::State<'_, DbHandle>,
-) -> Result<(), DmError> {
-    db.delete_child_tasks(parent_gid).await
-}
-
-#[tauri::command]
 pub async fn download_delete_finished_tasks(
     db: tauri::State<'_, DbHandle>,
 ) -> Result<u64, DmError> {
@@ -906,53 +706,4 @@ pub async fn download_get_top_level_tasks(
     db: tauri::State<'_, DbHandle>,
 ) -> Result<Vec<DownloadTask>, DmError> {
     db.get_top_level_tasks().await
-}
-
-#[tauri::command]
-pub async fn download_get_all_tasks(
-    db: tauri::State<'_, DbHandle>,
-) -> Result<Vec<DownloadTask>, DmError> {
-    db.get_all_tasks().await
-}
-
-#[tauri::command]
-pub async fn download_get_task_by_gid(
-    gid: String,
-    db: tauri::State<'_, DbHandle>,
-) -> Result<Option<DownloadTask>, DmError> {
-    db.get_task_by_gid(gid).await
-}
-
-#[tauri::command]
-pub async fn download_get_child_tasks(
-    parent_gid: String,
-    db: tauri::State<'_, DbHandle>,
-) -> Result<Vec<DownloadTask>, DmError> {
-    db.get_child_tasks(parent_gid).await
-}
-
-#[tauri::command]
-pub async fn download_get_incomplete_tasks(
-    db: tauri::State<'_, DbHandle>,
-) -> Result<Vec<DownloadTask>, DmError> {
-    db.get_incomplete_tasks().await
-}
-
-#[tauri::command]
-pub async fn download_get_active_gids(
-    db: tauri::State<'_, DbHandle>,
-) -> Result<Vec<String>, DmError> {
-    db.get_active_gids().await
-}
-
-#[tauri::command]
-pub async fn download_has_active_tasks(db: tauri::State<'_, DbHandle>) -> Result<bool, DmError> {
-    db.has_active_tasks().await
-}
-
-#[tauri::command]
-pub async fn download_get_download_stats(
-    db: tauri::State<'_, DbHandle>,
-) -> Result<DownloadStats, DmError> {
-    db.get_download_stats().await
 }

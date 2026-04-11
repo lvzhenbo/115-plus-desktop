@@ -28,27 +28,14 @@
   const explorerRef = useTemplateRef('explorerRef');
   const cid = ref('0');
 
-  const {
-    init: initDownloadManager,
-    download: downloadFile,
-    batchDownload: batchDownloadFiles,
-  } = useDownloadManager();
+  const { download: downloadFile, batchDownload: batchDownloadFiles } = useDownloadManager();
 
-  const {
-    init: initUploadManager,
-    uploadFiles: uploadFilesToCloud,
-    uploadFolder: uploadFolderToCloud,
-  } = useUploadManager();
+  const { uploadFiles: uploadFilesToCloud, uploadFolder: uploadFolderToCloud } = useUploadManager();
 
   const selectFile = ref<MyFile | null>(null);
 
   const unlisten = listen('get-video-list', () => {
     emit('set-video-list', selectFile.value);
-  });
-
-  onMounted(() => {
-    initDownloadManager();
-    initUploadManager();
   });
 
   onUnmounted(() => {
@@ -135,7 +122,7 @@
     const files: { path: string; name: string; size: number }[] = [];
     for (const filePath of paths) {
       try {
-        const size: number = await invoke('get_file_size', { filePath });
+        const size: number = await invoke('upload_get_file_size', { filePath });
         const name = filePath.split(/[\\/]/).pop() || filePath;
         files.push({ path: filePath, name, size });
       } catch (e) {

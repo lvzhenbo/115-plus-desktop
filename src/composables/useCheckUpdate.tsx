@@ -4,7 +4,6 @@ import { relaunch } from '@tauri-apps/plugin-process';
 import { useSettingStore } from '@/store/setting';
 import { useDownloadManager } from '@/composables/useDownloadManager';
 import { useUploadManager } from '@/composables/useUploadManager';
-import { getActiveUploads } from '@/db/uploads';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { filesize } from 'filesize';
 import {
@@ -28,10 +27,12 @@ import {
   type Tokens,
 } from 'marked';
 
+// 更新检查是全局单例流程，避免多个页面同时发起重复检查。
 const isChecking = ref(false);
 
 type GfmAlertKind = 'note' | 'tip' | 'important' | 'warning' | 'caution';
 
+// GitHub 风格 alert 块在 Naive UI 里的渲染映射。
 const GFM_ALERT_META = {
   note: { title: '提示', type: 'info' },
   tip: { title: '建议', type: 'success' },
@@ -56,6 +57,7 @@ const GFM_ALERT_START_RE = / {0,3}>[ \t]?\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)
 const GFM_ALERT_BLOCK_RE = /^(?: {0,3}>[^\n]*(?:\n|$))+/;
 const GFM_ALERT_HEADER_RE = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(.*)$/i;
 
+// 从 release note 原文里提取出一个完整的 GFM alert block。
 function extractGfmAlert(src: string) {
   const raw = src.match(GFM_ALERT_BLOCK_RE)?.[0];
   if (!raw) return null;
@@ -103,12 +105,16 @@ const gfmAlertExtension: TokenizerExtension = {
 const releaseNotesParser = new Marked({ gfm: true });
 releaseNotesParser.use({ extensions: [gfmAlertExtension] });
 
+// 更新检查桥接层：负责拉取版本、展示说明，并在安装前协调下载/上传暂停。
 export const useCheckUpdate = () => {
   const message = useMessage();
   const dialog = useDialog();
   const notification = useNotification();
   const settingStore = useSettingStore();
+  const { hasActiveDownloads, pauseAllTasks: pauseAllDownloads } = useDownloadManager();
+  const { hasActiveUploads, pauseAllTasks: pauseAllUploads } = useUploadManager();
 
+  // 把 marked 的 inline token 转成 Naive UI JSX 节点。
   function renderInlineTokens(tokens: Token[]): VNode[] {
     return tokens.map((token) => {
       switch (token.type) {
@@ -147,6 +153,7 @@ export const useCheckUpdate = () => {
     });
   }
 
+  // 把 release note 的 block token 转成 Naive UI JSX 节点。
   function renderTokens(tokens: ReleaseNoteToken[]): VNode[] {
     return tokens.map((token) => {
       switch (token.type) {
@@ -212,12 +219,14 @@ export const useCheckUpdate = () => {
     });
   }
 
+  // 更新说明可能很长，统一放进滚动容器里展示。
   function renderBody(body: string | undefined) {
     if (!body) return () => '暂无更新说明';
     const tokens = releaseNotesParser.lexer(body) as unknown as ReleaseNoteToken[];
     return () => <NScrollbar class="max-h-[60vh]">{renderTokens(tokens)}</NScrollbar>;
   }
 
+  // 安装更新前必须再次确认，并在真正安装前暂停所有传输任务，避免 Windows 下文件占用。
   async function confirmAndInstall(update: Update) {
     const confirmed = await new Promise<boolean>((resolve) => {
       dialog.info({
@@ -249,9 +258,7 @@ export const useCheckUpdate = () => {
     });
 
     // 检查是否有活跃任务，有则弹出确认
-    const { hasActiveDownloads } = useDownloadManager();
-    const uploads = await getActiveUploads();
-    const hasActive = hasActiveDownloads.value || uploads.length > 0;
+    const hasActive = hasActiveDownloads.value || hasActiveUploads.value;
 
     if (hasActive) {
       const userConfirmed = await ask(
@@ -267,13 +274,12 @@ export const useCheckUpdate = () => {
     }
 
     // 暂停所有任务，避免进程占用导致 Windows 安装失败
-    const { pauseAllTasks: pauseAllDownloads } = useDownloadManager();
-    const { pauseAllTasks: pauseAllUploads } = useUploadManager();
     await Promise.all([pauseAllDownloads(), pauseAllUploads()]);
     await update.install();
     await relaunch();
   }
 
+  // `silent` 模式用于启动时后台检查，只在发现更新时给一个轻提示。
   async function checkForUpdate(options?: { silent?: boolean }) {
     const silent = options?.silent ?? false;
     const proxy = settingStore.generalSetting.updateProxy || undefined;

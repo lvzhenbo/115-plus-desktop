@@ -1,1150 +1,557 @@
-import { uploadInit, uploadGetToken, uploadResume } from '@/api/upload';
+import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { addFolder } from '@/api/file';
+import { uploadGetToken, uploadInit, uploadResume } from '@/api/upload';
+import type { UploadInitParams } from '@/api/types/upload';
 import { useSettingStore } from '@/store/setting';
-import {
-  insertUpload,
-  updateUpload,
-  deleteUpload,
-  deleteChildUploads,
-  deleteFinishedUploads,
-  getAllUploads,
-  getChildUploads,
-  getTopLevelUploads,
-  getActiveUploads,
-  getUploadById,
-  type UploadFile,
-} from '@/db/uploads';
-import { listen } from '@tauri-apps/api/event';
-import { sleep, isRateLimitError, getBackoffDelay } from '@/utils/rateLimit';
+import { getBackoffDelay, isRateLimitError, sleep } from '@/utils/rateLimit';
 
-/** 上传队列项 */
-interface UploadQueueItem {
-  filePath: string;
+// 上传列表的状态机完全以后端为准，前端只消费这些状态并做交互分发。
+export type UploadStatus =
+  | 'pending'
+  | 'hashing'
+  | 'uploading'
+  | 'pausing'
+  | 'paused'
+  | 'complete'
+  | 'error'
+  | 'cancelled';
+
+// Rust 存储层同步给前端的上传任务快照。
+export interface UploadFile {
+  id: string;
   fileName: string;
+  filePath: string;
   fileSize: number;
   targetCid: string;
-  retryCount: number;
-  parentId?: string;
-  /** 已关联的数据库记录 ID，重试时复用 */
-  dbId?: string;
-  /** 已计算的文件 SHA1（断点续传时复用，跳过重新计算） */
+  targetPath?: string;
   sha1?: string;
-  /** 已计算的文件前 128K SHA1（断点续传时复用） */
   preSha1?: string;
-  /** 上一次上传返回的 pick_code（断点续传时使用） */
   pickCode?: string;
-  /** OSS 分片上传 ID（断点续传时复用） */
+  status: UploadStatus;
+  progress: number;
+  uploadSpeed: number;
+  errorMessage?: string;
+  createdAt?: number;
+  completedAt?: number;
+  isFolder?: boolean;
+  parentId?: string;
+  totalFiles?: number;
+  completedFiles?: number;
+  failedFiles?: number;
+  ossBucket?: string;
+  ossObject?: string;
+  ossEndpoint?: string;
+  callback?: string;
+  callbackVar?: string;
+  uploadedSize?: number;
+  fileId?: string;
   ossUploadId?: string;
 }
 
-/** 状态轮询间隔(ms) */
-const POLL_INTERVAL = 2000;
+// 上传列表顶部摘要信息。
+interface UploadQueueStatus {
+  queueLength: number;
+  isProcessing: boolean;
+}
 
-const generateId = () => `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+// 上传列表统计信息。
+interface UploadStats {
+  activeCount: number;
+  totalSpeed: number;
+  completed: number;
+  failed: number;
+  paused: number;
+  total: number;
+}
+
+type UploadTaskAction = 'pause' | 'resume' | 'retry' | 'remove';
+type UploadBatchAction = 'idle' | 'pausing-all' | 'resuming-all';
+
+// 这些集合只服务于 UI 统计，不参与真实状态切换。
+const ACTIVE_UPLOAD_STATUS_SET = new Set<UploadStatus>([
+  'pending',
+  'hashing',
+  'uploading',
+  'pausing',
+]);
+const PROCESSING_UPLOAD_STATUS_SET = new Set<UploadStatus>(['hashing', 'uploading', 'pausing']);
+
+// 文件和文件夹在后端对应的是不同 command，这里做一次前端映射收口。
+const TASK_ACTION_COMMANDS: Record<UploadTaskAction, { file: string; folder: string }> = {
+  pause: {
+    file: 'upload_pause_task',
+    folder: 'upload_pause_folder',
+  },
+  resume: {
+    file: 'upload_resume_task',
+    folder: 'upload_resume_folder',
+  },
+  retry: {
+    file: 'upload_retry_task',
+    folder: 'upload_retry_folder',
+  },
+  remove: {
+    file: 'upload_remove_task',
+    folder: 'upload_remove_folder',
+  },
+};
+
+// 所有上传相关 invoke 都统一经过这里，便于后续替换和类型收口。
+const invokeUploadCommand = async <T = void>(
+  command: string,
+  payload?: Record<string, unknown>,
+): Promise<T> => {
+  return payload ? invoke<T>(command, payload) : invoke<T>(command);
+};
+
+// 主列表只展示顶层任务；文件夹内部子任务由后端聚合后体现在父任务上。
+const getTopLevelUploads = async (): Promise<UploadFile[]> => {
+  return invokeUploadCommand<UploadFile[]>('upload_get_top_level_tasks');
+};
+
+// `upload:api-needed` 事件的前端解析结构；真实字段由 Rust 按 camel/snake 两种形式兼容发出。
+interface LocalUploadFileInput {
+  path: string;
+  name: string;
+  size: number;
+}
+
+interface UploadApiNeededEvent {
+  kind: 'init' | 'resume' | 'token' | 'createFolder';
+  requestId?: string;
+  request_id?: string;
+  [key: string]: unknown;
+}
+
+// 兼容 Rust 事件载荷中的 camelCase / snake_case 字段。
+const getField = (payload: Record<string, unknown>, camelKey: string, snakeKey = camelKey) =>
+  payload[camelKey] ?? payload[snakeKey];
+
+// 下面这组 helper 用于在前端事件入口处尽早校验 payload，避免把脏数据带进具体 API 调用。
+const requireStringField = (
+  payload: Record<string, unknown>,
+  camelKey: string,
+  snakeKey = camelKey,
+) => {
+  const value = getField(payload, camelKey, snakeKey);
+  if (typeof value !== 'string') {
+    throw new Error(`缺少字段 ${camelKey}`);
+  }
+  return value;
+};
+
+const requireNumberField = (
+  payload: Record<string, unknown>,
+  camelKey: string,
+  snakeKey = camelKey,
+) => {
+  const value = getField(payload, camelKey, snakeKey);
+  if (typeof value !== 'number') {
+    throw new Error(`缺少字段 ${camelKey}`);
+  }
+  return value;
+};
+
+const optionalStringField = (
+  payload: Record<string, unknown>,
+  camelKey: string,
+  snakeKey = camelKey,
+) => {
+  const value = getField(payload, camelKey, snakeKey);
+  return typeof value === 'string' ? value : undefined;
+};
+
+const assignIfDefined = <T extends object, K extends keyof T>(
+  target: T,
+  key: K,
+  value: T[K] | undefined,
+) => {
+  if (value !== undefined) {
+    target[key] = value;
+  }
+};
+
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+
+  if (error && typeof error === 'object') {
+    const data = error as {
+      message?: unknown;
+      error?: unknown;
+      code?: unknown;
+      errno?: unknown;
+    };
+
+    const message =
+      (typeof data.message === 'string' && data.message) ||
+      (typeof data.error === 'string' && data.error) ||
+      null;
+    const code =
+      typeof data.code === 'number'
+        ? data.code
+        : typeof data.errno === 'number'
+          ? data.errno
+          : null;
+
+    if (message && code !== null) {
+      return `${message} (code=${code})`;
+    }
+
+    if (message) {
+      return message;
+    }
+
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return Object.prototype.toString.call(error);
+    }
+  }
+
+  return String(error);
+};
+
+const logUploadManagerError = (message: string, error: unknown) => {
+  console.error(message, error);
+};
 
 /**
- * 上传管理器
+ * 上传管理器。
  *
- * - SQLite 持久化上传列表，响应式 `displayList` 驱动 UI
- * - 使用 Rust 后端进行 SHA1 计算和 OSS 上传
- * - 支持暂停、继续、重试、删除操作
- * - 支持文件和文件夹上传
+ * 当前版本里它是一个“薄桥接层”：
+ * - 列表状态来自 Rust `upload:*` 事件
+ * - 用户操作转发为 `upload_*` command
+ * - 115 上传接口仍由前端调用，再把结果回填给 Rust 调度器
  */
 export const useUploadManager = createSharedComposable(() => {
   const settingStore = useSettingStore();
 
-  const displayList = ref<UploadFile[]>([]);
-  const uploadQueue = ref<UploadQueueItem[]>([]);
-  const isProcessing = ref(false);
+  // `displayList` 是当前 UI 的唯一来源；不再在前端维护一套独立上传数据库。
+  const displayList = shallowRef<UploadFile[]>([]);
+  const unlisteners: UnlistenFn[] = [];
+  const stopHandles: Array<() => void> = [];
+  const batchAction = ref<UploadBatchAction>('idle');
 
-  /** 从数据库刷新顶层列表 */
+  let listenerPromise: Promise<void> | null = null;
+  let initPromise: Promise<void> | null = null;
+  let batchActionPromise: Promise<void> | null = null;
+
+  const ensureNoBatchActionInFlight = () => {
+    if (batchAction.value !== 'idle') {
+      throw new Error('批量暂停/继续进行中，请稍候');
+    }
+  };
+
+  const runBatchAction = async (
+    action: Exclude<UploadBatchAction, 'idle'>,
+    operation: () => Promise<void>,
+  ) => {
+    if (batchActionPromise) {
+      throw new Error('批量暂停/继续进行中，请稍候');
+    }
+
+    batchAction.value = action;
+    batchActionPromise = operation().finally(() => {
+      batchAction.value = 'idle';
+      batchActionPromise = null;
+    });
+
+    await batchActionPromise;
+  };
+
+  // 主动刷新只在初始化/清理后使用，正常更新路径依赖 `upload:state-sync` 推送。
   const refreshDisplayList = async () => {
     displayList.value = await getTopLevelUploads();
   };
 
-  // ---------- 进度事件监听 ----------
-
-  let progressListenerSetup = false;
-
-  const setupProgressListener = async () => {
-    if (progressListenerSetup) return;
-    progressListenerSetup = true;
-
-    await listen<{
-      upload_id: string;
-      uploaded_size: number;
-      total_size: number;
-      part_number: number;
-      total_parts: number;
-      status: string;
-    }>('upload-progress', async (event) => {
-      const { upload_id, uploaded_size, total_size, status } = event.payload;
-
-      // 检查当前任务状态，如果已暂停或已取消则忽略滞后的进度事件
-      const currentRecord = await getUploadById(upload_id);
-      if (
-        currentRecord &&
-        (currentRecord.status === 'paused' || currentRecord.status === 'cancelled')
-      ) {
-        return;
-      }
-
-      if (status === 'complete') {
-        await updateUpload(upload_id, {
-          status: 'complete',
-          progress: 100,
-          uploadSpeed: 0,
-          uploadedSize: total_size,
-          completedAt: Date.now(),
-          ossUploadId: undefined, // 上传完成后清除 ossUploadId
-        });
-      } else {
-        const progress =
-          total_size > 0 ? Math.round((uploaded_size / total_size) * 10000) / 100 : 0;
-        await updateUpload(upload_id, {
-          progress,
-          uploadedSize: uploaded_size,
-          status: 'uploading',
-        });
-      }
-
-      await aggregateFolderStatuses();
-      await refreshDisplayList();
-    });
-
-    // 监听 OSS 分片上传初始化事件，保存 oss_upload_id 用于断点续传
-    await listen<{
-      upload_id: string;
-      oss_upload_id: string;
-    }>('upload-oss-init', async (event) => {
-      const { upload_id, oss_upload_id } = event.payload;
-      await updateUpload(upload_id, { ossUploadId: oss_upload_id });
-    });
+  // Rust 等待前端回填 115 API 结果时，统一走这两个桥接 command。
+  const provideApiResponse = async (requestId: string, payload: unknown) => {
+    await invokeUploadCommand('upload_provide_api_response', { requestId, payload });
   };
 
-  // ---------- 状态轮询 ----------
+  const provideApiError = async (requestId: string, errorMessage: string) => {
+    await invokeUploadCommand('upload_provide_api_error', { requestId, errorMessage });
+  };
 
-  const {
-    pause: stopPolling,
-    resume: startPolling,
-    isActive: isPolling,
-  } = useTimeoutPoll(pollUploadStatus, POLL_INTERVAL, { immediate: false });
+  const syncMaxConcurrent = async (n = settingStore.uploadSetting.maxConcurrent) => {
+    await invokeUploadCommand('upload_set_max_concurrent', { n });
+  };
 
-  /** 轮询上传状态，聚合文件夹进度 */
-  async function pollUploadStatus() {
-    await aggregateFolderStatuses();
-    await refreshDisplayList();
+  const syncMaxRetry = async (n = settingStore.uploadSetting.maxRetry) => {
+    await invokeUploadCommand('upload_set_max_retry', { n });
+  };
 
-    // 无活跃任务时停止轮询
-    const active = await getActiveUploads();
-    if (active.length === 0 && uploadQueue.value.length === 0 && !isProcessing.value) {
-      stopPolling();
-    }
-  }
+  const syncUploadSettings = async () => {
+    await Promise.all([syncMaxConcurrent(), syncMaxRetry()]);
+  };
 
-  /** 聚合文件夹内子任务的进度、完成状态 */
-  async function aggregateFolderStatuses() {
-    const allItems = await getAllUploads();
-    const folders = allItems.filter((d) => d.isFolder && d.status !== 'cancelled');
-
-    for (const folder of folders) {
-      const children = allItems.filter((d) => d.parentId === folder.id);
-      if (children.length === 0 && folder.status !== 'complete' && folder.status !== 'error')
-        continue;
-
-      const completed = children.filter((d) => d.status === 'complete').length;
-      const failed = children.filter((d) => d.status === 'error').length;
-      const paused = children.filter((d) => d.status === 'paused').length;
-      const activeChildren = children.filter(
-        (d) => d.status === 'uploading' || d.status === 'hashing' || d.status === 'pending',
-      );
-
-      const totalSize = children.reduce((sum, d) => sum + (d.fileSize || 0), 0);
-      const completedSize = children.reduce((sum, d) => {
-        if (d.status === 'complete') return sum + (d.fileSize || 0);
-        if (d.progress && d.fileSize) return sum + (d.fileSize * d.progress) / 100;
-        return sum;
-      }, 0);
-
-      const uploadSpeed = activeChildren.reduce((sum, d) => sum + (d.uploadSpeed || 0), 0);
-
-      const updates: Partial<UploadFile> = {
-        completedFiles: completed,
-        failedFiles: failed,
-        fileSize: totalSize > 0 ? totalSize : folder.fileSize,
-        progress: totalSize > 0 ? Math.round((completedSize / totalSize) * 10000) / 100 : 0,
-        uploadSpeed,
-      };
-
-      if (completed + failed === children.length && children.length > 0) {
-        if (failed > 0) {
-          updates.status = 'error';
-          updates.errorMessage = `${failed} 个文件上传失败`;
-          updates.uploadSpeed = 0;
-        } else {
-          updates.status = 'complete';
-          updates.completedAt = folder.completedAt ?? Date.now();
-          updates.uploadSpeed = 0;
+  // 远端目录创建仍复用现有前端 API，并带上限流退避，避免文件夹批量展开时击穿接口。
+  const createRemoteFolder = async (fileName: string, parentCid: string) => {
+    const maxRetry = settingStore.uploadSetting.maxRetry;
+    for (let attempt = 0; attempt <= maxRetry; attempt++) {
+      try {
+        const response = await addFolder({ file_name: fileName, pid: parentCid });
+        if (!response.data) {
+          throw new Error('创建文件夹失败：无返回数据');
         }
-      } else if (paused > 0 && activeChildren.length === 0) {
-        updates.status = 'paused';
-      } else if (activeChildren.length > 0) {
-        updates.status = 'uploading';
+        return response.data;
+      } catch (error) {
+        if (isRateLimitError(error) && attempt < maxRetry) {
+          await sleep(getBackoffDelay(attempt));
+          continue;
+        }
+        throw error;
       }
-
-      await updateUpload(folder.id, updates);
     }
-  }
 
-  // ---------- 队列与上传 ----------
-
-  /** 将单个文件加入上传队列 */
-  const enqueueFile = (
-    filePath: string,
-    fileName: string,
-    fileSize: number,
-    targetCid: string,
-    parentId?: string,
-  ) => {
-    uploadQueue.value.push({
-      filePath,
-      fileName,
-      fileSize,
-      targetCid,
-      retryCount: 0,
-      parentId,
-    });
-    processQueue();
+    throw new Error('创建文件夹失败：超过最大重试次数');
   };
 
-  /** 上传单个本地文件 */
+  // Rust 只描述“需要什么接口结果”，具体 HTTP 请求仍由前端完成。
+  const respondToApiRequest = async (payload: UploadApiNeededEvent) => {
+    const requestId = requireStringField(payload, 'requestId', 'request_id');
+
+    try {
+      switch (payload.kind) {
+        case 'init': {
+          const request: UploadInitParams = {
+            file_name: requireStringField(payload, 'fileName', 'file_name'),
+            file_size: requireNumberField(payload, 'fileSize', 'file_size'),
+            target: requireStringField(payload, 'target'),
+            fileid: requireStringField(payload, 'fileid'),
+          };
+          assignIfDefined(request, 'preid', optionalStringField(payload, 'preid'));
+          assignIfDefined(
+            request,
+            'pick_code',
+            optionalStringField(payload, 'pickCode', 'pick_code'),
+          );
+          assignIfDefined(request, 'sign_key', optionalStringField(payload, 'signKey', 'sign_key'));
+          assignIfDefined(request, 'sign_val', optionalStringField(payload, 'signVal', 'sign_val'));
+
+          const response = await uploadInit(request);
+          await provideApiResponse(requestId, response.data);
+          return;
+        }
+        case 'resume': {
+          const response = await uploadResume({
+            file_size: requireNumberField(payload, 'fileSize', 'file_size'),
+            target: requireStringField(payload, 'target'),
+            fileid: requireStringField(payload, 'fileid'),
+            pick_code: requireStringField(payload, 'pickCode', 'pick_code'),
+          });
+          await provideApiResponse(requestId, response.data);
+          return;
+        }
+        case 'token': {
+          const response = await uploadGetToken();
+          await provideApiResponse(requestId, response.data);
+          return;
+        }
+        case 'createFolder': {
+          const folder = await createRemoteFolder(
+            requireStringField(payload, 'fileName', 'file_name'),
+            requireStringField(payload, 'parentCid', 'parent_cid'),
+          );
+          await provideApiResponse(requestId, folder);
+          return;
+        }
+        default:
+          throw new Error(`未知的上传接口请求类型: ${payload.kind}`);
+      }
+    } catch (error) {
+      console.error('处理上传接口请求失败:', payload.kind, error);
+      await provideApiError(requestId, getErrorMessage(error));
+    }
+  };
+
+  // 监听器只允许初始化一次，防止重复进入页面时叠加订阅，导致同一事件被处理多次。
+  const setupUploadListeners = async () => {
+    if (!listenerPromise) {
+      listenerPromise = Promise.all([
+        listen<UploadFile[]>('upload:state-sync', (event) => {
+          displayList.value = event.payload;
+        }),
+        listen<UploadApiNeededEvent>('upload:api-needed', (event) => {
+          void respondToApiRequest(event.payload);
+        }),
+      ])
+        .then((listeners) => {
+          unlisteners.push(...listeners);
+        })
+        .catch((error) => {
+          listenerPromise = null;
+          throw error;
+        });
+    }
+
+    await listenerPromise;
+  };
+
+  // 设置同步和事件监听一样，只初始化一套，避免 shared composable 重复挂 watcher。
+  const setupSettingSync = () => {
+    if (stopHandles.length > 0) {
+      return;
+    }
+
+    stopHandles.push(
+      watch(
+        () => settingStore.uploadSetting.maxConcurrent,
+        (n) => {
+          void syncMaxConcurrent(n).catch((error) => {
+            logUploadManagerError('同步上传并发设置失败:', error);
+          });
+        },
+      ),
+      watch(
+        () => settingStore.uploadSetting.maxRetry,
+        (n) => {
+          void syncMaxRetry(n).catch((error) => {
+            logUploadManagerError('同步上传重试设置失败:', error);
+          });
+        },
+      ),
+    );
+  };
+
+  // 文件/文件夹动作在这里统一分派，视图层不必知道各自对应哪个 Rust command。
+  const runTaskAction = async (action: UploadTaskAction, task: UploadFile) => {
+    const command = TASK_ACTION_COMMANDS[action];
+    if (task.isFolder) {
+      await invokeUploadCommand(command.folder, { parentId: task.id });
+      return;
+    }
+
+    await invokeUploadCommand(command.file, { id: task.id });
+  };
+
+  // 当最后一个使用者卸载时，清掉事件监听和设置 watcher，确保 shared composable 可安全重建。
+  const dispose = () => {
+    listenerPromise = null;
+    initPromise = null;
+
+    for (const unlisten of unlisteners.splice(0)) {
+      unlisten();
+    }
+
+    for (const stop of stopHandles.splice(0)) {
+      stop();
+    }
+  };
+
+  tryOnScopeDispose(dispose);
+
+  // 单文件上传只是多文件上传的一个便捷包装。
   const uploadFile = async (
     filePath: string,
     fileName: string,
     fileSize: number,
     targetCid: string,
   ) => {
-    enqueueFile(filePath, fileName, fileSize, targetCid);
-    startPolling();
+    await uploadFiles([{ path: filePath, name: fileName, size: fileSize }], targetCid);
   };
 
-  /** 在115云端创建文件夹（带限流退避重试） */
-  const createRemoteFolder = async (name: string, parentCid: string): Promise<string> => {
-    const maxRetry = settingStore.uploadSetting.maxRetry;
-    for (let attempt = 0; attempt <= maxRetry; attempt++) {
-      try {
-        const res = await addFolder({ file_name: name, pid: parentCid });
-        if (res.data) {
-          return res.data.file_id;
-        }
-        throw new Error(`创建文件夹 "${name}" 失败：无返回数据`);
-      } catch (err) {
-        if (isRateLimitError(err) && attempt < maxRetry) {
-          const delay = getBackoffDelay(attempt);
-          console.warn(`创建文件夹 "${name}" 被限流，${delay / 1000}s 后重试第 ${attempt + 1} 次`);
-          await sleep(delay);
-        } else {
-          throw err;
-        }
-      }
-    }
-    throw new Error(`创建文件夹 "${name}" 超过最大重试次数`);
+  const uploadFiles = async (files: LocalUploadFileInput[], targetCid: string) => {
+    ensureNoBatchActionInFlight();
+    await invokeUploadCommand('upload_enqueue_files', { files, targetCid });
   };
 
-  /** 上传本地文件夹 */
+  // 文件夹上传真正的目录扫描和远端建目录都在 Rust 调度器里完成。
   const uploadFolder = async (folderPath: string, folderName: string, targetCid: string) => {
-    const folderId = generateId();
-
-    const folderEntry: UploadFile = {
-      id: folderId,
-      fileName: folderName,
-      filePath: folderPath,
-      fileSize: 0,
-      targetCid,
-      status: 'pending',
-      progress: 0,
-      uploadSpeed: 0,
-      isFolder: true,
-      totalFiles: 0,
-      completedFiles: 0,
-      failedFiles: 0,
-      createdAt: Date.now(),
-    };
-    await insertUpload(folderEntry);
-    await refreshDisplayList();
-
-    // 递归收集文件夹下所有文件
-    const allFiles: { path: string; name: string; size: number; relativePath: string }[] = [];
-    try {
-      await collectLocalFolderFiles(folderPath, allFiles);
-    } catch (e) {
-      console.error('收集文件夹文件失败:', e);
-      await updateUpload(folderId, {
-        status: 'error',
-        errorMessage: '收集文件列表失败',
-      });
-      await refreshDisplayList();
-      return;
-    }
-
-    const totalSize = allFiles.reduce((sum, f) => sum + f.size, 0);
-    await updateUpload(folderId, {
-      totalFiles: allFiles.length,
-      fileSize: totalSize,
-      status: 'uploading',
-    });
-
-    if (allFiles.length === 0) {
-      await updateUpload(folderId, { status: 'complete', completedAt: Date.now() });
-      await refreshDisplayList();
-      return;
-    }
-
-    // 在115云端创建根文件夹
-    let rootFolderCid: string;
-    try {
-      rootFolderCid = await createRemoteFolder(folderName, targetCid);
-    } catch (e) {
-      console.error('创建远程根文件夹失败:', e);
-      await updateUpload(folderId, {
-        status: 'error',
-        errorMessage: `创建根文件夹失败: ${e}`,
-      });
-      await refreshDisplayList();
-      return;
-    }
-
-    // 从文件的 relativePath 中提取所有需要创建的子目录路径
-    const dirPaths = new Set<string>();
-    for (const file of allFiles) {
-      const parts = file.relativePath.replace(/\\/g, '/').split('/');
-      // 只取目录部分（去掉最后的文件名）
-      for (let i = 1; i < parts.length; i++) {
-        dirPaths.add(parts.slice(0, i).join('/'));
-      }
-    }
-
-    // 按层级排序，确保父目录先创建
-    const sortedDirs = Array.from(dirPaths).sort(
-      (a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b),
-    );
-
-    // 在115上创建对应的文件夹结构
-    // key: 相对路径, value: 115上的 cid
-    const dirCidMap = new Map<string, string>();
-    try {
-      for (let idx = 0; idx < sortedDirs.length; idx++) {
-        const dirPath = sortedDirs[idx]!;
-        const parts = dirPath.split('/');
-        const dirName = parts[parts.length - 1]!;
-        const parentRelPath = parts.slice(0, -1).join('/');
-        let parentCid: string;
-        if (parentRelPath) {
-          const mapped = dirCidMap.get(parentRelPath);
-          if (!mapped) {
-            throw new Error(`找不到父目录 "${parentRelPath}" 的 CID`);
-          }
-          parentCid = mapped;
-        } else {
-          parentCid = rootFolderCid;
-        }
-
-        const cid = await createRemoteFolder(dirName, parentCid);
-        dirCidMap.set(dirPath, cid);
-      }
-    } catch (e) {
-      console.error('创建远程文件夹结构失败:', e);
-      await updateUpload(folderId, {
-        status: 'error',
-        errorMessage: `创建文件夹结构失败: ${e}`,
-      });
-      await refreshDisplayList();
-      return;
-    }
-
-    // 将文件加入队列，根据 relativePath 确定正确的 targetCid
-    // 预先插入 DB 记录（状态为 pending），确保文件夹聚合状态正确
-    for (const file of allFiles) {
-      const relParts = file.relativePath.replace(/\\/g, '/').split('/');
-      const fileDirPath = relParts.slice(0, -1).join('/');
-      const fileTargetCid = fileDirPath ? dirCidMap.get(fileDirPath)! : rootFolderCid!;
-
-      const fileId = generateId();
-      await insertUpload({
-        id: fileId,
-        fileName: file.name,
-        filePath: file.path,
-        fileSize: file.size,
-        targetCid: fileTargetCid,
-        status: 'pending',
-        progress: 0,
-        uploadSpeed: 0,
-        parentId: folderId,
-        createdAt: Date.now(),
-      });
-
-      uploadQueue.value.push({
-        filePath: file.path,
-        fileName: file.name,
-        fileSize: file.size,
-        targetCid: fileTargetCid,
-        retryCount: 0,
-        parentId: folderId,
-        dbId: fileId,
-      });
-    }
-
-    await refreshDisplayList();
-    processQueue();
-    startPolling();
+    ensureNoBatchActionInFlight();
+    await invokeUploadCommand('upload_enqueue_folder', { folderPath, folderName, targetCid });
   };
 
-  /** 递归收集本地文件夹下所有文件 */
-  const collectLocalFolderFiles = async (
-    dirPath: string,
-    result: { path: string; name: string; size: number; relativePath: string }[],
-  ) => {
-    const files: { path: string; name: string; size: number; is_dir: boolean }[] = await invoke(
-      'scan_directory',
-      { dirPath },
-    );
-    for (const file of files) {
-      if (!file.is_dir) {
-        result.push({
-          path: file.path,
-          name: file.name,
-          size: file.size,
-          relativePath: file.path.replace(dirPath, '').replace(/^[\\/]/, ''),
-        });
-      }
-    }
+  const pauseTask = async (task: UploadFile) => {
+    ensureNoBatchActionInFlight();
+    await runTaskAction('pause', task);
   };
 
-  /** 消费上传队列，工作池模式并行上传，任务完成后立即填补空位 */
-  const processQueue = async () => {
-    if (isProcessing.value) return;
-    isProcessing.value = true;
-
-    const active = new Set<Promise<void>>();
-
-    const runItem = async (item: UploadQueueItem) => {
-      try {
-        await uploadSingleFile(item);
-      } catch (error) {
-        // uploadSingleFile 内部已在 DB 中标记 error，此处只处理重试逻辑
-        const maxRetry = settingStore.uploadSetting.maxRetry;
-        if (item.retryCount < maxRetry) {
-          item.retryCount++;
-          const isRateLimit = isRateLimitError(error);
-          const delay = isRateLimit
-            ? getBackoffDelay(item.retryCount)
-            : getBackoffDelay(Math.max(0, item.retryCount - 1));
-
-          console.warn(
-            `上传失败${isRateLimit ? '(限流)' : ''}，${delay / 1000}s 后重试第 ${item.retryCount} 次: ${item.fileName}`,
-            error,
-          );
-
-          if (isRateLimit) {
-            await sleep(delay);
-          }
-          uploadQueue.value.push(item);
-        } else {
-          // 已超过最大重试次数，uploadSingleFile 中已创建了 error 记录，无需再创建
-          console.error(`上传失败，已超过最大重试次数: ${item.fileName}`, error);
-        }
-        await refreshDisplayList();
-      }
-    };
-
-    try {
-      while (uploadQueue.value.length > 0 || active.size > 0) {
-        const maxConcurrent = settingStore.uploadSetting.maxConcurrent || 1;
-
-        // 填充并行槽位，跳过已暂停或已取消的任务
-        while (uploadQueue.value.length > 0 && active.size < maxConcurrent) {
-          const item = uploadQueue.value.shift()!;
-          if (item.dbId) {
-            const record = await getUploadById(item.dbId);
-            if (record && (record.status === 'paused' || record.status === 'cancelled')) {
-              continue;
-            }
-          }
-          const task = runItem(item).finally(() => active.delete(task));
-          active.add(task);
-        }
-
-        // 等待任意一个任务完成，腾出槽位
-        if (active.size > 0) {
-          await Promise.race(active);
-        }
-      }
-    } finally {
-      isProcessing.value = false;
-    }
+  const resumeTask = async (task: UploadFile) => {
+    ensureNoBatchActionInFlight();
+    await runTaskAction('resume', task);
   };
 
-  /** 上传单个文件的完整流程 */
-  const uploadSingleFile = async (item: UploadQueueItem) => {
-    const { filePath, fileName, fileSize, targetCid, parentId } = item;
-    const isRetry = !!item.dbId;
-    const id = item.dbId || generateId();
-    item.dbId = id;
-
-    // 1. 插入或复用上传记录
-    if (!isRetry) {
-      await insertUpload({
-        id,
-        fileName,
-        filePath,
-        fileSize,
-        targetCid,
-        status: 'hashing',
-        progress: 0,
-        uploadSpeed: 0,
-        parentId,
-        createdAt: Date.now(),
-      });
-    } else {
-      // 重试时复用同一条记录，重置状态
-      await updateUpload(id, {
-        status: 'hashing',
-        progress: 0,
-        uploadSpeed: 0,
-        errorMessage: undefined,
-        uploadedSize: 0,
-      });
-    }
-    await refreshDisplayList();
-    startPolling();
-
-    // 2. 计算文件 SHA1（如果已有则复用，跳过重新计算）
-    const target = `U_1_${targetCid}`;
-    let sha1: string;
-    let preSha1: string;
-
-    if (item.sha1 && item.preSha1) {
-      // 断点续传：复用已保存的哈希值
-      sha1 = item.sha1;
-      preSha1 = item.preSha1;
-      await updateUpload(id, { sha1, preSha1 });
-    } else {
-      let hashResult: { sha1: string; pre_sha1: string };
-      try {
-        hashResult = await invoke('compute_file_hash', { filePath });
-      } catch (e) {
-        await updateUpload(id, {
-          status: 'error',
-          errorMessage: `计算文件哈希失败: ${e}`,
-        });
-        throw e;
-      }
-      sha1 = hashResult.sha1;
-      preSha1 = hashResult.pre_sha1;
-      await updateUpload(id, { sha1, preSha1 });
-    }
-
-    // 3. 断点续传：如果已有 pickCode，走 /open/upload/resume 接口
-    if (item.pickCode) {
-      try {
-        await resumeUploadFlow(
-          id,
-          filePath,
-          fileName,
-          fileSize,
-          target,
-          sha1,
-          item.pickCode,
-          item.ossUploadId,
-        );
-        return;
-      } catch (e) {
-        // 续传接口失败，回退到完整 init 流程
-        console.warn(`断点续传失败，回退到完整上传流程: ${fileName}`, e);
-      }
-    }
-
-    // 4. 调用115上传初始化接口
-    let initRes;
-    try {
-      initRes = await uploadInit({
-        file_name: fileName,
-        file_size: fileSize,
-        target,
-        fileid: sha1,
-        preid: preSha1,
-      });
-    } catch (e) {
-      await updateUpload(id, {
-        status: 'error',
-        errorMessage: `初始化上传失败: ${(e as Error)?.message || e}`,
-      });
-      throw e;
-    }
-
-    const initData = initRes.data;
-    if (!initData) {
-      await updateUpload(id, {
-        status: 'error',
-        errorMessage: '初始化上传失败：无返回数据',
-      });
-      throw new Error('初始化上传失败：无返回数据');
-    }
-
-    await updateUpload(id, { pickCode: initData.pick_code });
-
-    // 处理二次认证
-    if (initData.sign_key && initData.sign_check) {
-      try {
-        await handleSignCheck(id, fileName, filePath, fileSize, target, sha1, initData);
-        return; // 二次认证后会重新调用上传
-      } catch (e) {
-        await updateUpload(id, {
-          status: 'error',
-          errorMessage: `二次认证失败: ${(e as Error)?.message || e}`,
-        });
-        throw e;
-      }
-    }
-
-    // 5. 检查是否秒传
-    if (initData.status === 2) {
-      await updateUpload(id, {
-        status: 'complete',
-        progress: 100,
-        completedAt: Date.now(),
-        fileId: initData.file_id,
-      });
-      await refreshDisplayList();
-      return;
-    }
-
-    // 6. 非秒传，获取上传凭证并上传到 OSS
-    if (initData.status === 1 && initData.bucket && initData.object && initData.callback) {
-      await doOssUpload(
-        id,
-        filePath,
-        initData.bucket,
-        initData.object,
-        initData.callback.callback,
-        initData.callback.callback_var,
-      );
-    }
+  const retryTask = async (task: UploadFile) => {
+    ensureNoBatchActionInFlight();
+    await runTaskAction('retry', task);
   };
 
-  /** 断点续传流程：调用 /open/upload/resume 获取 OSS 参数后上传 */
-  const resumeUploadFlow = async (
-    id: string,
-    filePath: string,
-    _fileName: string,
-    fileSize: number,
-    target: string,
-    sha1: string,
-    pickCode: string,
-    ossUploadId?: string,
-  ) => {
-    // 读取 DB 中保存的 bucket/object，用于判断 resume 返回的是否相同
-    const dbRecord = await getUploadById(id);
-    const savedBucket = dbRecord?.ossBucket;
-    const savedObject = dbRecord?.ossObject;
-
-    const resumeRes = await uploadResume({
-      file_size: fileSize,
-      target,
-      fileid: sha1,
-      pick_code: pickCode,
-    });
-
-    const resumeData = resumeRes.data;
-    if (!resumeData) {
-      throw new Error('断点续传失败：无返回数据');
-    }
-
-    await updateUpload(id, { pickCode: resumeData.pick_code });
-
-    if (resumeData.bucket && resumeData.object && resumeData.callback) {
-      // 如果 resume 返回的 bucket/object 与保存的不同，说明 OSS 上传目标已变更
-      // 此时旧的 ossUploadId 无效（它绑定了旧的 bucket/object），需要清除
-      let validOssUploadId = ossUploadId;
-      if (ossUploadId && (savedBucket !== resumeData.bucket || savedObject !== resumeData.object)) {
-        console.warn(
-          `断点续传目标已变更 (bucket: ${savedBucket} → ${resumeData.bucket}, object: ${savedObject} → ${resumeData.object})，清除旧的 ossUploadId`,
-        );
-        validOssUploadId = undefined;
-        await updateUpload(id, { ossUploadId: undefined });
-      }
-
-      await doOssUpload(
-        id,
-        filePath,
-        resumeData.bucket,
-        resumeData.object,
-        resumeData.callback.callback,
-        resumeData.callback.callback_var,
-        validOssUploadId,
-      );
-    } else {
-      throw new Error('断点续传返回数据不完整');
-    }
+  const removeTask = async (task: UploadFile) => {
+    ensureNoBatchActionInFlight();
+    await runTaskAction('remove', task);
+    displayList.value = displayList.value.filter((item) => item.id !== task.id);
   };
 
-  /** 获取上传凭证并上传文件到 OSS */
-  const doOssUpload = async (
-    id: string,
-    filePath: string,
-    bucket: string,
-    object: string,
-    callback: string,
-    callbackVar: string,
-    ossUploadId?: string,
-  ) => {
-    await updateUpload(id, {
-      status: 'uploading',
-      ossBucket: bucket,
-      ossObject: object,
-      callback,
-      callbackVar,
-    });
-
-    // STS 凭证过期后自动刷新并重试（最多重试 3 次）
-    const MAX_TOKEN_REFRESH = 3;
-    let currentOssUploadId = ossUploadId;
-
-    for (let tokenAttempt = 0; tokenAttempt <= MAX_TOKEN_REFRESH; tokenAttempt++) {
-      // 获取 OSS 上传凭证
-      let tokenRes;
-      try {
-        tokenRes = await uploadGetToken();
-      } catch (e) {
-        await updateUpload(id, {
-          status: 'error',
-          errorMessage: `获取上传凭证失败: ${(e as Error)?.message || e}`,
-        });
-        throw e;
-      }
-
-      const token = tokenRes.data;
-
-      // 将 Expiration 转为毫秒时间戳传给 Rust，让 Rust 在每个分片上传前检查
-      let tokenExpirationMs: number | null = null;
-      if (token.Expiration) {
-        const expDate = new Date(token.Expiration);
-        if (!isNaN(expDate.getTime())) {
-          tokenExpirationMs = expDate.getTime();
-        }
-      }
-
-      // 从 DB 中获取最新的 ossUploadId（可能在上一轮中被 upload-oss-init 事件更新）
-      if (tokenAttempt > 0) {
-        const record = await getUploadById(id);
-        currentOssUploadId = record?.ossUploadId;
-      }
-
-      // 调用 Rust 后端上传
-      try {
-        await invoke('upload_to_oss', {
-          uploadId: id,
-          filePath,
-          bucket,
-          object,
-          endpoint: token.endpoint,
-          accessKeyId: token.AccessKeyId,
-          accessKeySecret: token.AccessKeySecret,
-          securityToken: token.SecurityToken,
-          callback,
-          callbackVar,
-          ossUploadId: currentOssUploadId || null,
-          tokenExpirationMs,
-        });
-
-        // 上传成功，进度事件中已处理了完成状态
-        return;
-      } catch (e) {
-        const errMsg = String(e);
-
-        if (errMsg === 'token_expired' && tokenAttempt < MAX_TOKEN_REFRESH) {
-          // STS 凭证过期，刷新凭证后重试（ossUploadId 保持不变，已上传的分片不会丢失）
-          console.warn(
-            `STS 凭证过期，正在刷新凭证重试 (${tokenAttempt + 1}/${MAX_TOKEN_REFRESH}): ${id}`,
-          );
-          continue;
-        }
-
-        if (errMsg === 'upload_cancelled') {
-          await updateUpload(id, {
-            status: 'cancelled',
-            uploadSpeed: 0,
-          });
-        } else {
-          await updateUpload(id, {
-            status: 'error',
-            errorMessage: `OSS 上传失败: ${errMsg}`,
-            uploadSpeed: 0,
-          });
-        }
-        throw e;
-      }
-    }
-  };
-
-  /** 处理二次认证 */
-  const handleSignCheck = async (
-    id: string,
-    fileName: string,
-    filePath: string,
-    fileSize: number,
-    target: string,
-    sha1: string,
-    initData: { sign_key?: string; sign_check?: string; pick_code: string },
-  ) => {
-    if (!initData.sign_check || !initData.sign_key) return;
-
-    // 解析 sign_check 范围 "start-end"
-    const [startStr, endStr] = initData.sign_check.split('-');
-    const start = parseInt(startStr!);
-    const end = parseInt(endStr!);
-
-    // 计算指定区间的 SHA1
-    const signVal: string = await invoke('compute_partial_sha1', {
-      filePath,
-      start,
-      end,
-    });
-
-    // 重新调用上传接口（附带签名信息）
-    const res = await uploadInit({
-      file_name: fileName,
-      file_size: fileSize,
-      target,
-      fileid: sha1,
-      pick_code: initData.pick_code,
-      sign_key: initData.sign_key,
-      sign_val: signVal,
-    });
-
-    const data = res.data;
-    if (!data) throw new Error('二次认证失败：无返回数据');
-
-    if (data.status === 2) {
-      await updateUpload(id, {
-        status: 'complete',
-        progress: 100,
-        completedAt: Date.now(),
-        fileId: data.file_id,
-      });
-    } else if (data.status === 1 && data.bucket && data.object && data.callback) {
-      // 需要继续上传
-      await doOssUpload(
-        id,
-        filePath,
-        data.bucket,
-        data.object,
-        data.callback.callback,
-        data.callback.callback_var,
-      );
-    }
-  };
-
-  // ---------- 公开接口 ----------
-
-  /** 上传多个本地文件 (文件选择对话框后调用) */
-  const uploadFiles = async (
-    files: { path: string; name: string; size: number }[],
-    targetCid: string,
-  ) => {
-    for (const file of files) {
-      enqueueFile(file.path, file.name, file.size, targetCid);
-    }
-    startPolling();
-  };
-
-  /** 暂停上传任务 */
-  const pauseTask = async (uploadFile: UploadFile) => {
-    if (uploadFile.isFolder) {
-      // 从队列中移除该文件夹尚未开始的子任务
-      uploadQueue.value = uploadQueue.value.filter((q) => q.parentId !== uploadFile.id);
-
-      const children = await getChildUploads(uploadFile.id);
-      const active = children.filter(
-        (d) => d.status === 'uploading' || d.status === 'pending' || d.status === 'hashing',
-      );
-      for (const child of active) {
-        try {
-          await invoke('pause_upload', { uploadId: child.id });
-        } catch {
-          // 可能任务还未开始OSS上传
-        }
-        await updateUpload(child.id, { status: 'paused', uploadSpeed: 0 });
-      }
-      await updateUpload(uploadFile.id, { status: 'paused', uploadSpeed: 0 });
-    } else {
-      try {
-        await invoke('pause_upload', { uploadId: uploadFile.id });
-      } catch {
-        // 可能任务还未开始OSS上传
-      }
-      await updateUpload(uploadFile.id, { status: 'paused', uploadSpeed: 0 });
-    }
-    await refreshDisplayList();
-  };
-
-  /** 恢复上传任务 */
-  const resumeTask = async (uploadFile: UploadFile) => {
-    if (uploadFile.isFolder) {
-      const children = await getChildUploads(uploadFile.id);
-      const paused = children.filter((d) => d.status === 'paused');
-      for (const child of paused) {
-        try {
-          await invoke('resume_upload', { uploadId: child.id });
-          await updateUpload(child.id, { status: 'uploading' });
-        } catch {
-          // 任务需要重新开始，复用已有 DB 记录
-          // 携带已保存的 sha1/pickCode，走断点续传流程
-          await updateUpload(child.id, {
-            status: 'pending',
-            progress: 0,
-            uploadSpeed: 0,
-            errorMessage: undefined,
-            uploadedSize: 0,
-          });
-          uploadQueue.value.push({
-            filePath: child.filePath,
-            fileName: child.fileName,
-            fileSize: child.fileSize,
-            targetCid: child.targetCid,
-            retryCount: 0,
-            parentId: uploadFile.id,
-            dbId: child.id,
-            sha1: child.sha1,
-            preSha1: child.preSha1,
-            pickCode: child.pickCode,
-            ossUploadId: child.ossUploadId,
-          });
-        }
-      }
-      await updateUpload(uploadFile.id, { status: 'uploading' });
-      processQueue();
-    } else {
-      try {
-        await invoke('resume_upload', { uploadId: uploadFile.id });
-        await updateUpload(uploadFile.id, { status: 'uploading' });
-      } catch {
-        // 如果 Rust 端没有该任务，需要重新排队，复用已有 DB 记录
-        // 携带已保存的 sha1/pickCode，走断点续传流程避免重复计算
-        await updateUpload(uploadFile.id, {
-          status: 'pending',
-          progress: 0,
-          uploadSpeed: 0,
-          errorMessage: undefined,
-          uploadedSize: 0,
-        });
-        uploadQueue.value.push({
-          filePath: uploadFile.filePath,
-          fileName: uploadFile.fileName,
-          fileSize: uploadFile.fileSize,
-          targetCid: uploadFile.targetCid,
-          retryCount: 0,
-          parentId: uploadFile.parentId,
-          dbId: uploadFile.id,
-          sha1: uploadFile.sha1,
-          preSha1: uploadFile.preSha1,
-          pickCode: uploadFile.pickCode,
-          ossUploadId: uploadFile.ossUploadId,
-        });
-        processQueue();
-      }
-    }
-    startPolling();
-    await refreshDisplayList();
-  };
-
-  /** 重试失败的上传任务 */
-  const retryTask = async (uploadFile: UploadFile) => {
-    if (uploadFile.isFolder) {
-      const children = await getChildUploads(uploadFile.id);
-      const failed = children.filter((d) => d.status === 'error');
-      for (const child of failed) {
-        // 复用已有 DB 记录，重置状态
-        await updateUpload(child.id, {
-          status: 'pending',
-          progress: 0,
-          uploadSpeed: 0,
-          errorMessage: undefined,
-          uploadedSize: 0,
-        });
-        uploadQueue.value.push({
-          filePath: child.filePath,
-          fileName: child.fileName,
-          fileSize: child.fileSize,
-          targetCid: child.targetCid,
-          retryCount: 0,
-          parentId: uploadFile.id,
-          dbId: child.id,
-          sha1: child.sha1,
-          preSha1: child.preSha1,
-          pickCode: child.pickCode,
-          ossUploadId: child.ossUploadId,
-        });
-      }
-      await updateUpload(uploadFile.id, {
-        status: 'uploading',
-        failedFiles: 0,
-        errorMessage: undefined,
-        completedAt: undefined,
-      });
-    } else {
-      // 复用已有 DB 记录，重置状态
-      await updateUpload(uploadFile.id, {
-        status: 'pending',
-        progress: 0,
-        uploadSpeed: 0,
-        errorMessage: undefined,
-        uploadedSize: 0,
-      });
-      uploadQueue.value.push({
-        filePath: uploadFile.filePath,
-        fileName: uploadFile.fileName,
-        fileSize: uploadFile.fileSize,
-        targetCid: uploadFile.targetCid,
-        retryCount: 0,
-        parentId: uploadFile.parentId,
-        dbId: uploadFile.id,
-        sha1: uploadFile.sha1,
-        preSha1: uploadFile.preSha1,
-        pickCode: uploadFile.pickCode,
-        ossUploadId: uploadFile.ossUploadId,
-      });
-    }
-
-    processQueue();
-    startPolling();
-    await refreshDisplayList();
-  };
-
-  /** 移除上传任务 */
-  const removeTask = async (uploadFile: UploadFile) => {
-    if (uploadFile.isFolder) {
-      // 从队列中移除该文件夹的子任务
-      uploadQueue.value = uploadQueue.value.filter((q) => q.parentId !== uploadFile.id);
-
-      const children = await getChildUploads(uploadFile.id);
-      for (const child of children) {
-        if (child.status === 'uploading') {
-          try {
-            await invoke('cancel_upload', { uploadId: child.id });
-          } catch {
-            // 忽略
-          }
-        }
-      }
-      await deleteChildUploads(uploadFile.id);
-      await deleteUpload(uploadFile.id);
-    } else {
-      if (uploadFile.status === 'uploading') {
-        try {
-          await invoke('cancel_upload', { uploadId: uploadFile.id });
-        } catch {
-          // 忽略
-        }
-      }
-      await deleteUpload(uploadFile.id);
-    }
-    await refreshDisplayList();
-  };
-
-  /** 清除所有已完成的上传记录 */
   const clearFinished = async () => {
-    await deleteFinishedUploads();
+    ensureNoBatchActionInFlight();
+    await invokeUploadCommand('upload_delete_finished_tasks');
     await refreshDisplayList();
   };
 
-  // ---------- 计算属性 ----------
+  const pauseAllTasks = async () => {
+    await runBatchAction('pausing-all', () => invokeUploadCommand('upload_pause_all'));
+  };
 
-  const queueStatus = computed(() => ({
-    queueLength: uploadQueue.value.length,
-    isProcessing: isProcessing.value,
-    isPolling: isPolling.value,
-  }));
+  const resumeAllTasks = async () => {
+    await runBatchAction('resuming-all', () => invokeUploadCommand('upload_resume_all'));
+  };
 
-  const uploadStats = computed(() => {
+  const isBatchOperating = computed(() => batchAction.value !== 'idle');
+  const isPausingAll = computed(() => batchAction.value === 'pausing-all');
+  const isResumingAll = computed(() => batchAction.value === 'resuming-all');
+
+  // 这些 computed 只做展示聚合，不持有真实任务状态。
+  const queueStatus = computed<UploadQueueStatus>(() => {
     const list = displayList.value;
-    const active = list.filter(
-      (d) => d.status === 'uploading' || d.status === 'hashing' || d.status === 'pending',
-    );
-    const totalSpeed = active.reduce((sum, d) => sum + (d.uploadSpeed || 0), 0);
+    const queueLength = list.filter((item) => item.status === 'pending').length;
+    const isProcessing = list.some((item) => PROCESSING_UPLOAD_STATUS_SET.has(item.status));
+    return { queueLength, isProcessing };
+  });
+
+  const uploadStats = computed<UploadStats>(() => {
+    const list = displayList.value;
+    const activeCount = list.filter((item) => ACTIVE_UPLOAD_STATUS_SET.has(item.status)).length;
+    const totalSpeed = list
+      .filter((item) => item.status === 'uploading')
+      .reduce((sum, item) => sum + (item.uploadSpeed || 0), 0);
     return {
-      activeCount: active.length,
+      activeCount,
       totalSpeed,
-      completed: list.filter((d) => d.status === 'complete').length,
-      failed: list.filter((d) => d.status === 'error').length,
-      paused: list.filter((d) => d.status === 'paused').length,
+      completed: list.filter((item) => item.status === 'complete').length,
+      failed: list.filter((item) => item.status === 'error').length,
+      paused: list.filter((item) => item.status === 'paused').length,
       total: list.length,
     };
   });
 
-  // ---------- 初始化 ----------
+  // 与下载管理器保持一致，布局层和更新器都直接消费这个布尔值。
+  const hasActiveUploads = computed(() =>
+    displayList.value.some((item) => ACTIVE_UPLOAD_STATUS_SET.has(item.status)),
+  );
 
-  let initialized = false;
-
+  // `init` 设计成幂等入口，页面重复调用只会复用同一个初始化 promise。
   const init = async () => {
-    if (initialized) return;
-    initialized = true;
-
-    await setupProgressListener();
-
-    // 将未完成的任务标记为暂停（因为 Rust 端的上传进程不会在重启后保留）
-    const allItems = await getAllUploads();
-    const activeTasks = allItems.filter(
-      (d) =>
-        !d.isFolder &&
-        (d.status === 'uploading' || d.status === 'hashing' || d.status === 'pending'),
-    );
-    for (const task of activeTasks) {
-      await updateUpload(task.id, { status: 'paused', uploadSpeed: 0 });
+    if (!initPromise) {
+      initPromise = (async () => {
+        await setupUploadListeners();
+        await refreshDisplayList();
+        await syncUploadSettings();
+        setupSettingSync();
+      })().catch((error) => {
+        initPromise = null;
+        throw error;
+      });
     }
 
-    // 更新文件夹状态
-    const activeFolders = allItems.filter(
-      (d) =>
-        d.isFolder && d.status !== 'complete' && d.status !== 'error' && d.status !== 'cancelled',
-    );
-    for (const folder of activeFolders) {
-      await updateUpload(folder.id, { status: 'paused', uploadSpeed: 0 });
-    }
-
-    await refreshDisplayList();
-  };
-
-  /** 暂停所有活跃的上传任务 */
-  const pauseAllTasks = async () => {
-    const activeTasks = await getActiveUploads();
-    for (const task of activeTasks) {
-      try {
-        await invoke('pause_upload', { uploadId: task.id });
-      } catch {
-        // 可能任务还未开始OSS上传
-      }
-      await updateUpload(task.id, { status: 'paused', uploadSpeed: 0 });
-    }
-    // 暂停活跃文件夹
-    const allItems = await getAllUploads();
-    const activeFolders = allItems.filter(
-      (d) =>
-        d.isFolder &&
-        d.status !== 'complete' &&
-        d.status !== 'error' &&
-        d.status !== 'cancelled' &&
-        d.status !== 'paused',
-    );
-    for (const folder of activeFolders) {
-      await updateUpload(folder.id, { status: 'paused', uploadSpeed: 0 });
-    }
-    await refreshDisplayList();
+    await initPromise;
   };
 
   return {
     init,
-    displayList,
+    displayList: computed(() => displayList.value),
     uploadFile,
     uploadFiles,
     uploadFolder,
@@ -1153,10 +560,13 @@ export const useUploadManager = createSharedComposable(() => {
     retryTask,
     removeTask,
     clearFinished,
-    startPolling,
-    stopPolling,
     pauseAllTasks,
+    resumeAllTasks,
+    isBatchOperating,
+    isPausingAll,
+    isResumingAll,
     queueStatus,
     uploadStats,
+    hasActiveUploads,
   };
 });

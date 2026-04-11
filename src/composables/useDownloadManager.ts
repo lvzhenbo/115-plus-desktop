@@ -5,6 +5,13 @@ import type { MyFile } from '@/api/types/file';
 import { useSettingStore } from '@/store/setting';
 import { useUserStore } from '@/store/user';
 
+// 下载列表前端桥接层。
+//
+// 这里和上传管理器一样，只负责：
+// - 订阅 Rust 发出的 download:* 事件
+// - 把用户操作转成 download_* command
+// - 处理仍必须由前端请求的直链刷新与文件夹预收集流程
+
 export interface DownLoadFile {
   fid: string;
   name: string;
@@ -98,6 +105,56 @@ interface ProgressSnapshot {
   totalFiles?: number;
 }
 
+export type DownloadStatus = NonNullable<DownLoadFile['status']>;
+
+interface DownloadQueueStatus {
+  queueLength: number;
+  isProcessing: boolean;
+}
+
+interface DownloadStats {
+  activeCount: number;
+  totalSpeed: number;
+  completed: number;
+  failed: number;
+  paused: number;
+  waiting: number;
+  total: number;
+}
+
+const ACTIVE_DOWNLOAD_STATUS_SET = new Set<DownloadStatus>(['active']);
+const PROCESSING_DOWNLOAD_STATUS_SET = new Set<DownloadStatus>(['active']);
+const PAUSED_DOWNLOAD_STATUS_SET = new Set<DownloadStatus>(['paused', 'pausing']);
+const TERMINAL_DOWNLOAD_STATUS_SET = new Set<DownloadStatus>([
+  'complete',
+  'error',
+  'partial_error',
+  'verify_failed',
+]);
+const PRESERVED_DOWNLOAD_STATUS_SET = new Set<DownloadStatus>(['active', 'pausing', 'paused']);
+const ACTIVE_PRESENCE_DOWNLOAD_STATUS_SET = new Set<DownloadStatus>([
+  'active',
+  'waiting',
+  'paused',
+  'pausing',
+]);
+const FOLDER_COLLECTION_ABORTED = 'folder-collection-aborted';
+
+/** 统一的下载 command 调用入口。 */
+const invokeDownloadCommand = async <T = void>(
+  command: string,
+  payload?: Record<string, unknown>,
+): Promise<T> => {
+  return payload ? invoke<T>(command, payload) : invoke<T>(command);
+};
+
+const isFolderCollectionAbortedError = (error: unknown) =>
+  error instanceof Error && error.message === FOLDER_COLLECTION_ABORTED;
+
+const logDownloadManagerError = (message: string, error: unknown) => {
+  console.error(message, error);
+};
+
 /**
  * 下载管理器（薄封装层）
  *
@@ -107,12 +164,17 @@ interface ProgressSnapshot {
  */
 export const useDownloadManager = createSharedComposable(() => {
   const settingStore = useSettingStore();
+  const userStore = useUserStore();
 
+  // displayList 是下载列表 UI 的唯一真相来源；progressCache 只用于填补 state-sync 间隙。
   const displayList = ref<DownLoadFile[]>([]);
   const progressCache = new Map<string, ProgressSnapshot>();
   const cancelledFolderCollections = new Set<string>();
   const unlisteners: UnlistenFn[] = [];
-  const FOLDER_COLLECTION_ABORTED = 'folder-collection-aborted';
+  const stopHandles: Array<() => void> = [];
+
+  let listenerPromise: Promise<void> | null = null;
+  let initPromise: Promise<void> | null = null;
 
   /** 根据 store 限速配置计算 bytes/sec */
   const computeSpeedLimitBytes = (): number => {
@@ -124,151 +186,201 @@ export const useDownloadManager = createSharedComposable(() => {
 
   /** 获取通用下载参数 */
   const getDownloadParams = () => ({
-    token: useUserStore().accessToken,
+    token: userStore.accessToken,
     userAgent: navigator.userAgent,
     split: settingStore.downloadSetting.split,
     maxGlobalConnections: settingStore.downloadSetting.maxGlobalConnections,
   });
 
+  const refreshDisplayList = async () => {
+    const tasks = await invokeDownloadCommand<DownLoadFile[]>('download_get_top_level_tasks');
+    handleStateSync(tasks);
+  };
+
+  // 运行时下载参数由用户 token、UA 和设置项共同决定。
+  const syncMaxConcurrent = async (n = settingStore.downloadSetting.maxConcurrent) => {
+    await invokeDownloadCommand('download_set_max_concurrent', { n });
+  };
+
+  const syncSpeedLimit = async () => {
+    await invokeDownloadCommand('download_set_speed_limit', {
+      bytesPerSec: computeSpeedLimitBytes(),
+    });
+  };
+
+  const syncDownloadSettings = async () => {
+    await Promise.all([syncMaxConcurrent(), syncSpeedLimit()]);
+  };
+
+  const updateTask = (gid: string, updater: (task: DownLoadFile) => void) => {
+    const target = displayList.value.find((item) => item.gid === gid);
+    if (!target) return;
+    updater(target);
+  };
+
+  // 当 state-sync 回来的任务仍处于活跃/暂停态时，用最近一次进度快照补齐 UI，避免“进度倒退”。
+  const applyProgressSnapshot = (task: DownLoadFile, snapshot: ProgressSnapshot) => {
+    task.progress = snapshot.progress;
+
+    if (task.status === 'paused') {
+      task.downloadSpeed = 0;
+      task.eta = undefined;
+    } else {
+      task.downloadSpeed = snapshot.speed;
+      task.eta = snapshot.eta;
+    }
+
+    if (task.isFolder) {
+      if (snapshot.completedFiles != null) task.completedFiles = snapshot.completedFiles;
+      if (snapshot.failedFiles != null) task.failedFiles = snapshot.failedFiles;
+      if (snapshot.totalFiles != null) task.totalFiles = snapshot.totalFiles;
+    }
+  };
+
+  // 清理已经不在列表里的缓存快照，避免长时间运行后 map 无界增长。
+  const pruneProgressCache = (tasks: DownLoadFile[]) => {
+    const currentGids = new Set(tasks.map((item) => item.gid));
+    for (const gid of progressCache.keys()) {
+      if (!currentGids.has(gid)) {
+        progressCache.delete(gid);
+      }
+    }
+  };
+
+  // `download:state-sync` 是顶层任务列表的权威同步事件。
+  const handleStateSync = (tasks: DownLoadFile[]) => {
+    const pausingGids = new Set(
+      displayList.value.filter((item) => item.status === 'pausing').map((item) => item.gid),
+    );
+
+    displayList.value = tasks;
+
+    for (const item of displayList.value) {
+      if (pausingGids.has(item.gid) && item.status === 'active') {
+        item.status = 'pausing';
+      }
+
+      const snapshot = progressCache.get(item.gid);
+      if (snapshot && item.status && PRESERVED_DOWNLOAD_STATUS_SET.has(item.status)) {
+        applyProgressSnapshot(item, snapshot);
+      }
+    }
+
+    pruneProgressCache(displayList.value);
+  };
+
+  // `download:progress` 只提供瞬时指标，真正的结构化列表仍然以 state-sync 为准。
+  const handleProgress = (items: ProgressItem[]) => {
+    for (const item of items) {
+      const progress =
+        item.totalBytes > 0
+          ? Math.min(100, Math.round((item.downloadedBytes / item.totalBytes) * 10000) / 100)
+          : 0;
+      const eta = item.etaSecs != null ? Math.ceil(item.etaSecs) : undefined;
+
+      progressCache.set(item.taskId, {
+        speed: item.speed,
+        progress,
+        eta,
+        downloadedBytes: item.downloadedBytes,
+        totalBytes: item.totalBytes,
+        completedFiles: item.completedFiles,
+        failedFiles: item.failedFiles,
+        totalFiles: item.totalFiles,
+      });
+
+      updateTask(item.taskId, (task) => {
+        task.downloadSpeed = item.speed;
+        task.progress = progress;
+        task.eta = eta;
+        if (task.isFolder) {
+          if (item.completedFiles != null) task.completedFiles = item.completedFiles;
+          if (item.failedFiles != null) task.failedFiles = item.failedFiles;
+          if (item.totalFiles != null) task.totalFiles = item.totalFiles;
+        }
+      });
+    }
+  };
+
+  // `download:task-status` 负责补齐 error/complete 等终态信息。
+  const handleTaskStatus = (task: DownLoadFile) => {
+    updateTask(task.gid, (target) => {
+      target.status = task.status;
+      target.errorMessage = task.errorMessage;
+      target.errorCode = task.errorCode;
+
+      if (typeof task.progress === 'number') target.progress = task.progress;
+      if (task.completedFiles != null) target.completedFiles = task.completedFiles;
+      if (task.failedFiles != null) target.failedFiles = task.failedFiles;
+      if (task.totalFiles != null) target.totalFiles = task.totalFiles;
+
+      if (task.status && TERMINAL_DOWNLOAD_STATUS_SET.has(task.status)) {
+        progressCache.delete(task.gid);
+        target.downloadSpeed = 0;
+        target.eta = undefined;
+      }
+
+      if (task.status === 'paused') {
+        target.downloadSpeed = 0;
+        target.eta = undefined;
+      }
+
+      if (task.status === 'complete') {
+        target.progress = 100;
+        target.completedAt = task.completedAt ?? Date.now();
+      }
+    });
+  };
+
+  // 直链刷新仍然必须由前端发起，因为它依赖现有 Web API 和鉴权上下文。
+  const handleUrlNeeded = async ({ requestId, pickCode }: UrlNeededPayload) => {
+    try {
+      const response = await fileDownloadUrl({ pick_code: pickCode });
+      const fileData = Object.values(response.data)[0];
+      if (fileData?.url?.url) {
+        await invokeDownloadCommand('download_provide_url', {
+          requestId,
+          url: fileData.url.url,
+        });
+      }
+    } catch (error) {
+      logDownloadManagerError('URL 刷新失败:', error);
+    }
+  };
+
   // ---------- download:* 事件监听 ----------
 
   const setupDownloadListeners = async () => {
-    // download:state-sync — 完整任务列表替换（per D-02, D-05）
-    unlisteners.push(
-      await listen<DownLoadFile[]>('download:state-sync', (event) => {
-        const pausingGids = new Set(
-          displayList.value.filter((d) => d.status === 'pausing').map((d) => d.gid),
-        );
+    if (!listenerPromise) {
+      listenerPromise = Promise.all([
+        listen<DownLoadFile[]>('download:state-sync', (event) => {
+          handleStateSync(event.payload);
+        }),
+        listen<ProgressItem[]>('download:progress', (event) => {
+          handleProgress(event.payload);
+        }),
+        listen<UrlNeededPayload>('download:url-needed', (event) => {
+          void handleUrlNeeded(event.payload);
+        }),
+        listen<DownLoadFile>('download:task-status', (event) => {
+          handleTaskStatus(event.payload);
+        }),
+      ])
+        .then((listeners) => {
+          unlisteners.push(...listeners);
+        })
+        .catch((error) => {
+          listenerPromise = null;
+          throw error;
+        });
+    }
 
-        displayList.value = event.payload;
-
-        // 恢复 pausing 前端临时状态
-        for (const item of displayList.value) {
-          if (pausingGids.has(item.gid) && item.status === 'active') {
-            item.status = 'pausing';
-          }
-        }
-
-        // progressCache 叠加：防止 DB 滞后数据导致进度回跳
-        for (const item of displayList.value) {
-          const snap = progressCache.get(item.gid);
-          if (snap && ['active', 'pausing', 'paused'].includes(item.status ?? '')) {
-            item.progress = snap.progress;
-            if (item.status === 'paused') {
-              item.downloadSpeed = 0;
-              item.eta = undefined;
-            } else {
-              item.downloadSpeed = snap.speed;
-              item.eta = snap.eta;
-            }
-            if (item.isFolder) {
-              if (snap.completedFiles != null) item.completedFiles = snap.completedFiles;
-              if (snap.failedFiles != null) item.failedFiles = snap.failedFiles;
-              if (snap.totalFiles != null) item.totalFiles = snap.totalFiles;
-            }
-          }
-        }
-
-        // 清理 progressCache 中已不存在的 gid
-        const currentGids = new Set(displayList.value.map((d) => d.gid));
-        for (const gid of progressCache.keys()) {
-          if (!currentGids.has(gid)) progressCache.delete(gid);
-        }
-      }),
-    );
-
-    // download:progress — 批量进度更新（per D-02）
-    unlisteners.push(
-      await listen<ProgressItem[]>('download:progress', (event) => {
-        for (const pi of event.payload) {
-          const progress =
-            pi.totalBytes > 0
-              ? Math.min(100, Math.round((pi.downloadedBytes / pi.totalBytes) * 10000) / 100)
-              : 0;
-          const eta = pi.etaSecs != null ? Math.ceil(pi.etaSecs) : undefined;
-
-          progressCache.set(pi.taskId, {
-            speed: pi.speed,
-            progress,
-            eta,
-            downloadedBytes: pi.downloadedBytes,
-            totalBytes: pi.totalBytes,
-            completedFiles: pi.completedFiles,
-            failedFiles: pi.failedFiles,
-            totalFiles: pi.totalFiles,
-          });
-
-          const target = displayList.value.find((d) => d.gid === pi.taskId);
-          if (target) {
-            target.downloadSpeed = pi.speed;
-            target.progress = progress;
-            target.eta = eta;
-            if (target.isFolder) {
-              if (pi.completedFiles != null) target.completedFiles = pi.completedFiles;
-              if (pi.failedFiles != null) target.failedFiles = pi.failedFiles;
-              if (pi.totalFiles != null) target.totalFiles = pi.totalFiles;
-            }
-          }
-        }
-      }),
-    );
-
-    // download:url-needed — URL 过期自动刷新（per D-05）
-    unlisteners.push(
-      await listen<UrlNeededPayload>('download:url-needed', async (event) => {
-        const { requestId, pickCode } = event.payload;
-        try {
-          const res = await fileDownloadUrl({ pick_code: pickCode });
-          const fileData = Object.values(res.data)[0];
-          if (fileData?.url?.url) {
-            await invoke('download_provide_url', { requestId, url: fileData.url.url });
-          }
-        } catch (e) {
-          console.error('URL 刷新失败:', e);
-        }
-      }),
-    );
-
-    // download:task-status — 即时单任务状态更新（弥补 state-sync 去抖延迟）
-    unlisteners.push(
-      await listen<DownLoadFile>('download:task-status', (event) => {
-        const task = event.payload;
-        const target = displayList.value.find((d) => d.gid === task.gid);
-        if (!target) return;
-
-        target.status = task.status;
-        target.errorMessage = task.errorMessage;
-        target.errorCode = task.errorCode;
-        if (typeof task.progress === 'number') target.progress = task.progress;
-        if (task.completedFiles != null) target.completedFiles = task.completedFiles;
-        if (task.failedFiles != null) target.failedFiles = task.failedFiles;
-        if (task.totalFiles != null) target.totalFiles = task.totalFiles;
-
-        if (
-          task.status === 'complete' ||
-          task.status === 'error' ||
-          task.status === 'partial_error' ||
-          task.status === 'verify_failed'
-        ) {
-          progressCache.delete(task.gid);
-          target.downloadSpeed = 0;
-          target.eta = undefined;
-        }
-
-        if (task.status === 'paused') {
-          target.downloadSpeed = 0;
-          target.eta = undefined;
-        }
-        if (task.status === 'complete') {
-          target.progress = 100;
-          target.completedAt = task.completedAt ?? Date.now();
-        }
-      }),
-    );
+    await listenerPromise;
   };
 
   // ---------- 递归收集文件夹 ----------
 
+  // 文件夹下载目前仍在前端先递归拿完文件列表，再一次性把结果交给 Rust 队列。
   const collectFolderFiles = async (
     folderId: string,
     currentPath: string,
@@ -303,11 +415,12 @@ export const useDownloadManager = createSharedComposable(() => {
     }
   };
 
+  // 文件夹预收集失败时，把父任务切回 error，避免界面长期停留在 collecting 状态。
   const markFolderCollectionFailed = async (parentGid: string, errorMessage: string) => {
     try {
-      await invoke('download_fail_folder_collection', { parentGid, errorMessage });
-    } catch (e) {
-      console.error('更新文件夹收集失败状态失败:', e);
+      await invokeDownloadCommand('download_fail_folder_collection', { parentGid, errorMessage });
+    } catch (error) {
+      logDownloadManagerError('更新文件夹收集失败状态失败:', error);
     }
   };
 
@@ -318,6 +431,7 @@ export const useDownloadManager = createSharedComposable(() => {
     (item.completedFiles ?? 0) === 0 &&
     (item.failedFiles ?? 0) === 0;
 
+  // 文件夹下载的真实入口：先收集文件列表，再统一交给 Rust 建立父/子任务。
   const enqueueCollectedFolder = async (
     folder: FolderDownloadTarget,
     reuseExistingTask = false,
@@ -328,9 +442,9 @@ export const useDownloadManager = createSharedComposable(() => {
     cancelledFolderCollections.delete(parentGid);
 
     if (reuseExistingTask) {
-      await invoke('download_restart_folder_collection', { parentGid });
+      await invokeDownloadCommand('download_restart_folder_collection', { parentGid });
     } else {
-      await invoke('download_create_folder_task', {
+      await invokeDownloadCommand('download_create_folder_task', {
         parentGid,
         parentFid: folder.fid,
         parentName: folder.name,
@@ -342,15 +456,15 @@ export const useDownloadManager = createSharedComposable(() => {
     const allFiles: { file: MyFile; path: string }[] = [];
     try {
       await collectFolderFiles(folder.fid, '', allFiles, parentGid);
-    } catch (e) {
-      if (e instanceof Error && e.message === FOLDER_COLLECTION_ABORTED) {
+    } catch (error) {
+      if (isFolderCollectionAbortedError(error)) {
         cancelledFolderCollections.delete(parentGid);
         return;
       }
 
-      console.error('收集文件夹文件失败:', e);
+      logDownloadManagerError('收集文件夹文件失败:', error);
       await markFolderCollectionFailed(parentGid, '获取文件列表失败');
-      throw e instanceof Error ? e : new Error('获取文件列表失败');
+      throw error instanceof Error ? error : new Error('获取文件列表失败');
     }
 
     if (cancelledFolderCollections.delete(parentGid)) {
@@ -366,7 +480,7 @@ export const useDownloadManager = createSharedComposable(() => {
     }));
 
     try {
-      await invoke('download_enqueue_folder', {
+      await invokeDownloadCommand('download_enqueue_folder', {
         parentGid,
         parentFid: folder.fid,
         parentName: folder.name,
@@ -375,10 +489,10 @@ export const useDownloadManager = createSharedComposable(() => {
         files,
         ...getDownloadParams(),
       });
-    } catch (e) {
-      console.error('创建文件夹下载任务失败:', e);
+    } catch (error) {
+      logDownloadManagerError('创建文件夹下载任务失败:', error);
       await markFolderCollectionFailed(parentGid, '创建下载任务失败');
-      throw e instanceof Error ? e : new Error('创建下载任务失败');
+      throw error instanceof Error ? error : new Error('创建下载任务失败');
     }
   };
 
@@ -399,11 +513,11 @@ export const useDownloadManager = createSharedComposable(() => {
       const res = await fileDownloadUrl({ pick_code: file.pc });
       const fileData = res.data[file.fid];
       if (!fileData) {
-        console.error(`获取文件 ${file.fn} 下载信息失败`);
+        logDownloadManagerError(`获取文件 ${file.fn} 下载信息失败`, res.data);
         return;
       }
       const savePath = `${downloadPath}/${fileData.file_name}`;
-      await invoke('download_enqueue_file', {
+      await invokeDownloadCommand('download_enqueue_file', {
         fid: file.fid,
         name: file.fn,
         pickCode: file.pc,
@@ -436,13 +550,16 @@ export const useDownloadManager = createSharedComposable(() => {
           true,
         );
       } else {
-        await invoke('download_retry_folder', {
+        await invokeDownloadCommand('download_retry_folder', {
           parentGid: downloadFile.gid,
           ...getDownloadParams(),
         });
       }
     } else {
-      await invoke('download_retry_task', { gid: downloadFile.gid, ...getDownloadParams() });
+      await invokeDownloadCommand('download_retry_task', {
+        gid: downloadFile.gid,
+        ...getDownloadParams(),
+      });
     }
   };
 
@@ -452,9 +569,9 @@ export const useDownloadManager = createSharedComposable(() => {
       if (downloadFile.isCollecting) {
         cancelledFolderCollections.add(downloadFile.gid);
       }
-      await invoke('download_cancel_folder', { parentGid: downloadFile.gid });
+      await invokeDownloadCommand('download_cancel_folder', { parentGid: downloadFile.gid });
     } else {
-      await invoke('download_cancel_task', { gid: downloadFile.gid });
+      await invokeDownloadCommand('download_cancel_task', { gid: downloadFile.gid });
     }
     // 立即从显示列表移除，不等待 state-sync 的 150ms 延迟
     displayList.value = displayList.value.filter((d) => d.gid !== downloadFile.gid);
@@ -463,10 +580,8 @@ export const useDownloadManager = createSharedComposable(() => {
 
   /** 清除所有已完成的下载记录 */
   const clearFinished = async () => {
-    await invoke('download_delete_finished_tasks');
-    // download_delete_finished_tasks 不触发 state-sync，手动刷新任务列表
-    const tasks = await invoke<DownLoadFile[]>('download_get_top_level_tasks');
-    displayList.value = tasks;
+    await invokeDownloadCommand('download_delete_finished_tasks');
+    await refreshDisplayList();
   };
 
   /** 暂停文件夹下载 */
@@ -474,17 +589,20 @@ export const useDownloadManager = createSharedComposable(() => {
     if (folder.isCollecting) return;
     const folderItem = displayList.value.find((d) => d.gid === folder.gid);
     if (folderItem) folderItem.status = 'pausing';
-    await invoke('download_pause_folder', { parentGid: folder.gid });
+    await invokeDownloadCommand('download_pause_folder', { parentGid: folder.gid });
   };
 
   /** 恢复文件夹下载 */
   const resumeFolder = async (folder: DownLoadFile) => {
-    await invoke('download_resume_folder', { parentGid: folder.gid, ...getDownloadParams() });
+    await invokeDownloadCommand('download_resume_folder', {
+      parentGid: folder.gid,
+      ...getDownloadParams(),
+    });
   };
 
   /** 恢复单个已暂停的下载任务 */
   const resumeSingleFile = async (item: DownLoadFile) => {
-    await invoke('download_resume_task', { gid: item.gid, ...getDownloadParams() });
+    await invokeDownloadCommand('download_resume_task', { gid: item.gid, ...getDownloadParams() });
   };
 
   /** 暂停所有活跃的下载任务 */
@@ -494,33 +612,39 @@ export const useDownloadManager = createSharedComposable(() => {
         item.status = 'pausing';
       }
     }
-    await invoke('download_pause_all');
+    await invokeDownloadCommand('download_pause_all');
   };
 
   /** 恢复所有暂停的下载任务 */
   const resumeAllTasks = async () => {
-    await invoke('download_resume_all', getDownloadParams());
+    await invokeDownloadCommand('download_resume_all', getDownloadParams());
   };
 
   // ---------- computed 状态 ----------
 
   /** 队列状态 */
-  const queueStatus = computed(() => {
+  const queueStatus = computed<DownloadQueueStatus>(() => {
     const queueLength = displayList.value.filter((d) => d.status === 'waiting').length;
-    const isProcessing = displayList.value.some((d) => d.status === 'active');
+    const isProcessing = displayList.value.some(
+      (d) => d.status != null && PROCESSING_DOWNLOAD_STATUS_SET.has(d.status),
+    );
     return { queueLength, isProcessing };
   });
 
   /** 下载统计 */
-  const downloadStats = computed(() => {
+  const downloadStats = computed<DownloadStats>(() => {
     const list = displayList.value;
-    const activeCount = list.filter((d) => d.status === 'active').length;
+    const activeCount = list.filter(
+      (d) => d.status != null && ACTIVE_DOWNLOAD_STATUS_SET.has(d.status),
+    ).length;
     const totalSpeed = list
-      .filter((d) => d.status === 'active')
+      .filter((d) => d.status != null && ACTIVE_DOWNLOAD_STATUS_SET.has(d.status))
       .reduce((sum, d) => sum + (d.downloadSpeed || 0), 0);
     const completed = list.filter((d) => d.status === 'complete').length;
     const failed = list.filter((d) => d.status === 'error').length;
-    const paused = list.filter((d) => d.status === 'paused' || d.status === 'pausing').length;
+    const paused = list.filter(
+      (d) => d.status != null && PAUSED_DOWNLOAD_STATUS_SET.has(d.status),
+    ).length;
     const waiting = list.filter((d) => d.status === 'waiting').length;
     const total = list.length;
     return { activeCount, totalSpeed, completed, failed, paused, waiting, total };
@@ -530,55 +654,83 @@ export const useDownloadManager = createSharedComposable(() => {
   const hasActiveDownloads = computed(() =>
     displayList.value.some(
       (d) =>
-        d.status === 'active' ||
-        d.status === 'waiting' ||
-        d.status === 'paused' ||
-        d.status === 'pausing' ||
-        d.isCollecting,
+        (d.status != null && ACTIVE_PRESENCE_DOWNLOAD_STATUS_SET.has(d.status)) || d.isCollecting,
     ),
   );
+
+  const setupSettingSync = () => {
+    if (stopHandles.length > 0) {
+      return;
+    }
+
+    stopHandles.push(
+      watch(
+        () => settingStore.downloadSetting.maxConcurrent,
+        (n) => {
+          void syncMaxConcurrent(n).catch((error) => {
+            logDownloadManagerError('同步下载并发设置失败:', error);
+          });
+        },
+      ),
+      watch(
+        () => [
+          settingStore.downloadSetting.speedLimitEnabled,
+          settingStore.downloadSetting.speedLimitValue,
+          settingStore.downloadSetting.speedLimitUnit,
+        ],
+        () => {
+          void syncSpeedLimit().catch((error) => {
+            logDownloadManagerError('同步下载限速设置失败:', error);
+          });
+        },
+      ),
+    );
+  };
+
+  // shared composable 在最后一个作用域释放时统一拆除事件和 watcher。
+  const dispose = () => {
+    listenerPromise = null;
+    initPromise = null;
+    progressCache.clear();
+    cancelledFolderCollections.clear();
+
+    for (const unlisten of unlisteners.splice(0)) {
+      unlisten();
+    }
+
+    for (const stop of stopHandles.splice(0)) {
+      stop();
+    }
+  };
+
+  tryOnScopeDispose(dispose);
 
   // ---------- 初始化 ----------
 
   /** 初始化：监听限速配置 + 建立 download:* 事件监听 */
   const init = async () => {
-    await setupDownloadListeners();
+    if (!initPromise) {
+      initPromise = (async () => {
+        await setupDownloadListeners();
 
-    // 拉取初始任务列表（防止 recovery state-sync 在监听建立前已发出）
-    const tasks = await invoke<DownLoadFile[]>('download_get_top_level_tasks');
-    if (tasks.length > 0 && displayList.value.length === 0) {
-      displayList.value = tasks;
+        if (displayList.value.length === 0) {
+          await refreshDisplayList();
+        }
+
+        await syncDownloadSettings();
+        setupSettingSync();
+      })().catch((error) => {
+        initPromise = null;
+        throw error;
+      });
     }
 
-    // 同步初始设置到 Rust
-    await invoke('download_set_max_concurrent', { n: settingStore.downloadSetting.maxConcurrent });
-    await invoke('download_set_speed_limit', { bytesPerSec: computeSpeedLimitBytes() });
-
-    // 并发数变更时通知 Rust
-    watch(
-      () => settingStore.downloadSetting.maxConcurrent,
-      async (n) => {
-        await invoke('download_set_max_concurrent', { n });
-      },
-    );
-
-    // 限速配置变更时通知 Rust
-    watch(
-      () => [
-        settingStore.downloadSetting.speedLimitEnabled,
-        settingStore.downloadSetting.speedLimitValue,
-        settingStore.downloadSetting.speedLimitUnit,
-      ],
-      async () => {
-        const bytes = computeSpeedLimitBytes();
-        await invoke('download_set_speed_limit', { bytesPerSec: bytes });
-      },
-    );
+    await initPromise;
   };
 
   return {
     init,
-    displayList,
+    displayList: computed(() => displayList.value),
     download,
     batchDownload,
     retryDownload,
