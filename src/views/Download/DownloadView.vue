@@ -107,7 +107,15 @@
                 <FolderOutlined />
               </NIcon>
             ) : null}
-            <span class="truncate">{row.name}</span>
+            <div class="min-w-0">
+              <div class="truncate">{row.name}</div>
+              {row.isFolder && row.totalFiles ? (
+                <div class="text-xs text-gray-400">
+                  {row.completedFiles || 0}/{row.totalFiles} 个文件
+                  {row.failedFiles ? `（${row.failedFiles} 个失败）` : ''}
+                </div>
+              ) : null}
+            </div>
           </div>
         );
       },
@@ -121,90 +129,107 @@
       },
     },
     {
-      title: '速度',
-      key: 'downloadSpeed',
-      width: 140,
+      title: '状态',
+      key: 'status',
+      width: 100,
       render(row) {
-        if (row.status === 'active' || row.status === 'pausing') {
+        if (row.isFolder && row.isCollecting)
           return (
-            <div>
-              <div>
-                {row.status === 'pausing' ? '暂停中...' : formatSpeed(row.downloadSpeed || 0)}
-              </div>
-              {row.status === 'active' && row.eta ? (
-                <div class="text-xs text-gray-400">剩余 {formatEta(row.eta)}</div>
-              ) : null}
-            </div>
+            <NTag size="small" type="info" bordered={false}>
+              收集文件中
+            </NTag>
           );
-        }
-        return '';
-      },
-    },
-    {
-      title: '进度',
-      key: 'percentDone',
-      width: 300,
-      render(row) {
-        if (row.isFolder && row.isCollecting) {
-          return <NText type="info">正在收集文件列表...</NText>;
-        }
-
-        const fileCountInfo = row.isFolder ? (
-          <div class="text-xs text-gray-400">
-            {row.completedFiles || 0}/{row.totalFiles || 0} 个文件
-            {row.failedFiles ? `（${row.failedFiles} 个失败）` : ''}
-          </div>
-        ) : null;
-
-        if (
-          row.status === 'error' ||
-          row.status === 'partial_error' ||
-          row.status === 'verify_failed'
-        ) {
-          return (
-            <div>
+        switch (row.status) {
+          case 'active':
+            return (
+              <NTag size="small" type="info" bordered={false}>
+                下载中
+              </NTag>
+            );
+          case 'pausing':
+            return (
+              <NTag size="small" type="warning" bordered={false}>
+                暂停中
+              </NTag>
+            );
+          case 'paused':
+            return (
+              <NTag size="small" type="warning" bordered={false}>
+                已暂停
+              </NTag>
+            );
+          case 'waiting':
+            return (
+              <NTag size="small" type="warning" bordered={false}>
+                等待中
+              </NTag>
+            );
+          case 'complete':
+            return (
+              <NTag size="small" type="success" bordered={false}>
+                已完成
+              </NTag>
+            );
+          case 'error':
+          case 'partial_error':
+            return (
               <NTooltip>
                 {{
                   trigger: () => (
-                    <NText type="error">
-                      {row.status === 'verify_failed' ? 'SHA1校验失败' : '下载失败'}
-                    </NText>
+                    <NTag size="small" type="error" bordered={false}>
+                      下载失败
+                    </NTag>
                   ),
                   default: () => row.errorMessage || '未知错误',
                 }}
               </NTooltip>
-              {fileCountInfo}
-            </div>
+            );
+          case 'verify_failed':
+            return (
+              <NTooltip>
+                {{
+                  trigger: () => (
+                    <NTag size="small" type="error" bordered={false}>
+                      校验失败
+                    </NTag>
+                  ),
+                  default: () => row.errorMessage || 'SHA1校验失败',
+                }}
+              </NTooltip>
+            );
+          default:
+            return null;
+        }
+      },
+    },
+    {
+      title: '进度',
+      key: 'progress',
+      width: 200,
+      render(row) {
+        if (row.status === 'active')
+          return <NProgress type="line" percentage={Math.floor(row.progress || 0)} processing />;
+        if (row.status === 'pausing' || row.status === 'paused')
+          return (
+            <NProgress type="line" percentage={Math.floor(row.progress || 0)} status="warning" />
           );
-        } else if (row.status === 'waiting') {
-          return <NText type="warning">等待中</NText>;
-        } else if (row.status === 'active' || row.status === 'pausing') {
+        return '';
+      },
+    },
+    {
+      title: '速度',
+      key: 'downloadSpeed',
+      width: 140,
+      render(row) {
+        if (row.status === 'active') {
           return (
             <div>
-              <NProgress
-                type="line"
-                percentage={Math.floor(row.progress || 0)}
-                processing={row.status === 'active'}
-                status={row.status === 'pausing' ? 'warning' : undefined}
-              />
-              {fileCountInfo}
-            </div>
-          );
-        } else if (row.status === 'paused') {
-          return (
-            <div>
-              <NProgress type="line" percentage={Math.floor(row.progress || 0)} status="warning" />
-              {fileCountInfo}
-            </div>
-          );
-        } else if (row.status === 'complete') {
-          return (
-            <div>
-              <NText type="success">下载完成</NText>
-              {fileCountInfo}
+              <div>{formatSpeed(row.downloadSpeed || 0)}</div>
+              {row.eta ? <div class="text-xs text-gray-400">剩余 {formatEta(row.eta)}</div> : null}
             </div>
           );
         }
+        return '';
       },
     },
     {

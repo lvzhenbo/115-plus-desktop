@@ -105,21 +105,6 @@
     return fallback;
   };
 
-  // 上传状态和 Naive UI 文本/颜色展示的映射关系。
-  const statusTextMap: Record<
-    string,
-    { text: string; type: 'info' | 'warning' | 'error' | 'success' }
-  > = {
-    pending: { text: '等待中', type: 'warning' },
-    hashing: { text: '计算哈希...', type: 'info' },
-    uploading: { text: '上传中', type: 'info' },
-    pausing: { text: '暂停中...', type: 'warning' },
-    paused: { text: '已暂停', type: 'warning' },
-    complete: { text: '上传完成', type: 'success' },
-    error: { text: '上传失败', type: 'error' },
-    cancelled: { text: '已取消', type: 'warning' },
-  };
-
   // 列定义只关心展示与交互，真实状态切换全部委托给 useUploadManager。
   const columns: DataTableColumns<UploadFile> = [
     {
@@ -138,7 +123,15 @@
                 <FolderOutlined />
               </NIcon>
             ) : null}
-            <span class="truncate">{row.fileName}</span>
+            <div class="min-w-0">
+              <div class="truncate">{row.fileName}</div>
+              {row.isFolder && row.totalFiles ? (
+                <div class="text-xs text-gray-400">
+                  {row.completedFiles || 0}/{row.totalFiles} 个文件
+                  {row.failedFiles ? `（${row.failedFiles} 个失败）` : ''}
+                </div>
+              ) : null}
+            </div>
           </div>
         );
       },
@@ -152,73 +145,96 @@
       },
     },
     {
-      title: '进度',
-      key: 'progress',
-      width: 300,
+      title: '状态',
+      key: 'status',
+      width: 100,
       render(row) {
-        const fileCountInfo = row.isFolder ? (
-          <div class="text-xs text-gray-400">
-            {row.completedFiles || 0}/{row.totalFiles || 0} 个文件
-            {row.failedFiles ? `（${row.failedFiles} 个失败）` : ''}
-          </div>
-        ) : null;
-
-        const statusInfo = statusTextMap[row.status] || { text: row.status, type: 'info' as const };
-
-        if (row.status === 'error') {
-          return (
-            <div>
+        switch (row.status) {
+          case 'uploading':
+            return (
+              <NTag size="small" type="info" bordered={false}>
+                上传中
+              </NTag>
+            );
+          case 'hashing':
+            return (
+              <NTag size="small" type="info" bordered={false}>
+                计算哈希
+              </NTag>
+            );
+          case 'pausing':
+            return (
+              <NTag size="small" type="warning" bordered={false}>
+                暂停中
+              </NTag>
+            );
+          case 'paused':
+            return (
+              <NTag size="small" type="warning" bordered={false}>
+                已暂停
+              </NTag>
+            );
+          case 'pending':
+            return (
+              <NTag size="small" type="warning" bordered={false}>
+                等待中
+              </NTag>
+            );
+          case 'complete':
+            return (
+              <NTag size="small" type="success" bordered={false}>
+                已完成
+              </NTag>
+            );
+          case 'error':
+            return (
               <NTooltip>
                 {{
-                  trigger: () => <NText type="error">{statusInfo.text}</NText>,
+                  trigger: () => (
+                    <NTag size="small" type="error" bordered={false}>
+                      上传失败
+                    </NTag>
+                  ),
                   default: () => row.errorMessage || '未知错误',
                 }}
               </NTooltip>
-              {fileCountInfo}
-            </div>
-          );
-        } else if (row.status === 'uploading' || row.status === 'hashing') {
+            );
+          case 'cancelled':
+            return (
+              <NTag size="small" type="warning" bordered={false}>
+                已取消
+              </NTag>
+            );
+          default:
+            return null;
+        }
+      },
+    },
+    {
+      title: '进度',
+      key: 'progress',
+      width: 200,
+      render(row) {
+        if (row.status === 'uploading' || row.status === 'hashing')
           return (
             <div>
               <NProgress type="line" percentage={Math.floor(row.progress || 0)} processing />
               {row.status === 'hashing' ? (
                 <div class="text-xs text-gray-400">正在计算文件哈希...</div>
               ) : null}
-              {fileCountInfo}
             </div>
           );
-        } else if (row.status === 'pausing') {
+        if (row.status === 'pausing' || row.status === 'paused')
           return (
-            <div>
-              <NProgress type="line" percentage={Math.floor(row.progress || 0)} status="warning" />
-              {fileCountInfo}
-            </div>
+            <NProgress type="line" percentage={Math.floor(row.progress || 0)} status="warning" />
           );
-        } else if (row.status === 'paused') {
-          return (
-            <div>
-              <NProgress type="line" percentage={Math.floor(row.progress || 0)} status="warning" />
-              {fileCountInfo}
-            </div>
-          );
-        } else if (row.status === 'complete') {
-          return (
-            <div>
-              <NText type="success">{statusInfo.text}</NText>
-              {fileCountInfo}
-            </div>
-          );
-        } else if (row.status === 'pending') {
-          return <NText type="warning">{statusInfo.text}</NText>;
-        } else {
-          return <NText>{statusInfo.text}</NText>;
-        }
+        return '';
       },
     },
     {
       title: '操作',
       key: 'action',
-      width: 320,
+      width: 280,
       render: (row) => {
         return (
           <NSpace>
