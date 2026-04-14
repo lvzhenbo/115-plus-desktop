@@ -182,6 +182,11 @@ fn show_window(app: &AppHandle) -> Result<(), String> {
         .next()
         .ok_or_else(|| "未找到可用的主窗口".to_string())?;
 
+    if window.is_minimized().unwrap_or(false) {
+        window
+            .unminimize()
+            .map_err(|err| format!("恢复最小化窗口失败：{}", err))?;
+    }
     window
         .show()
         .map_err(|err| format!("显示主窗口失败：{}", err))?;
