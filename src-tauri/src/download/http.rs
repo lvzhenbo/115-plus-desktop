@@ -49,9 +49,9 @@ pub struct ConnectionController {
 }
 
 /// 限流后冷却时间 (ms)，冷却期内不恢复连接数
-const RATE_LIMIT_COOLDOWN_MS: u64 = 10_000;
+const RATE_LIMIT_COOLDOWN_MS: u64 = 5_000;
 /// 连接恢复最小间隔 (ms)，每次最多恢复 1 个连接
-const RESTORE_INTERVAL_MS: u64 = 3_000;
+const RESTORE_INTERVAL_MS: u64 = 1_500;
 
 fn current_epoch_ms() -> u64 {
     std::time::SystemTime::now()
@@ -1241,8 +1241,8 @@ fn handle_cdn_rate_limit(
         return CdnRetryAction::Exhausted;
     }
 
-    let backoff_secs = 2u64.pow((*count).min(6));
-    let jitter_ms = ((failed_seg.index as u64) % 16) * 300;
+    let backoff_secs = 2u64.pow((*count).min(2));
+    let jitter_ms = ((failed_seg.index as u64) % 16) * 100;
     let delay = Duration::from_secs(backoff_secs) + Duration::from_millis(jitter_ms);
 
     CdnRetryAction::Retry { delay }
@@ -1501,6 +1501,8 @@ async fn collect_results<'a>(
                 completed_segments += 1;
                 last_success_time = std::time::Instant::now();
                 ctx.conn_controller.on_success(ctx.semaphore);
+                // 分片成功说明CDN已恢复，重置限流重试计数让排队分片快速启动
+                cdn_retry_counts.clear();
                 debug!(
                     "[{}][{}] 分片{} 完成 {:.1}MB ({}/{})",
                     log_prefix,
@@ -1574,8 +1576,8 @@ async fn collect_results<'a>(
                             );
                         }
                         let count = cdn_retry_counts.entry(failed_seg.index).or_insert(0);
-                        let backoff_secs = 2u64.pow((*count).min(6));
-                        let jitter_ms = ((failed_seg.index as u64) % 16) * 300;
+                        let backoff_secs = 2u64.pow((*count).min(2));
+                        let jitter_ms = ((failed_seg.index as u64) % 16) * 100;
                         let delay =
                             Duration::from_secs(backoff_secs) + Duration::from_millis(jitter_ms);
                         respawn_cdn_segment(
@@ -1758,7 +1760,7 @@ async fn spawn_segments_with_stagger(
             continue;
         }
         if spawn_count > 0 {
-            tokio::time::sleep(Duration::from_millis(150)).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
         }
         spawn_count += 1;
 
