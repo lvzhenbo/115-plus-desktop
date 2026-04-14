@@ -146,6 +146,7 @@ pub(super) async fn sync_parent_folder(
             0.0
         }),
         upload_speed: Some(0),
+        eta_secs: Some(None),
         ..TaskUpdate::default()
     };
 
@@ -200,6 +201,7 @@ pub(super) async fn enqueue_folder_impl(
             TaskUpdate {
                 status: Some("paused".to_string()),
                 upload_speed: Some(0),
+                eta_secs: Some(None),
                 ..TaskUpdate::default()
             },
         )
@@ -227,6 +229,7 @@ pub(super) async fn enqueue_folder_impl(
             status: "pending".to_string(),
             progress: 0.0,
             upload_speed: 0,
+            eta_secs: None,
             error_message: None,
             created_at: Some(now_ms()),
             completed_at: None,
@@ -253,6 +256,7 @@ pub(super) async fn enqueue_folder_impl(
                 status: Some("pending".to_string()),
                 progress: Some(0.0),
                 upload_speed: Some(0),
+                eta_secs: Some(None),
                 error_message: Some(None),
                 completed_at: Some(None),
                 completed_files: Some(Some(0)),
@@ -446,6 +450,7 @@ pub(super) async fn enqueue_folder_impl(
             },
             progress: 0.0,
             upload_speed: 0,
+            eta_secs: None,
             error_message: None,
             created_at: Some(now_ms()),
             completed_at: None,
@@ -477,6 +482,7 @@ pub(super) async fn enqueue_folder_impl(
                 TaskUpdate {
                     status: Some("paused".to_string()),
                     upload_speed: Some(0),
+                    eta_secs: Some(None),
                     ..TaskUpdate::default()
                 },
             )
@@ -507,6 +513,7 @@ pub(super) async fn enqueue_folder_impl(
             TaskUpdate {
                 status: Some("paused".to_string()),
                 upload_speed: Some(0),
+                eta_secs: Some(None),
                 file_id: Some(Some(root_folder_cid)),
                 ..TaskUpdate::default()
             },

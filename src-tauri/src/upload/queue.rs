@@ -40,6 +40,50 @@ const ERR_COLLECTION_STATE_POISONED: &str = "上传收集状态异常：内部�
 const STATUS_PAUSED: &str = "paused";
 const STATUS_PAUSING: &str = "pausing";
 
+/// 基于 EMA 的上传速度平滑器，与下载 SpeedCalculator 保持一致。
+struct UploadSpeedCalculator {
+    alpha: f64,
+    smoothed_speed: f64,
+    last_bytes: u64,
+    last_time: std::time::Instant,
+}
+
+impl UploadSpeedCalculator {
+    fn new(alpha: f64) -> Self {
+        Self {
+            alpha,
+            smoothed_speed: 0.0,
+            last_bytes: 0,
+            last_time: std::time::Instant::now(),
+        }
+    }
+
+    fn update(&mut self, current_bytes: u64) -> f64 {
+        let elapsed = self.last_time.elapsed().as_secs_f64();
+        if elapsed < 0.001 {
+            return self.smoothed_speed;
+        }
+        let delta_bytes = current_bytes.saturating_sub(self.last_bytes);
+        let raw_speed = delta_bytes as f64 / elapsed;
+        if self.smoothed_speed == 0.0 {
+            self.smoothed_speed = raw_speed;
+        } else {
+            self.smoothed_speed = self.alpha * raw_speed + (1.0 - self.alpha) * self.smoothed_speed;
+        }
+        self.last_bytes = current_bytes;
+        self.last_time = std::time::Instant::now();
+        self.smoothed_speed
+    }
+
+    fn eta(&self, remaining_bytes: u64) -> Option<f64> {
+        if self.smoothed_speed > 0.0 {
+            Some(remaining_bytes as f64 / self.smoothed_speed)
+        } else {
+            None
+        }
+    }
+}
+
 /// 上传调度层统一对外暴露的错误类型。
 #[derive(Debug, thiserror::Error, serde::Serialize)]
 #[serde(tag = "type", content = "message")]
@@ -438,6 +482,7 @@ async fn queue_loop(
                                 TaskUpdate {
                                     status: Some(STATUS_PAUSING.to_string()),
                                     upload_speed: Some(0),
+                                    eta_secs: Some(None),
                                     ..TaskUpdate::default()
                                 },
                             )
@@ -457,6 +502,7 @@ async fn queue_loop(
                                 TaskUpdate {
                                     status: Some(STATUS_PAUSED.to_string()),
                                     upload_speed: Some(0),
+                                    eta_secs: Some(None),
                                     ..TaskUpdate::default()
                                 },
                             ).await;
@@ -520,6 +566,7 @@ async fn queue_loop(
                                 TaskUpdate {
                                     status: Some(STATUS_PAUSED.to_string()),
                                     upload_speed: Some(0),
+                                    eta_secs: Some(None),
                                     ..TaskUpdate::default()
                                 },
                             ).await;
@@ -538,6 +585,7 @@ async fn queue_loop(
                                 TaskUpdate {
                                     status: Some(STATUS_PAUSING.to_string()),
                                     upload_speed: Some(0),
+                                    eta_secs: Some(None),
                                     ..TaskUpdate::default()
                                 },
                             )
@@ -560,6 +608,7 @@ async fn queue_loop(
                             TaskUpdate {
                                 status: Some(folder_status.to_string()),
                                 upload_speed: Some(0),
+                                eta_secs: Some(None),
                                 ..TaskUpdate::default()
                             },
                         ).await;
@@ -618,6 +667,7 @@ async fn queue_loop(
                                 TaskUpdate {
                                     status: Some(STATUS_PAUSING.to_string()),
                                     upload_speed: Some(0),
+                                    eta_secs: Some(None),
                                     ..TaskUpdate::default()
                                 },
                             )
@@ -635,6 +685,7 @@ async fn queue_loop(
                                 TaskUpdate {
                                     status: Some(STATUS_PAUSED.to_string()),
                                     upload_speed: Some(0),
+                                    eta_secs: Some(None),
                                     ..TaskUpdate::default()
                                 },
                             ).await;
@@ -665,6 +716,7 @@ async fn queue_loop(
                                     TaskUpdate {
                                         status: Some(next_status.to_string()),
                                         upload_speed: Some(0),
+                                        eta_secs: Some(None),
                                         ..TaskUpdate::default()
                                     },
                                 ).await;
@@ -731,6 +783,7 @@ async fn queue_loop(
                                 status: Some("complete".to_string()),
                                 progress: Some(100.0),
                                 upload_speed: Some(0),
+                                eta_secs: Some(None),
                                 completed_at: Some(Some(now_ms())),
                                 oss_upload_id: Some(None),
                                 ..TaskUpdate::default()
@@ -744,6 +797,7 @@ async fn queue_loop(
                             TaskUpdate {
                                 status: Some("error".to_string()),
                                 upload_speed: Some(0),
+                                eta_secs: Some(None),
                                 error_message: Some(Some(error)),
                                 ..TaskUpdate::default()
                             },
@@ -756,6 +810,7 @@ async fn queue_loop(
                             TaskUpdate {
                                 status: Some(STATUS_PAUSED.to_string()),
                                 upload_speed: Some(0),
+                                eta_secs: Some(None),
                                 ..TaskUpdate::default()
                             },
                         ).await;
@@ -846,6 +901,7 @@ async fn pause_blocked_waiting_tasks(
             TaskUpdate {
                 status: Some(STATUS_PAUSED.to_string()),
                 upload_speed: Some(0),
+                eta_secs: Some(None),
                 ..TaskUpdate::default()
             },
         )
@@ -1091,6 +1147,7 @@ async fn run_upload_task_once(
         TaskUpdate {
             status: Some("hashing".to_string()),
             upload_speed: Some(0),
+            eta_secs: Some(None),
             error_message: Some(None),
             ..TaskUpdate::default()
         },
@@ -1291,17 +1348,29 @@ async fn execute_oss_upload(
         let sync_for_progress = state_sync.clone();
         let task_id_for_progress = pending.id.clone();
         let parent_id_for_progress = pending.parent_id.clone();
+        let file_size_for_progress = task.file_size as u64;
+        let speed_calc = Arc::new(Mutex::new(UploadSpeedCalculator::new(0.3)));
         let progress_hook = Arc::new(move |event: UploadProgressEvent| {
             let db = db_for_progress.clone();
             let sync = sync_for_progress.clone();
             let task_id = task_id_for_progress.clone();
             let parent_id = parent_id_for_progress.clone();
+            let speed_calc = speed_calc.clone();
+            let file_size = file_size_for_progress;
             tauri::async_runtime::spawn(async move {
                 let progress = if event.total_size > 0 {
                     ((event.uploaded_size as f64 / event.total_size as f64) * 10000.0).round()
                         / 100.0
                 } else {
                     0.0
+                };
+
+                let (speed, eta) = {
+                    let mut calc = speed_calc.lock().unwrap();
+                    let spd = calc.update(event.uploaded_size);
+                    let remaining = file_size.saturating_sub(event.uploaded_size);
+                    let eta = calc.eta(remaining);
+                    (spd as i64, eta)
                 };
 
                 let status = if event.status == "complete" {
@@ -1316,6 +1385,8 @@ async fn execute_oss_upload(
                     TaskUpdate {
                         progress: Some(progress),
                         uploaded_size: Some(event.uploaded_size as i64),
+                        upload_speed: Some(speed),
+                        eta_secs: Some(eta),
                         status,
                         ..TaskUpdate::default()
                     },
@@ -1416,6 +1487,7 @@ async fn recover_tasks(db: &DbHandle, state_sync: &UploadStateSync) {
                 TaskUpdate {
                     status: Some("paused".to_string()),
                     upload_speed: Some(0),
+                    eta_secs: Some(None),
                     ..TaskUpdate::default()
                 },
             )
@@ -1549,6 +1621,7 @@ async fn resume_task_impl(
         TaskUpdate {
             status: Some("pending".to_string()),
             upload_speed: Some(0),
+            eta_secs: Some(None),
             error_message: Some(None),
             ..TaskUpdate::default()
         },
@@ -1606,6 +1679,7 @@ async fn resume_folder_impl(
                 error_message: Some(None),
                 completed_at: Some(None),
                 upload_speed: Some(0),
+                eta_secs: Some(None),
                 ..TaskUpdate::default()
             },
         )
@@ -1625,6 +1699,7 @@ async fn resume_folder_impl(
                 TaskUpdate {
                     status: Some("pending".to_string()),
                     upload_speed: Some(0),
+                    eta_secs: Some(None),
                     error_message: Some(None),
                     ..TaskUpdate::default()
                 },
@@ -1678,6 +1753,7 @@ async fn resume_folder_impl(
             TaskUpdate {
                 status: Some("pending".to_string()),
                 upload_speed: Some(0),
+                eta_secs: Some(None),
                 error_message: Some(None),
                 ..TaskUpdate::default()
             },
@@ -1747,6 +1823,7 @@ pub async fn upload_enqueue_files(
             status: "pending".to_string(),
             progress: 0.0,
             upload_speed: 0,
+            eta_secs: None,
             error_message: None,
             created_at: Some(now_ms()),
             completed_at: None,
@@ -1847,6 +1924,7 @@ pub async fn upload_retry_task(
             status: Some("pending".to_string()),
             progress: Some(0.0),
             upload_speed: Some(0),
+            eta_secs: Some(None),
             error_message: Some(None),
             uploaded_size: Some(0),
             completed_at: Some(None),
@@ -1970,6 +2048,7 @@ pub async fn upload_retry_folder(
                 status: Some("pending".to_string()),
                 progress: Some(0.0),
                 upload_speed: Some(0),
+                eta_secs: Some(None),
                 error_message: Some(None),
                 uploaded_size: Some(0),
                 completed_at: Some(None),

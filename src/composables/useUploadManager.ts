@@ -31,6 +31,7 @@ export interface UploadFile {
   status: UploadStatus;
   progress: number;
   uploadSpeed: number;
+  etaSecs?: number;
   errorMessage?: string;
   createdAt?: number;
   completedAt?: number;

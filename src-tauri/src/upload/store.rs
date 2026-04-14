@@ -63,6 +63,7 @@ pub struct UploadTask {
     pub status: String,
     pub progress: f64,
     pub upload_speed: i64,
+    pub eta_secs: Option<f64>,
     pub error_message: Option<String>,
     pub created_at: Option<i64>,
     pub completed_at: Option<i64>,
@@ -102,6 +103,7 @@ pub struct TaskUpdate {
     pub status: Option<String>,
     pub progress: Option<f64>,
     pub upload_speed: Option<i64>,
+    pub eta_secs: Option<Option<f64>>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub error_message: Option<Option<String>>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
@@ -141,35 +143,36 @@ const DB_VERSION: u32 = 1;
 const MIGRATIONS: &[(u32, &str)] = &[(
     1,
     "CREATE TABLE IF NOT EXISTS uploads (
-        id TEXT PRIMARY KEY,
-        file_name TEXT NOT NULL,
-        file_path TEXT NOT NULL,
-        file_size INTEGER NOT NULL DEFAULT 0,
-        target_cid TEXT NOT NULL DEFAULT '0',
-        target_path TEXT,
-        sha1 TEXT,
-        pre_sha1 TEXT,
-        pick_code TEXT,
-        status TEXT NOT NULL DEFAULT 'pending',
-        progress REAL NOT NULL DEFAULT 0,
-        upload_speed INTEGER NOT NULL DEFAULT 0,
-        error_message TEXT,
-        created_at INTEGER,
-        completed_at INTEGER,
-        is_folder INTEGER NOT NULL DEFAULT 0,
-        parent_id TEXT,
-        total_files INTEGER,
-        completed_files INTEGER,
-        failed_files INTEGER,
-        oss_bucket TEXT,
-        oss_object TEXT,
-        oss_endpoint TEXT,
-        callback TEXT,
-        callback_var TEXT,
-        uploaded_size INTEGER NOT NULL DEFAULT 0,
-        file_id TEXT,
-        oss_upload_id TEXT
-    );",
+            id TEXT PRIMARY KEY,
+            file_name TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            file_size INTEGER NOT NULL DEFAULT 0,
+            target_cid TEXT NOT NULL DEFAULT '0',
+            target_path TEXT,
+            sha1 TEXT,
+            pre_sha1 TEXT,
+            pick_code TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            progress REAL NOT NULL DEFAULT 0,
+            upload_speed INTEGER NOT NULL DEFAULT 0,
+            error_message TEXT,
+            created_at INTEGER,
+            completed_at INTEGER,
+            is_folder INTEGER NOT NULL DEFAULT 0,
+            parent_id TEXT,
+            total_files INTEGER,
+            completed_files INTEGER,
+            failed_files INTEGER,
+            oss_bucket TEXT,
+            oss_object TEXT,
+            oss_endpoint TEXT,
+            callback TEXT,
+            callback_var TEXT,
+            uploaded_size INTEGER NOT NULL DEFAULT 0,
+            file_id TEXT,
+            oss_upload_id TEXT,
+            eta_secs REAL
+        );",
 )];
 
 /// 把 SQLite 行映射成内存中的 `UploadTask`。
@@ -187,6 +190,7 @@ fn row_to_task(row: &rusqlite::Row) -> Result<UploadTask, rusqlite::Error> {
         status: row.get("status")?,
         progress: row.get("progress")?,
         upload_speed: row.get("upload_speed")?,
+        eta_secs: row.get("eta_secs")?,
         error_message: row.get("error_message")?,
         created_at: row.get("created_at")?,
         completed_at: row.get("completed_at")?,
@@ -410,17 +414,17 @@ fn insert_task_impl(conn: &Connection, task: &UploadTask) -> Result<(), UploadSt
         "INSERT OR REPLACE INTO uploads (
             id, file_name, file_path, file_size, target_cid, target_path,
             sha1, pre_sha1, pick_code, status, progress, upload_speed,
-            error_message, created_at, completed_at, is_folder, parent_id,
+            eta_secs, error_message, created_at, completed_at, is_folder, parent_id,
             total_files, completed_files, failed_files,
             oss_bucket, oss_object, oss_endpoint, callback, callback_var,
             uploaded_size, file_id, oss_upload_id
         ) VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6,
             ?7, ?8, ?9, ?10, ?11, ?12,
-            ?13, ?14, ?15, ?16, ?17,
-            ?18, ?19, ?20,
-            ?21, ?22, ?23, ?24, ?25,
-            ?26, ?27, ?28
+            ?13, ?14, ?15, ?16, ?17, ?18,
+            ?19, ?20, ?21,
+            ?22, ?23, ?24, ?25, ?26,
+            ?27, ?28, ?29
         )",
         rusqlite::params![
             task.id,
@@ -435,6 +439,7 @@ fn insert_task_impl(conn: &Connection, task: &UploadTask) -> Result<(), UploadSt
             task.status,
             task.progress,
             task.upload_speed,
+            task.eta_secs,
             task.error_message,
             task.created_at,
             task.completed_at,
@@ -509,6 +514,7 @@ fn update_task_impl(
     add_field!(updates.status, "status");
     add_field!(updates.progress, "progress");
     add_field!(updates.upload_speed, "upload_speed");
+    add_nullable_field!(updates.eta_secs, "eta_secs");
     add_nullable_field!(updates.error_message, "error_message");
     add_nullable_field!(updates.created_at, "created_at");
     add_nullable_field!(updates.completed_at, "completed_at");

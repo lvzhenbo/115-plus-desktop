@@ -34,7 +34,8 @@
         全部继续
       </NButton>
       <div v-if="uploadStats.activeCount > 0" class="ml-4 text-sm text-gray-500">
-        上传中 {{ uploadStats.activeCount }} 个
+        上传中 {{ uploadStats.activeCount }} 个 ·
+        {{ formatSpeed(uploadStats.totalSpeed) }}
       </div>
       <div v-if="queueStatus.queueLength > 0" class="ml-2 text-sm text-gray-400">
         队列等待 {{ queueStatus.queueLength }} 个
@@ -67,6 +68,20 @@
   import { filesize } from 'filesize';
   import type { DataTableColumns } from 'naive-ui';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
+
+  const formatSpeed = (speed: number) => {
+    if (!speed) return '0 B/s';
+    return filesize(speed, { standard: 'jedec' }) + '/s';
+  };
+
+  const formatEta = (seconds?: number) => {
+    if (!seconds || seconds <= 0) return '';
+    if (seconds < 60) return `${seconds}秒`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}分${seconds % 60}秒`;
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    return `${hours}时${mins}分`;
+  };
 
   const {
     displayList,
@@ -228,6 +243,23 @@
           return (
             <NProgress type="line" percentage={Math.floor(row.progress || 0)} status="warning" />
           );
+        return '';
+      },
+    },
+    {
+      title: '速度',
+      key: 'uploadSpeed',
+      width: 140,
+      render(row) {
+        if (row.status === 'uploading') {
+          const eta = row.etaSecs;
+          return (
+            <div>
+              <div>{formatSpeed(row.uploadSpeed || 0)}</div>
+              {eta ? <div class="text-xs text-gray-400">剩余 {formatEta(eta)}</div> : null}
+            </div>
+          );
+        }
         return '';
       },
     },
