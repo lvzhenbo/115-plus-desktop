@@ -26,7 +26,7 @@ async function bootstrap() {
   app.mount('#app');
 
   // 前端渲染完成后再显示窗口，避免白屏闪烁
-  await sleep(100);
+  await sleep(400);
   await getCurrentWindow().show();
 }
 
