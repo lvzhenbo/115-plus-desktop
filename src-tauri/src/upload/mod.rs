@@ -17,6 +17,7 @@ pub mod error;
 mod folder;
 pub mod local;
 pub mod oss;
+pub mod progress;
 pub mod queue;
 pub mod store;
 pub mod sync;

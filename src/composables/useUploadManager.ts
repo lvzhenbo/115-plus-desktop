@@ -30,7 +30,8 @@ export interface UploadFile {
   pickCode?: string;
   status: UploadStatus;
   progress: number;
-  uploadSpeed: number;
+  /** 由前端 upload:progress 事件填充，不再来自后端 DB */
+  uploadSpeed?: number;
   etaSecs?: number;
   errorMessage?: string;
   createdAt?: number;
@@ -77,6 +78,24 @@ const ACTIVE_UPLOAD_STATUS_SET = new Set<UploadStatus>([
   'pausing',
 ]);
 const PROCESSING_UPLOAD_STATUS_SET = new Set<UploadStatus>(['hashing', 'uploading', 'pausing']);
+const PRESERVED_UPLOAD_STATUS_SET = new Set<UploadStatus>(['uploading', 'pausing', 'paused']);
+
+/** upload:progress 事件的单项进度快照 (camelCase, 来自 Rust UploadProgressItem) */
+interface UploadProgressItem {
+  taskId: string;
+  uploadedSize: number;
+  totalSize: number;
+  speed: number;
+  etaSecs?: number;
+  isFolder?: boolean;
+}
+
+/** progressCache 中的快照，防止 state-sync 进度回跳 */
+interface UploadProgressSnapshot {
+  speed: number;
+  progress: number;
+  etaSecs?: number;
+}
 
 // 文件和文件夹在后端对应的是不同 command，这里做一次前端映射收口。
 const TASK_ACTION_COMMANDS: Record<UploadTaskAction, { file: string; folder: string }> = {
@@ -229,8 +248,9 @@ const logUploadManagerError = (message: string, error: unknown) => {
 export const useUploadManager = createSharedComposable(() => {
   const settingStore = useSettingStore();
 
-  // `displayList` 是当前 UI 的唯一来源；不再在前端维护一套独立上传数据库。
+  // `displayList` 是当前 UI 的唯一来源；progressCache 只用于填补 state-sync 间隙。
   const displayList = shallowRef<UploadFile[]>([]);
+  const progressCache = new Map<string, UploadProgressSnapshot>();
   const unlisteners: UnlistenFn[] = [];
   const stopHandles: Array<() => void> = [];
   const batchAction = ref<UploadBatchAction>('idle');
@@ -368,12 +388,81 @@ export const useUploadManager = createSharedComposable(() => {
     }
   };
 
+  const updateTask = (id: string, updater: (task: UploadFile) => void) => {
+    const target = displayList.value.find((item) => item.id === id);
+    if (!target) return;
+    updater(target);
+  };
+
+  // 当 state-sync 回来的任务仍处于活跃态时，用最近一次进度快照补齐 UI，避免"速度归零"和"进度倒退"。
+  const applyProgressSnapshot = (task: UploadFile, snapshot: UploadProgressSnapshot) => {
+    task.progress = snapshot.progress;
+
+    if (task.status === 'paused') {
+      task.uploadSpeed = 0;
+      task.etaSecs = undefined;
+    } else {
+      task.uploadSpeed = snapshot.speed;
+      task.etaSecs = snapshot.etaSecs;
+    }
+  };
+
+  // 清理已经不在列表里的缓存快照，避免长时间运行后 map 无界增长。
+  const pruneProgressCache = (tasks: UploadFile[]) => {
+    const currentIds = new Set(tasks.map((item) => item.id));
+    for (const id of progressCache.keys()) {
+      if (!currentIds.has(id)) {
+        progressCache.delete(id);
+      }
+    }
+  };
+
+  // `upload:state-sync` 是顶层任务列表的权威同步事件。
+  const handleStateSync = (tasks: UploadFile[]) => {
+    displayList.value = tasks;
+
+    for (const item of displayList.value) {
+      const snapshot = progressCache.get(item.id);
+      if (snapshot && PRESERVED_UPLOAD_STATUS_SET.has(item.status)) {
+        applyProgressSnapshot(item, snapshot);
+      }
+    }
+
+    pruneProgressCache(displayList.value);
+  };
+
+  // `upload:progress` 只提供瞬时指标（速度/ETA/进度），真正的结构化列表仍以 state-sync 为准。
+  const handleProgress = (items: UploadProgressItem[]) => {
+    for (const item of items) {
+      const progress =
+        item.totalSize > 0
+          ? Math.min(100, Math.round((item.uploadedSize / item.totalSize) * 10000) / 100)
+          : 0;
+      const eta = item.etaSecs != null ? Math.ceil(item.etaSecs) : undefined;
+
+      progressCache.set(item.taskId, {
+        speed: item.speed,
+        progress,
+        etaSecs: eta,
+      });
+
+      updateTask(item.taskId, (task) => {
+        task.uploadSpeed = item.speed;
+        task.progress = progress;
+        task.etaSecs = eta;
+      });
+    }
+  };
+
   // 监听器只允许初始化一次，防止重复进入页面时叠加订阅，导致同一事件被处理多次。
   const setupUploadListeners = async () => {
     if (!listenerPromise) {
       listenerPromise = Promise.all([
         listen<UploadFile[]>('upload:state-sync', (event) => {
-          displayList.value = event.payload;
+          handleStateSync(event.payload);
+        }),
+        listen<UploadProgressItem[]>('upload:progress', (event) => {
+          handleProgress(event.payload);
         }),
         listen<UploadApiNeededEvent>('upload:api-needed', (event) => {
           void respondToApiRequest(event.payload);

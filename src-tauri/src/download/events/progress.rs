@@ -49,11 +49,24 @@ pub struct SpeedCalculator {
 }
 
 impl SpeedCalculator {
+    #[allow(dead_code)]
     pub fn new(alpha: f64) -> Self {
         Self {
             alpha,
             smoothed_speed: 0.0,
             last_bytes: 0,
+            last_time: std::time::Instant::now(),
+        }
+    }
+
+    /// 创建速度计算器并以指定的已传输字节数为基准。
+    ///
+    /// 断点续传时使用，避免首次 tick 将历史累计量当作瞬时增量产生虚假速度尖峰。
+    pub fn with_initial_bytes(alpha: f64, initial_bytes: u64) -> Self {
+        Self {
+            alpha,
+            smoothed_speed: 0.0,
+            last_bytes: initial_bytes,
             last_time: std::time::Instant::now(),
         }
     }

@@ -9,11 +9,12 @@ use std::path::Path;
 use std::sync::Arc;
 
 use log::{error, info, warn};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 use super::api::{UploadApiResolver, request_create_folder};
 use super::local::scan_directory_internal;
+use super::progress::UploadProgressRegistry;
 use super::queue::{
     PendingTask, UploadQueue, UploadQueueError, get_existing_task, now_ms, safe_delete_task,
     safe_update_task,
@@ -145,8 +146,7 @@ pub(super) async fn sync_parent_folder(
         } else {
             0.0
         }),
-        upload_speed: Some(0),
-        eta_secs: Some(None),
+        // 速度和 ETA 由 progress_loop 在内存中实时聚合，与下载侧保持一致。
         ..TaskUpdate::default()
     };
 
@@ -200,8 +200,6 @@ pub(super) async fn enqueue_folder_impl(
             parent_id,
             TaskUpdate {
                 status: Some("paused".to_string()),
-                upload_speed: Some(0),
-                eta_secs: Some(None),
                 ..TaskUpdate::default()
             },
         )
@@ -228,8 +226,6 @@ pub(super) async fn enqueue_folder_impl(
             pick_code: None,
             status: "pending".to_string(),
             progress: 0.0,
-            upload_speed: 0,
-            eta_secs: None,
             error_message: None,
             created_at: Some(now_ms()),
             completed_at: None,
@@ -255,8 +251,6 @@ pub(super) async fn enqueue_folder_impl(
             TaskUpdate {
                 status: Some("pending".to_string()),
                 progress: Some(0.0),
-                upload_speed: Some(0),
-                eta_secs: Some(None),
                 error_message: Some(None),
                 completed_at: Some(None),
                 completed_files: Some(Some(0)),
@@ -303,6 +297,11 @@ pub(super) async fn enqueue_folder_impl(
         "[上传文件夹][{}] 本地扫描完成 files={} total_size={}B",
         parent_id, total_files_count, total_size
     );
+
+    // 注册文件夹总量到进度注册表，使文件夹 ETA 基于全量剩余字节计算，与下载侧一致。
+    let progress_registry = app.state::<Arc<UploadProgressRegistry>>();
+    progress_registry.register_folder(parent_id.clone(), total_size.max(0) as u64);
+
     let _ = safe_update_task(
         db,
         parent_id.clone(),
@@ -449,8 +448,6 @@ pub(super) async fn enqueue_folder_impl(
                 "pending".to_string()
             },
             progress: 0.0,
-            upload_speed: 0,
-            eta_secs: None,
             error_message: None,
             created_at: Some(now_ms()),
             completed_at: None,
@@ -481,8 +478,6 @@ pub(super) async fn enqueue_folder_impl(
                 file_id,
                 TaskUpdate {
                     status: Some("paused".to_string()),
-                    upload_speed: Some(0),
-                    eta_secs: Some(None),
                     ..TaskUpdate::default()
                 },
             )
@@ -512,8 +507,6 @@ pub(super) async fn enqueue_folder_impl(
             parent_id.clone(),
             TaskUpdate {
                 status: Some("paused".to_string()),
-                upload_speed: Some(0),
-                eta_secs: Some(None),
                 file_id: Some(Some(root_folder_cid)),
                 ..TaskUpdate::default()
             },

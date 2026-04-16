@@ -1022,7 +1022,10 @@ fn spawn_flush_task(
     tokio::spawn(async move {
         let mut ticker = interval(Duration::from_millis(500));
         let mut pending: HashMap<(String, u16), u64> = HashMap::new();
-        let mut speed_calc = SpeedCalculator::new(0.3);
+        // 用当前已下载字节数初始化 last_bytes，避免断点续传时
+        // 首次 tick 将历史累计量当作瞬时增量，产生虚假速度尖峰。
+        let initial_bytes: u64 = snapshot.lock().unwrap().values().sum();
+        let mut speed_calc = SpeedCalculator::with_initial_bytes(0.3, initial_bytes);
         let mut tick_count: u64 = 0;
 
         loop {

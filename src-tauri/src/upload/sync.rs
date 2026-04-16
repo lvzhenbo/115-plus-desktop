@@ -9,6 +9,7 @@ use tauri::{App, AppHandle, Emitter, Manager};
 use tokio::sync::Notify;
 use tokio::time::{Duration, sleep};
 
+use super::progress::{UploadProgressRegistry, progress_loop};
 use super::store::DbHandle;
 
 /// 前端状态同步触发器。
@@ -62,6 +63,11 @@ pub fn init(app: &App) {
         app.handle().clone(),
         db,
     ));
+
+    // 初始化上传进度注册表并启动 500ms 聚合循环，与下载侧保持一致。
+    let registry = Arc::new(UploadProgressRegistry::new());
+    tauri::async_runtime::spawn(progress_loop(registry.clone(), app.handle().clone()));
+    app.manage(registry);
 
     app.manage(state_sync);
     info!("[上传状态同步] 同步器已初始化");
