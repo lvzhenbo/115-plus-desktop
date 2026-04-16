@@ -4,7 +4,7 @@
 //! 给“已经在执行 OSS 上传”的任务维护暂停/恢复/取消信号，并暴露给调度器调用。
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 
 use log::{info, warn};
 use tokio::sync::watch;
@@ -16,12 +16,11 @@ use super::error::{UploadError, UploadResult, message_error};
 /// 只有正在执行的任务才会注册到这里；任务结束后会由 `oss.rs` 主动移除。
 pub(crate) type UploadSignalMap = HashMap<String, watch::Sender<UploadSignal>>;
 
-lazy_static::lazy_static! {
-    /// 全局上传信号注册表。
-    ///
-    /// 上传执行器在启动时写入、结束时移除，控制命令通过它向运行中的任务广播状态变化。
-    static ref UPLOAD_SIGNALS: Arc<Mutex<UploadSignalMap>> = Arc::new(Mutex::new(HashMap::new()));
-}
+/// 全局上传信号注册表。
+///
+/// 上传执行器在启动时写入、结束时移除，控制命令通过它向运行中的任务广播状态变化。
+static UPLOAD_SIGNALS: LazyLock<Arc<Mutex<UploadSignalMap>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 /// 运行中上传任务可感知的控制信号。
 #[derive(Clone, Debug, PartialEq)]

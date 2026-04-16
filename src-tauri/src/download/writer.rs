@@ -38,7 +38,7 @@ impl FileWriter {
         let check_path = Path::new(path);
         let dir = check_path.parent().unwrap_or(check_path);
 
-        let available = fs2::available_space(dir).map_err(DownloadError::Io)?;
+        let available = fs4::available_space(dir).map_err(DownloadError::Io)?;
 
         if available < needed {
             return Err(DownloadError::InsufficientDiskSpace { needed, available });

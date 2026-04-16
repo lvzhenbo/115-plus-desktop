@@ -1,13 +1,12 @@
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::time::Instant;
 
 use tokio::sync::watch;
 
 // 全局速度限制 channel — 广播速度上限变更给所有分片 (per D-03)
-lazy_static::lazy_static! {
-    static ref SPEED_LIMIT_CHANNEL: (watch::Sender<u64>, watch::Receiver<u64>) = watch::channel(0u64);
-    static ref GLOBAL_THROTTLE: TokenBucket = TokenBucket::new();
-}
+static SPEED_LIMIT_CHANNEL: LazyLock<(watch::Sender<u64>, watch::Receiver<u64>)> =
+    LazyLock::new(|| watch::channel(0u64));
+static GLOBAL_THROTTLE: LazyLock<TokenBucket> = LazyLock::new(TokenBucket::new);
 
 /// 令牌桶内部状态 — 合并为单个 Mutex 避免竞态条件
 struct TokenBucketState {
