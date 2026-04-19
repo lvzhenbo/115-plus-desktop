@@ -111,11 +111,16 @@ pub fn run() {
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
                 .build(),
         )
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Err(err) = show_window(app) {
-                log::warn!("单实例唤醒主窗口失败：{}", err);
-            }
-        }))
+        .plugin(
+            tauri_plugin_single_instance::Builder::new()
+                .callback(|app, _args, _cwd| {
+                    if let Err(err) = show_window(app) {
+                        log::warn!("单实例唤醒主窗口失败：{}", err);
+                    }
+                })
+                .dbus_id("io.github.lvzhenbo.oof-plus-desktop")
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_pinia::init())
         .setup(|app| {
