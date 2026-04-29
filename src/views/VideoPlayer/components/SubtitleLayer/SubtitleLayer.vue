@@ -1,6 +1,11 @@
 <template>
+  <canvas
+    ref="assCanvasRef"
+    class="absolute inset-0 z-15 pointer-events-none"
+    style="visibility: hidden"
+  ></canvas>
   <div
-    v-if="currentLines.length > 0"
+    v-if="renderMode !== 'ass' && currentLines.length > 0"
     class="absolute left-0 right-0 flex justify-center z-15 pointer-events-none px-8"
     :style="{ bottom: `${subtitleStyle.bottomOffset}px` }"
   >
@@ -21,8 +26,8 @@
   import type { SubtitleItem } from '@/api/types/video';
   import { useSettingStore } from '@/store/setting';
   import { generateTextShadow } from '@/utils/subtitleStyleUtils';
-  import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
-  import { parseText } from 'media-captions';
+  import { useSubtitleController } from '@/composables/useSubtitleController';
+  import { AssSubtitleRenderer } from '@/utils/subtitles/assRenderer';
   import type { CSSProperties } from 'vue';
 
   const settingStore = useSettingStore();
@@ -36,12 +41,17 @@
     enabled: boolean;
     /** 当前播放时间（秒） */
     currentTime: number;
+    /** 当前视频元素，用于 ASS 渲染器 */
+    videoElement?: HTMLVideoElement | null;
   }>();
 
   const message = useMessage();
 
   /** 字幕样式配置（响应式） */
   const subtitleStyle = computed(() => settingStore.subtitleStyleSetting);
+
+  const assCanvasRef = useTemplateRef('assCanvasRef');
+  const isMounted = ref(true);
 
   /** 字幕文字动态样式 */
   const subtitleTextStyle = computed<CSSProperties>(() => {
@@ -55,78 +65,72 @@
     };
   });
 
-  /** 解析后的字幕 cue 列表 */
-  const subtitleCues = ref<{ start: number; end: number; text: string }[]>([]);
+  const enabledRef = toRef(props, 'enabled');
+  const currentTimeRef = toRef(props, 'currentTime');
+  const assRenderer = new AssSubtitleRenderer(
+    () => props.videoElement ?? null,
+    () => assCanvasRef.value,
+    (families) => {
+      if (families.length > 0) {
+        console.warn('系统未找到字体:', families.join('、'));
+      }
+    },
+  );
 
-  /** 当前应显示的字幕文本 */
-  const currentSubtitleText = computed(() => {
-    if (!props.enabled || subtitleCues.value.length === 0) return '';
-    const t = props.currentTime;
-    const cue = subtitleCues.value.find((c) => t >= c.start && t <= c.end);
-    return cue ? cue.text : '';
+  const subtitleController = useSubtitleController({
+    currentTime: currentTimeRef,
+    enabled: enabledRef,
+    onAssTrack: async (track) => {
+      await assRenderer.loadTrack(track);
+    },
+    onClear: async () => {
+      await assRenderer.clearTrack();
+    },
+    onEmpty: () => {
+      if (isMounted.value) {
+        message.warning('字幕文件内容为空');
+      }
+    },
+    onError: (error) => {
+      if (isMounted.value) {
+        console.error('字幕加载失败', error);
+        message.error('字幕加载失败');
+      }
+    },
   });
 
-  /** 字幕多行数组 */
-  const currentLines = computed(() => {
-    const text = currentSubtitleText.value;
-    if (!text) return [];
-    return text.split('\n').filter((l) => l.trim());
-  });
+  const currentLines = subtitleController.currentLines;
+  const renderMode = subtitleController.renderMode;
 
-  /** 推断字幕文件格式 */
-  const detectSubtitleType = (content: string, apiType: string): 'vtt' | 'srt' | 'ssa' | 'ass' => {
-    const trimmed = content.trim();
-    if (trimmed.startsWith('WEBVTT')) return 'vtt';
-    if (/^\[Script Info\]/i.test(trimmed)) {
-      return 'ssa';
-    }
-    const lower = apiType?.toLowerCase() || '';
-    if (lower === 'vtt') return 'vtt';
-    if (lower === 'ass' || lower === 'ssa') return 'ssa';
-    return 'srt';
-  };
+  onBeforeUnmount(() => {
+    isMounted.value = false;
+    void assRenderer.destroy().catch(() => {});
+  });
 
   /** 加载并解析字幕文件 */
   const loadSubtitle = async () => {
-    subtitleCues.value = [];
-
-    if (!props.enabled || !props.currentSid) return;
+    if (!props.enabled || !props.currentSid) {
+      await subtitleController.clear();
+      return;
+    }
 
     const subtitle = props.subtitleList.find((s) => s.sid === props.currentSid);
-    if (!subtitle) return;
-
-    try {
-      const response = await tauriFetch(subtitle.url);
-      const text = await response.text();
-
-      if (!text || text.trim().length === 0) {
-        message.warning('字幕文件内容为空');
-        return;
-      }
-
-      const type = detectSubtitleType(text, subtitle.type);
-      const { cues } = await parseText(text, { type });
-
-      subtitleCues.value = cues.map((cue) => ({
-        start: cue.startTime,
-        end: cue.endTime,
-        text: cue.text.replace(/<[^>]*>/g, ''),
-      }));
-    } catch (e) {
-      console.error('字幕加载失败', e);
-      message.error('字幕加载失败');
-    }
+    await subtitleController.loadTrack(subtitle ?? null);
   };
+
+  const debouncedLoadSubtitle = useDebounceFn(() => {
+    void loadSubtitle();
+  }, 300);
 
   // 当 sid 或 enabled 变化时自动加载字幕
   watch(
     () => [props.currentSid, props.enabled] as const,
     ([sid, enabled]) => {
       if (!enabled || !sid) {
-        subtitleCues.value = [];
+        void subtitleController.clear();
         return;
       }
-      loadSubtitle();
+      debouncedLoadSubtitle();
     },
   );
 

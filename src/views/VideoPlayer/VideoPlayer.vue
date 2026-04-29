@@ -58,6 +58,7 @@
           :current-sid="currentSubtitleSid"
           :enabled="subtitleEnabled"
           :current-time="currentTime"
+          :video-element="videoRef"
         />
         <!-- 视频控制条 -->
         <AnimatePresence>

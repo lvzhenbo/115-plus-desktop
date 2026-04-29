@@ -1,0 +1,14 @@
+{
+  "app": {
+    "security": {
+      "assetProtocol": {
+        "scope": {
+          "allow": [
+            "/System/Library/Fonts/**",
+            "/Library/Fonts/**"
+          ]
+        }
+      }
+    }
+  }
+}

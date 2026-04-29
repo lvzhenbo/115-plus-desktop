@@ -1,0 +1,11 @@
+{
+  "app": {
+    "security": {
+      "assetProtocol": {
+        "scope": {
+          "allow": ["C:\\Windows\\Fonts\\**"]
+        }
+      }
+    }
+  }
+}

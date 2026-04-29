@@ -14,6 +14,7 @@ use tauri_plugin_pinia::ManagerExt as PiniaManagerExt;
 use tauri_plugin_window_state::StateFlags;
 
 mod download;
+mod subtitle;
 mod upload;
 
 /// 与前端设置项 `generalSetting.logLevel` 对应的日志级别枚举。
@@ -133,6 +134,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            subtitle::subtitle_get_system_font_config,
             // 上传模块：前端必要的本地能力、队列控制与主列表查询。
             upload::local::upload_get_file_size,
             upload::api::upload_provide_api_response,

@@ -83,6 +83,9 @@
               <NSwitch v-model:value="settingStore.videoPlayerSetting.isHistory" />
             </NFormItem>
             <NDivider> 字幕样式 </NDivider>
+            <NAlert type="info" class="mb-4">
+              以下样式仅对 SRT / VTT 纯文本字幕生效；ASS / SSA 字幕使用文件内嵌样式渲染。
+            </NAlert>
             <NFormItem label="默认开启字幕" path="subtitleStyleSetting.defaultEnabled">
               <NSwitch v-model:value="settingStore.subtitleStyleSetting.defaultEnabled" />
             </NFormItem>
