@@ -298,14 +298,11 @@ fn find_best_name(face: &ttf_parser::Face, name_id: u16) -> Option<String> {
             continue;
         }
 
-        let Ok(text) =
-            from_utf16_be(&face.font_data()[record.offset..record.offset + record.length])
-        else {
-            continue;
-        };
-        let text = text.trim().to_string();
-        if !text.is_empty() {
-            return Some(text);
+        if let Some(text) = record.to_string() {
+            let text = text.trim().to_string();
+            if !text.is_empty() {
+                return Some(text);
+            }
         }
     }
 
@@ -313,31 +310,18 @@ fn find_best_name(face: &ttf_parser::Face, name_id: u16) -> Option<String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn record_lang_score(platform_id: u16, language_id: u16) -> u32 {
+fn record_lang_score(platform_id: ttf_parser::PlatformId, language_id: u16) -> u32 {
     match platform_id {
-        3 => {
-            // Windows platform
+        ttf_parser::PlatformId::Windows => {
             if language_id == 0x0409 {
                 3 // English (United States) - highest priority
             } else {
                 2 // Windows other language
             }
         }
-        1 => 1, // Macintosh
+        ttf_parser::PlatformId::Macintosh => 1,
         _ => 0, // Unknown/unsupported
     }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn from_utf16_be(data: &[u8]) -> Result<String, ()> {
-    if data.len() % 2 != 0 {
-        return Err(());
-    }
-    let u16s: Vec<u16> = data
-        .chunks_exact(2)
-        .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
-        .collect();
-    String::from_utf16(&u16s).map_err(|_| ())
 }
 
 // ---------------------------------------------------------------------------
@@ -548,7 +532,7 @@ fn build_macos_font_candidates() -> Vec<SystemFontCandidate> {
         }
         // Try hardcoded paths as fallback
         for (file, _) in MACOS_FALLBACK_PATHS {
-            if let Some(existing) = existing_font_path(PathBuf::from(*file)) {
+            if let Some(existing) = existing_font_path(PathBuf::from(file)) {
                 upsert_font_candidate(
                     &mut candidates,
                     &mut candidate_by_path,
@@ -561,30 +545,6 @@ fn build_macos_font_candidates() -> Vec<SystemFontCandidate> {
     }
 
     candidates
-}
-
-#[cfg(target_os = "macos")]
-static MACOS_FALLBACK_PATHS: [(&str, &[&str]); 3] = [
-    ("/System/Library/Fonts/PingFang.ttc", &["PingFang SC", "苹方"]),
-    ("/System/Library/Fonts/Hiragino Sans GB.ttc", &["Hiragino Sans GB"]),
-    (
-        "/System/Library/Fonts/Supplemental/Songti.ttc",
-        &["Songti SC"],
-    ),
-];
-
-#[cfg(target_os = "macos")]
-static MACOS_FONT_CANDIDATES: LazyLock<Vec<SystemFontCandidate>> =
-    LazyLock::new(build_macos_font_candidates);
-
-#[cfg(target_os = "macos")]
-fn resolve_subtitle_system_font_config(font_families: &[String]) -> SubtitleSystemFontConfig {
-    build_font_config(
-        &MACOS_FONT_CANDIDATES,
-        font_families,
-        &["PingFang SC", "Hiragino Sans GB", "Songti SC"],
-        "PingFang SC",
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -631,7 +591,7 @@ fn build_linux_font_candidates() -> Vec<SystemFontCandidate> {
         }
         // Try known paths
         for (file, _) in LINUX_FALLBACK_PATHS {
-            if let Some(existing) = existing_font_path(PathBuf::from(*file)) {
+            if let Some(existing) = existing_font_path(PathBuf::from(file)) {
                 upsert_font_candidate(
                     &mut candidates,
                     &mut candidate_by_path,
