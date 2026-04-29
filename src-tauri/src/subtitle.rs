@@ -547,6 +547,30 @@ fn build_macos_font_candidates() -> Vec<SystemFontCandidate> {
     candidates
 }
 
+#[cfg(target_os = "macos")]
+static MACOS_FALLBACK_PATHS: [(&str, &[&str]); 3] = [
+    ("/System/Library/Fonts/PingFang.ttc", &["PingFang SC", "苹方"]),
+    ("/System/Library/Fonts/Hiragino Sans GB.ttc", &["Hiragino Sans GB"]),
+    (
+        "/System/Library/Fonts/Supplemental/Songti.ttc",
+        &["Songti SC"],
+    ),
+];
+
+#[cfg(target_os = "macos")]
+static MACOS_FONT_CANDIDATES: LazyLock<Vec<SystemFontCandidate>> =
+    LazyLock::new(build_macos_font_candidates);
+
+#[cfg(target_os = "macos")]
+fn resolve_subtitle_system_font_config(font_families: &[String]) -> SubtitleSystemFontConfig {
+    build_font_config(
+        &MACOS_FONT_CANDIDATES,
+        font_families,
+        &["PingFang SC", "Hiragino Sans GB", "Songti SC"],
+        "PingFang SC",
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Linux font discovery (directory scan)
 // ---------------------------------------------------------------------------

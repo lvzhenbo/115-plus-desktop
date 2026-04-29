@@ -128,6 +128,23 @@ pub fn run() {
             // 先绑定通用能力，再初始化业务模块，保证模块初始化期间的日志也受设置控制。
             bind_log_level_to_setting_store(app)?;
             log::info!("应用启动，版本={}", app.package_info().version);
+
+            // 扩展 asset 协议 scope，允许前端加载用户字体目录中的字体文件
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            if let Some(home) = std::env::var_os("HOME") {
+                let scope = app.asset_protocol_scope();
+                let home_path = std::path::Path::new(&home);
+
+                #[cfg(target_os = "macos")]
+                let _ = scope.allow_directory(home_path.join("Library/Fonts"), true);
+
+                #[cfg(target_os = "linux")]
+                {
+                    let _ = scope.allow_directory(home_path.join(".local/share/fonts"), true);
+                    let _ = scope.allow_directory(home_path.join(".fonts"), true);
+                }
+            }
+
             upload::init(app).map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
             download::init(app).map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
             log::info!("应用初始化完成");
