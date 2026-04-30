@@ -1,23 +1,44 @@
-//! Tauri 应用入口。
+//! 115+ 桌面客户端 — Tauri 应用入口。
 //!
-//! 这个文件只负责应用级初始化：
-//! - 安装通用插件
-//! - 绑定设置中心里的日志级别
-//! - 初始化上传/下载后端模块
-//! - 注册前端可调用的 Tauri command
+//! # 启动流程
+//!
+//! ```text
+//! main.rs → lib::run()
+//!   ├─ 注册插件（日志 / 更新 / 单实例 / 窗口状态 / …）
+//!   ├─ on_window_event  → 关闭按钮 → 隐藏到托盘
+//!   ├─ setup
+//!   │   ├─ bind_log_level_to_setting_store  → 同步前端日志等级
+//!   │   ├─ 扩展 asset scope → macOS/Linux 系统字体目录
+//!   │   ├─ upload::init / download::init    → 业务模块初始化
+//!   │   └─ tray::create                     → 系统托盘
+//!   ├─ invoke_handler → 注册所有 Tauri command
+//!   └─ run 事件循环
+//!       └─ ExitRequested(code=None) → Cmd+Q / Alt+F4 → 阻止退出
+//!           ExitRequested(code=0)   → 前端 exit(0)   → 放行
+//! ```
+//!
+//! # 模块职责
+//!
+//! | 模块 | 职责 |
+//! |------|------|
+//! | `tray`     | 系统托盘图标、右键菜单、点击事件 |
+//! | `download` | HTTP 多分片并发下载、断点续传、限速 |
+//! | `upload`   | 115 网盘 OSS 上传、分片、队列调度 |
+//! | `subtitle` | 系统字体扫描、ASS 字幕字体匹配 |
 
 use chrono::Local;
 use serde::Deserialize;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 use tauri_plugin_pinia::ManagerExt as PiniaManagerExt;
 use tauri_plugin_window_state::StateFlags;
 
 mod download;
 mod subtitle;
+mod tray;
 mod upload;
 
-/// 与前端设置项 `generalSetting.logLevel` 对应的日志级别枚举。
+/// 日志等级枚举，反序列化自前端 `generalSetting.logLevel`。
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum AppLogLevel {
@@ -46,6 +67,7 @@ impl From<AppLogLevel> for log::LevelFilter {
     }
 }
 
+/// Pinia `setting` store 中 `generalSetting` 的 Rust 投影。
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct GeneralSettingState {
@@ -58,10 +80,9 @@ fn set_log_level(level: AppLogLevel) {
     log::set_max_level(level.into());
 }
 
-/// 监听 Pinia 设置仓库中的日志级别变化，并实时同步到 Rust 日志系统。
+/// 从 Pinia 同步日志等级到 Rust 日志系统。
 ///
-/// 这里在应用启动时先读取一次初始值，再注册 watch，保证运行中的日志输出
-/// 能跟随前端设置即时调整，而不需要重启应用。
+/// 启动时读取初始值，之后 watch 前端变更，实现运行时热切换而不需重启。
 fn bind_log_level_to_setting_store<R: tauri::Runtime, M: Manager<R>>(
     manager: &M,
 ) -> tauri_plugin_pinia::Result<()> {
@@ -84,10 +105,10 @@ fn bind_log_level_to_setting_store<R: tauri::Runtime, M: Manager<R>>(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(deprecated)]
 pub fn run() {
-    // 按启动时间切分日志文件，避免多次启动混写同一份文件。
     let log_file_name = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
 
     tauri::Builder::default()
+        // ---- 插件注册 ----
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
@@ -98,7 +119,7 @@ pub fn run() {
                     Target::new(TargetKind::Webview),
                 ])
                 .rotation_strategy(RotationStrategy::KeepAll)
-                .max_file_size(50_000_000) // 50MB
+                .max_file_size(50_000_000)
                 .level(log::LevelFilter::Trace)
                 .timezone_strategy(TimezoneStrategy::UseLocal)
                 .build(),
@@ -124,12 +145,19 @@ pub fn run() {
         )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_pinia::init())
+        // ---- 窗口行为 ----
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                window.hide().ok();
+                api.prevent_close(); // 关闭 → 隐藏到托盘，不退出
+            }
+        })
+        // ---- 应用初始化 ----
         .setup(|app| {
-            // 先绑定通用能力，再初始化业务模块，保证模块初始化期间的日志也受设置控制。
             bind_log_level_to_setting_store(app)?;
             log::info!("应用启动，版本={}", app.package_info().version);
 
-            // 扩展 asset 协议 scope，允许前端加载用户字体目录中的字体文件
+            // macOS / Linux：允许前端通过 asset 协议加载系统字体
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             if let Some(home) = std::env::var_os("HOME") {
                 let scope = app.asset_protocol_scope();
@@ -147,12 +175,15 @@ pub fn run() {
 
             upload::init(app).map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
             download::init(app).map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
+            tray::create(app.handle())?;
+
             log::info!("应用初始化完成");
             Ok(())
         })
+        // ---- Tauri command 注册 ----
         .invoke_handler(tauri::generate_handler![
             subtitle::subtitle_get_system_font_config,
-            // 上传模块：前端必要的本地能力、队列控制与主列表查询。
+            // 上传
             upload::local::upload_get_file_size,
             upload::api::upload_provide_api_response,
             upload::api::upload_provide_api_error,
@@ -172,7 +203,7 @@ pub fn run() {
             upload::queue::upload_resume_all,
             upload::store::upload_delete_finished_tasks,
             upload::store::upload_get_top_level_tasks,
-            // 下载模块：主列表查询、事件桥接和调度控制。
+            // 下载
             download::store::download_delete_finished_tasks,
             download::store::download_get_top_level_tasks,
             download::events::download_provide_url,
@@ -194,12 +225,22 @@ pub fn run() {
             download::queue::download_pause_all,
             download::queue::download_resume_all,
         ])
-        .run(tauri::generate_context!())
-        .unwrap_or_else(|err| panic!("Tauri 应用运行失败：{}", err));
+        // ---- 运行 ----
+        .build(tauri::generate_context!())
+        .unwrap_or_else(|err| panic!("Tauri 应用运行失败：{}", err))
+        .run(|_app, event| {
+            if let RunEvent::ExitRequested { code, api, .. } = event {
+                // code=None  → 系统快捷键（Cmd+Q / Alt+F4）→ 阻止，窗口已隐藏
+                // code=0     → 前端 exit(0) → 托盘确认退出 → 放行
+                if code.is_none() {
+                    api.prevent_exit();
+                }
+            }
+        });
 }
 
-/// 在单实例唤醒或其他需要前台化窗口的场景下展示并聚焦主窗口。
-fn show_window(app: &AppHandle) -> Result<(), String> {
+/// 展示并聚焦主窗口（托盘点击、单实例唤醒等场景复用）。
+pub(crate) fn show_window(app: &AppHandle) -> Result<(), String> {
     let windows = app.webview_windows();
     let window = windows
         .values()

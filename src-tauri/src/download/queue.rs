@@ -64,9 +64,9 @@ pub enum ControlCommand {
     Cancel {
         gid: String,
     },
-    /// 恢复暂停的任务 — 插入队列头部 (per D-02, CTL-02)
+    /// 恢复暂停的任务 — 插入队列头部
     Resume(EnqueueRequest),
-    /// 重试失败的任务 — 插入队列尾部 (per D-11, CTL-04)
+    /// 重试失败的任务 — 插入队列尾部
     Retry(EnqueueRequest),
     // 文件夹级联控制操作。
     PauseFolder {
@@ -100,9 +100,9 @@ pub enum TaskCompletion {
     Failed { gid: String, error: String },
     /// SHA1 校验失败
     VerifyFailed { gid: String, message: String },
-    /// 用户暂停 — 释放槽位，保留 DB 记录 (per D-01)
+    /// 用户暂停 — 释放槽位，保留 DB 记录
     Paused { gid: String },
-    /// 用户取消 — 释放槽位，删除 DB 记录 (per D-03)
+    /// 用户取消 — 释放槽位，删除 DB 记录
     Cancelled { gid: String },
 }
 
@@ -340,7 +340,7 @@ async fn queue_loop(
     recover_tasks(&db, &progress_file, &folder_aggregator, &state_sync_notify).await;
 
     loop {
-        // 尝试填补空位 — 出队 waiting 任务并 spawn 下载 (per D-09, D-01: frozen=true 时跳过出队)
+        // 尝试填补空位 — 出队 waiting 任务并 spawn 下载
         while active.len() < max_concurrent.load(Ordering::SeqCst) && !frozen.load(Ordering::SeqCst)
         {
             if let Some(req) = waiting.pop_front() {
@@ -359,7 +359,7 @@ async fn queue_loop(
                     child_to_parent.insert(gid.clone(), parent.clone());
                 }
 
-                // 创建信号通道，sender 留在 signals 注册表，receiver 传入 spawn (per D-05)
+                // 创建信号通道，sender 留在 signals 注册表，receiver 传入 spawn
                 let (signal_tx, signal_rx) = watch::channel(DownloadSignal::Running);
                 signals.insert(gid.clone(), signal_tx);
 
@@ -597,7 +597,7 @@ async fn queue_loop(
                             let _ = completion.send(());
                         }
 
-                        // 遍历所有活跃任务发送暂停信号 (per D-03, D-04: 只给 active 发信号)
+                        // 遍历所有活跃任务发送暂停信号
                         for (_gid, tx) in signals.iter() {
                             let _ = tx.send(DownloadSignal::Paused);
                         }
@@ -868,7 +868,7 @@ async fn queue_loop(
                     super::events::emit_download_task_status(&app, &db, &gid).await;
                 }
 
-                // Phase 5: Folder counter update + final status determination (per D-06, D-14)
+                // Phase 5: Folder counter update + final status determination
                 if let Some(parent_gid) = child_to_parent.remove(&gid) {
                     let child_task = db.get_task_by_gid(gid.clone()).await.ok().flatten();
 

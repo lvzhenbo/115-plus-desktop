@@ -378,7 +378,7 @@ impl ProgressFile {
         })
     }
 
-    /// 插入重分配产生的新子分片 (per D-12)
+    /// 插入重分配产生的新子分片
     pub fn insert_segments(
         &self,
         task_id: &str,

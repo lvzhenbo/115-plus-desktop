@@ -141,8 +141,9 @@
   import SearchModal from './components/SearchModal/SearchModal.vue';
   import { useSettingStore } from '@/store/setting';
   import { downloadDir } from '@tauri-apps/api/path';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { listen } from '@tauri-apps/api/event';
   import { ask } from '@tauri-apps/plugin-dialog';
+  import { exit } from '@tauri-apps/plugin-process';
   import { useDownloadManager } from '@/composables/useDownloadManager';
   import { useUploadManager } from '@/composables/useUploadManager';
   import { useCheckUpdate } from '@/composables/useCheckUpdate';
@@ -244,10 +245,10 @@
   } = useUploadManager();
   const { checkForUpdate } = useCheckUpdate();
 
-  /** 暂停所有任务并关闭窗口 */
+  /** 暂停所有任务并退出应用 */
   const pauseAndClose = async () => {
     await Promise.all([pauseAllDownloads(), pauseAllUploads()]);
-    await getCurrentWindow().destroy();
+    await exit(0);
   };
 
   // 保持菜单高亮与当前路由一致。
@@ -264,20 +265,19 @@
       settingStore.downloadSetting.downloadPath = await downloadDir();
     }
 
-    // 监听窗口关闭事件
-    await getCurrentWindow().onCloseRequested(async (event) => {
+    // 监听系统托盘退出事件，复用前端的任务暂停 + 确认对话框逻辑
+    void listen('tray-quit', async () => {
       const active = hasActiveDownloads.value || hasActiveUploads.value;
-      if (!active) return; // 无活跃任务直接关闭
+      if (!active) {
+        await exit(0); // 无活跃任务，直接退出
+        return;
+      }
 
       if (settingStore.generalSetting.skipExitConfirm) {
-        // 自动暂停并关闭
-        event.preventDefault();
         await pauseAndClose();
         return;
       }
 
-      // 弹出二次确认
-      event.preventDefault();
       const confirmed = await ask('当前有正在进行的传输任务，确定退出？', {
         title: '提示',
         kind: 'warning',

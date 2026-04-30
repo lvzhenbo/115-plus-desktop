@@ -2,10 +2,10 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-/// 最小分片大小阈值 1MB (per D-03)
+/// 最小分片大小阈值 1MB
 pub const MIN_SEGMENT_SIZE: u64 = 1024 * 1024;
 
-/// 默认分片数，与 aria2 配置一致 (per D-05)
+/// 默认分片数，与 aria2 配置一致
 pub const DEFAULT_SEGMENT_COUNT: u16 = 16;
 
 /// 下载配置。
@@ -133,7 +133,7 @@ pub enum SegmentStatus {
     Completed,
     Failed,
     Paused,
-    /// 分片已被重分配，其剩余范围已拆分给新子分片 (per D-09)
+    /// 分片已被重分配，其剩余范围已拆分给新子分片
     Reallocated,
 }
 
@@ -173,7 +173,7 @@ pub enum TaskStatus {
     Paused,
     Complete,
     Error,
-    /// SHA1 校验失败 (per D-07)
+    /// SHA1 校验失败
     VerifyFailed,
 }
 

@@ -1,3 +1,8 @@
+//! 下载地址请求协调。
+//!
+//! 下载引擎在需要新地址时发射 `download:url-needed` 事件，
+//! 前端通过 `download_provide_url` 命令回填。本模块按 request_id 配对请求与响应。
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 

@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use tokio::sync::watch;
 
-// 全局速度限制 channel — 广播速度上限变更给所有分片 (per D-03)
+// 全局速度限制 channel — 广播速度上限变更给所有分片
 static SPEED_LIMIT_CHANNEL: LazyLock<(watch::Sender<u64>, watch::Receiver<u64>)> =
     LazyLock::new(|| watch::channel(0u64));
 static GLOBAL_THROTTLE: LazyLock<TokenBucket> = LazyLock::new(TokenBucket::new);
@@ -14,7 +14,7 @@ struct TokenBucketState {
     last_refill: Instant,
 }
 
-/// Token Bucket 令牌桶限速器 (per D-02)
+/// Token Bucket 令牌桶限速器
 ///
 /// 所有并发下载共享同一个全局 TokenBucket，
 /// 每个 chunk 写入后调用 `consume(bytes)` 消耗令牌。
@@ -33,9 +33,9 @@ impl TokenBucket {
         }
     }
 
-    /// 消耗令牌 — 如果令牌不足则等待 (per D-02)
+    /// 消耗令牌 — 如果令牌不足则等待
     ///
-    /// limit=0 时立即返回（不限速，per D-04）
+    /// limit=0 时立即返回（不限速）
     /// refill 和 consume 在同一把锁内完成，避免多分片并发重复补充令牌。
     pub async fn consume(&self, bytes: usize) {
         let limit = *SPEED_LIMIT_CHANNEL.1.borrow();
@@ -70,9 +70,9 @@ impl TokenBucket {
     }
 }
 
-/// 设置全局下载速度上限 (per D-03)
+/// 设置全局下载速度上限
 ///
-/// limit: bytes/sec, 0 = 不限速 (per D-04)
+/// limit: bytes/sec, 0 = 不限速
 /// 通过 watch channel 广播给所有正在下载的分片
 pub fn set_speed_limit(limit: u64) {
     let _ = SPEED_LIMIT_CHANNEL.0.send(limit);

@@ -22,6 +22,7 @@ use super::queue::{
 use super::store::{DbHandle, TaskUpdate, UploadTask};
 use super::sync::UploadStateSync;
 
+/// 本地目录扫描得到的单个文件，包含相对于上传根目录的路径。
 #[derive(Debug)]
 struct LocalFolderFile {
     path: String,
@@ -57,6 +58,10 @@ impl Drop for CollectionGuard<'_> {
     }
 }
 
+/// 根据子任务汇总状态推导父文件夹任务的聚合状态。
+///
+/// 规则：全部完成 → complete；有失败 → error；全部暂停 → paused；
+/// 有活跃任务 → uploading/pausing（保持父状态）；其他 → uploading。
 fn derive_parent_folder_status(
     parent_status: &str,
     completed: i64,

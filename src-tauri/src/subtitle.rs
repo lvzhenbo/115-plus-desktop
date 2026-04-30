@@ -1,3 +1,33 @@
+//! 字幕系统字体发现与匹配。
+//!
+//! # 背景
+//!
+//! 前端 ASS 字幕渲染器需要加载用户指定的字体文件。当字幕中引用的字体未
+//! 在系统内安装时，渲染会降级到后备字体。本模块的作用是：扫描系统字体目录，
+//! 建立"字体族名 → 字体文件路径"的映射，供前端字幕引擎查询使用。
+//!
+//! # 架构
+//!
+//! ```text
+//! 前端调用 subtitle_get_system_font_config(["微软雅黑","SimHei",…])
+//!   └─ resolve_subtitle_system_font_config()  [按平台分发]
+//!       ├─ Windows  → 读注册表 Fonts 键 → 解析 .ttf/.ttc 文件名
+//!       ├─ macOS    → 扫描 /System/Library/Fonts 等目录 → ttf-parser 读 name 表
+//!       └─ Linux    → 扫描 /usr/share/fonts 等目录 → ttf-parser 读 name 表
+//!           └─ build_font_config()
+//!               ├─ 对每个请求字体名，在候选集中匹配
+//!               ├─ 按平台偏好选出默认字体
+//!               └─ 返回 SubtitleSystemFontConfig { default_font, fonts, unmatched }
+//! ```
+//!
+//! # 平台差异
+//!
+//! - **Windows**：通过注册表 `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts`
+//!   获取字体名→文件路径映射，避免遍历整个 Fonts 目录。
+//! - **macOS / Linux**：使用 `ttf-parser` 读取字体文件 name 表获取 family name，
+//!   递归扫描标准字体目录。
+//! - 各平台都有**已知字体硬编码列表**作为后备，确保中文字体不会被遗漏。
+
 use serde::Serialize;
 use std::collections::HashSet;
 use std::path::Path;
@@ -6,6 +36,12 @@ use std::{collections::HashMap, path::PathBuf, sync::LazyLock};
 #[cfg(target_os = "windows")]
 use winreg::{RegKey, enums::HKEY_LOCAL_MACHINE};
 
+// ---- 数据结构 ----
+
+/// 扫描阶段发现的一个字体候选。
+///
+/// 同一字体文件可能有多个族名（如 "Microsoft YaHei" 和 "微软雅黑"），
+/// 记录原始名称和归一化名称以支持大小写/空格不敏感的匹配。
 #[derive(Debug)]
 struct SystemFontCandidate {
     path: String,
@@ -13,6 +49,7 @@ struct SystemFontCandidate {
     normalized_aliases: HashSet<String>,
 }
 
+/// 返回给前端的单个字体来源描述。
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SubtitleSystemFontSource {
@@ -20,15 +57,20 @@ pub struct SubtitleSystemFontSource {
     path: String,
 }
 
+/// 字幕系统字体配置 — `subtitle_get_system_font_config` 命令的返回值。
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SubtitleSystemFontConfig {
     default_font: String,
     fonts: Vec<SubtitleSystemFontSource>,
+    /// 在系统中未找到的字体族名，前端可用于降级提示。
     #[serde(default)]
     unmatched_families: Vec<String>,
 }
 
+// ---- 字体名归一化 ----
+
+/// 去空格、去引号、去 @ 前缀、全小写。保证不同写法的同一字体名能匹配。
 fn normalize_font_name(font_name: &str) -> String {
     font_name
         .trim()
@@ -40,6 +82,9 @@ fn normalize_font_name(font_name: &str) -> String {
         .to_lowercase()
 }
 
+// ---- 候选集操作 ----
+
+/// 向字体候选追加别名，自动去重。
 fn push_unique_alias(candidate: &mut SystemFontCandidate, alias: &str) {
     let alias = alias
         .trim()
@@ -61,10 +106,12 @@ fn push_unique_alias(candidate: &mut SystemFontCandidate, alias: &str) {
     candidate.aliases.push(alias);
 }
 
+/// 路径存在则返回其字符串形式，否则返回 `None`。
 fn existing_font_path(path: PathBuf) -> Option<String> {
     path.is_file().then(|| path.to_string_lossy().into_owned())
 }
 
+/// 插入或更新候选集：同路径则追加别名，否则新增条目。
 fn upsert_font_candidate(
     candidates: &mut Vec<SystemFontCandidate>,
     candidate_by_path: &mut HashMap<String, usize>,
@@ -89,6 +136,9 @@ fn upsert_font_candidate(
     }
 }
 
+// ---- 字体配置构建 ----
+
+/// 将候选加入最终输出列表，同源文件合并 family_names。
 fn add_font_source(
     fonts: &mut Vec<SubtitleSystemFontSource>,
     loaded_sources: &mut HashMap<String, usize>,
@@ -132,6 +182,7 @@ fn add_font_source(
     }
 }
 
+/// 按归一化名称在候选集中查找字体。
 fn find_font_candidate<'a>(
     candidates: &'a [SystemFontCandidate],
     font_name: &str,
@@ -146,6 +197,7 @@ fn find_font_candidate<'a>(
         .find(|c| c.normalized_aliases.contains(&normalized))
 }
 
+/// 从候选集中选出默认字体：优先平台推荐 → 其次请求列表第一项。
 fn pick_default_candidate<'a>(
     candidates: &'a [SystemFontCandidate],
     requested_font_families: &[String],
@@ -171,6 +223,9 @@ fn pick_default_candidate<'a>(
     None
 }
 
+/// 构建最终返回前端的字体配置。
+///
+/// 流程：遍历请求字体 → 匹配候选 → 合并 family_names → 选默认字体 → 补齐 sans-serif 别名。
 fn build_font_config(
     candidates: &[SystemFontCandidate],
     requested_font_families: &[String],
@@ -232,9 +287,10 @@ fn push_unique_alias_inline(aliases: &mut Vec<String>, alias: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Font file name table parsing (non-Windows platforms)
+// 非 Windows 平台：ttf-parser 读取 name 表
 // ---------------------------------------------------------------------------
 
+/// 从字体文件读取所有 family name（支持 .ttc 集合）。
 #[cfg(not(target_os = "windows"))]
 fn read_font_family_names(path: &str) -> Vec<String> {
     let Ok(data) = std::fs::read(path) else {
@@ -286,6 +342,7 @@ fn collect_face_family_names(face: &ttf_parser::Face) -> Vec<String> {
     names
 }
 
+/// 从 name 表中按语言优先级查找最佳名称（英文 > Macintosh > 其他）。
 #[cfg(not(target_os = "windows"))]
 fn find_best_name(face: &ttf_parser::Face, name_id: u16) -> Option<String> {
     for record in face.names() {
@@ -309,6 +366,7 @@ fn find_best_name(face: &ttf_parser::Face, name_id: u16) -> Option<String> {
     None
 }
 
+/// 语言评分：英文(US)最高优先 → 其他 Windows 语言 → Macintosh → 未知。
 #[cfg(not(target_os = "windows"))]
 fn record_lang_score(platform_id: ttf_parser::PlatformId, language_id: u16) -> u32 {
     match platform_id {
@@ -325,15 +383,17 @@ fn record_lang_score(platform_id: ttf_parser::PlatformId, language_id: u16) -> u
 }
 
 // ---------------------------------------------------------------------------
-// Directory scanning helpers (non-Windows platforms)
+// 非 Windows 平台：目录扫描
 // ---------------------------------------------------------------------------
 
+/// 判断文件名是否为支持的字体格式（.ttf / .ttc / .otf）。
 #[cfg(not(target_os = "windows"))]
 fn is_font_extension(name: &str) -> bool {
     let lower = name.to_lowercase();
     lower.ends_with(".ttf") || lower.ends_with(".ttc") || lower.ends_with(".otf")
 }
 
+/// 递归扫描目录，返回所有字体文件路径及其 family name。
 #[cfg(not(target_os = "windows"))]
 fn scan_font_directory(dir: &Path) -> Vec<(String, Vec<String>)> {
     let mut results = Vec::new();
@@ -380,9 +440,10 @@ fn dirs_fallback() -> Option<PathBuf> {
 }
 
 // ---------------------------------------------------------------------------
-// Windows font discovery (registry + known candidates)
+// Windows：注册表扫描 + 已知字体后备
 // ---------------------------------------------------------------------------
 
+/// 去除注册表字体值中的 "(TrueType)" 等后缀。
 #[cfg(target_os = "windows")]
 fn strip_registry_font_suffix(font_name: &str) -> &str {
     match font_name.rsplit_once(" (") {
@@ -492,7 +553,7 @@ fn resolve_subtitle_system_font_config(font_families: &[String]) -> SubtitleSyst
 }
 
 // ---------------------------------------------------------------------------
-// macOS font discovery (directory scan + CoreText alternatives)
+// macOS：目录扫描 + CoreText 字体后备
 // ---------------------------------------------------------------------------
 
 #[cfg(target_os = "macos")]
@@ -549,8 +610,14 @@ fn build_macos_font_candidates() -> Vec<SystemFontCandidate> {
 
 #[cfg(target_os = "macos")]
 static MACOS_FALLBACK_PATHS: [(&str, &[&str]); 3] = [
-    ("/System/Library/Fonts/PingFang.ttc", &["PingFang SC", "苹方"]),
-    ("/System/Library/Fonts/Hiragino Sans GB.ttc", &["Hiragino Sans GB"]),
+    (
+        "/System/Library/Fonts/PingFang.ttc",
+        &["PingFang SC", "苹方"],
+    ),
+    (
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        &["Hiragino Sans GB"],
+    ),
     (
         "/System/Library/Fonts/Supplemental/Songti.ttc",
         &["Songti SC"],
@@ -572,7 +639,7 @@ fn resolve_subtitle_system_font_config(font_families: &[String]) -> SubtitleSyst
 }
 
 // ---------------------------------------------------------------------------
-// Linux font discovery (directory scan)
+// Linux：目录扫描 + 已知字体后备
 // ---------------------------------------------------------------------------
 
 #[cfg(target_os = "linux")]
@@ -655,7 +722,11 @@ fn resolve_subtitle_system_font_config(font_families: &[String]) -> SubtitleSyst
     build_font_config(
         &LINUX_FONT_CANDIDATES,
         font_families,
-        &["Noto Sans CJK SC", "WenQuanYi Zen Hei", "WenQuanYi Micro Hei"],
+        &[
+            "Noto Sans CJK SC",
+            "WenQuanYi Zen Hei",
+            "WenQuanYi Micro Hei",
+        ],
         "Noto Sans CJK SC",
     )
 }
@@ -665,6 +736,11 @@ fn resolve_subtitle_system_font_config(_font_families: &[String]) -> SubtitleSys
     SubtitleSystemFontConfig::default()
 }
 
+// ---- Tauri command ----
+
+/// 前端调用的入口：传入期望的字体族名列表，返回系统字体配置。
+///
+/// 移动端/iOS/Android 直接返回空配置（暂不支持系统字体扫描）。
 #[tauri::command]
 pub fn subtitle_get_system_font_config(font_families: Vec<String>) -> SubtitleSystemFontConfig {
     resolve_subtitle_system_font_config(&font_families)

@@ -33,7 +33,7 @@ impl Clone for FileWriter {
 }
 
 impl FileWriter {
-    /// 检查目标路径所在磁盘是否有足够空间 (per D-07)
+    /// 检查目标路径所在磁盘是否有足够空间
     pub fn check_disk_space(path: &str, needed: u64) -> Result<(), DownloadError> {
         let check_path = Path::new(path);
         let dir = check_path.parent().unwrap_or(check_path);

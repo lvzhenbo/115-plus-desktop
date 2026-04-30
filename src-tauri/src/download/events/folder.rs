@@ -22,7 +22,7 @@ pub struct FolderState {
     pub completed_bytes: u64,
 }
 
-/// 文件夹进度聚合器 — 追踪文件夹下载状态并从子任务快照计算聚合进度 (per D-04)
+/// 文件夹进度聚合器 — 追踪文件夹下载状态并从子任务快照计算聚合进度
 pub struct FolderAggregator {
     /// parent_gid → FolderState
     folders: Mutex<HashMap<String, FolderState>>,
@@ -166,7 +166,7 @@ impl FolderAggregator {
         })
     }
 
-    /// 从子任务快照聚合文件夹进度项 (per D-04, D-05)
+    /// 从子任务快照聚合文件夹进度项
     /// 返回文件夹级别的 ProgressItem 列表，追加到 download:progress 数组。
     pub fn aggregate(&self, child_items: &[ProgressItem]) -> Vec<ProgressItem> {
         {
