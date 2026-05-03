@@ -206,7 +206,7 @@ pub fn run() {
             // 下载
             download::store::download_delete_finished_tasks,
             download::store::download_get_top_level_tasks,
-            download::events::download_provide_url,
+            download::events::url::download_provide_url,
             download::queue::download_enqueue_file,
             download::queue::download_set_max_concurrent,
             download::queue::download_set_speed_limit,

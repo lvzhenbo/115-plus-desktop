@@ -11,10 +11,7 @@ pub use progress::{
     emit_url_expired,
 };
 pub use sync::emit_download_task_status;
-#[doc(hidden)]
-pub use url::__cmd__download_provide_url;
 pub use url::UrlResolver;
-pub use url::download_provide_url;
 
 use super::store::DbHandle;
 use std::sync::Arc;
