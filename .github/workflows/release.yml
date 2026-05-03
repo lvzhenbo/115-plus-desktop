@@ -11,7 +11,7 @@ on:
       release_notes:
         description: "Optional Markdown prefix for release notes; supports GFM alerts and uses \\n for line breaks"
         required: false
-        default: '> [!NOTE]\n> Add manual release notes here'
+        default: "> [!NOTE]\\n> Add manual release notes here"
         type: string
 
 jobs:
@@ -21,7 +21,7 @@ jobs:
       contents: write
     outputs:
       version: ${{ steps.release-it.outputs.version }}
-      changelog: ${{ steps.release-it.outputs.changelog }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -34,7 +34,9 @@ jobs:
           node-version: lts/*
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
+        with:
+          cache: true
 
       - name: Install dependencies
         run: pnpm install
@@ -44,18 +46,17 @@ jobs:
           git config user.name "${GITHUB_ACTOR}"
           git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
 
-      - name: Run release-it
-        id: release-it
+      - name: Generate changelog
+        id: changelog
         run: |
-          pnpm release --ci ${{ inputs.version }}
-          VERSION=$(node -p "require('./package.json').version")
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          CHANGELOG=$(pnpm release --changelog)
 
-          CHANGELOG=$(awk '/^## \[/{if(c++) exit}c' CHANGELOG.md)
-
-          if [ -n "$RELEASE_NOTES_RAW" ] && [ "$RELEASE_NOTES_RAW" != "$RELEASE_NOTES_TEMPLATE" ]; then
-            RELEASE_NOTES=$(printf '%b' "$RELEASE_NOTES_RAW")
-            CHANGELOG=$(printf '%s\n\n%s' "$RELEASE_NOTES" "$CHANGELOG")
+          # 如果用户提供了自定义 release notes（非默认模板），则追加到 changelog 之前
+          NOTES='${{ inputs.release_notes }}'
+          DEFAULT='> [!NOTE]\n> Add manual release notes here'
+          if [ -n "$NOTES" ] && [ "$NOTES" != "$DEFAULT" ]; then
+            NOTES=$(printf '%b' "$NOTES")
+            CHANGELOG=$(printf '%s\n\n%s' "$NOTES" "$CHANGELOG")
           fi
 
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
@@ -64,8 +65,15 @@ jobs:
           echo "$EOF" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_NOTES_RAW: ${{ inputs.release_notes }}
-          RELEASE_NOTES_TEMPLATE: '> [!NOTE]\n> Add manual release notes here'
+
+      - name: Run release-it
+        id: release-it
+        run: |
+          pnpm release --ci ${{ inputs.version }}
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build:
     needs: bump
