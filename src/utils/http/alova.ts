@@ -11,7 +11,7 @@ import { createRateLimiter, sleep, getBackoffDelay, MAX_RATE_LIMIT_RETRY } from 
 export interface ResponseData<T> {
   state: 0 | 1 | boolean;
   code: number;
-  message: string;
+  message?: string;
   data: T;
   error?: string;
   errno?: number;
@@ -99,8 +99,10 @@ export const alovaInst = createAlova({
         } else if (json.code === 40140116 || json.code === 40140119) {
           message.error('登录失效，请重新登录');
           userStore.logout();
+        } else if (json.code === 911) {
+          message.error('已触发115限流，请打开115网页端或APP端验证后重试');
         } else {
-          message.error(json.message);
+          message.error(json.message || json.error || '未知错误');
         }
         throw json;
       }
