@@ -55,9 +55,7 @@
           </NProgress>
         </div>
         <template #footer>
-          <NButton block strong quaternary type="error" @click="userStore.logout">
-            退出登录
-          </NButton>
+          <NButton block strong quaternary type="error" @click="handleLogout"> 退出登录 </NButton>
         </template>
       </NPopover>
       <NMenu
@@ -141,9 +139,6 @@
   import SearchModal from './components/SearchModal/SearchModal.vue';
   import { useSettingStore } from '@/store/setting';
   import { downloadDir } from '@tauri-apps/api/path';
-  import { listen } from '@tauri-apps/api/event';
-  import { ask } from '@tauri-apps/plugin-dialog';
-  import { exit } from '@tauri-apps/plugin-process';
   import { useDownloadManager } from '@/composables/useDownloadManager';
   import { useUploadManager } from '@/composables/useUploadManager';
   import { useCheckUpdate } from '@/composables/useCheckUpdate';
@@ -232,23 +227,15 @@
   const settingStore = useSettingStore();
   const offlineDownloadShow = ref(false);
   const searchShow = ref(false);
-  // 布局层直接初始化并消费下载/上传管理器。
-  const {
-    init: initDownloadManager,
-    pauseAllTasks: pauseAllDownloads,
-    hasActiveDownloads,
-  } = useDownloadManager();
-  const {
-    init: initUploadManager,
-    pauseAllTasks: pauseAllUploads,
-    hasActiveUploads,
-  } = useUploadManager();
+
+  // 退出登录前暂停所有传输任务，避免 token 失效后任务异常。
+  const { pauseAllTasks: pauseAllDownloads } = useDownloadManager();
+  const { pauseAllTasks: pauseAllUploads } = useUploadManager();
   const { checkForUpdate } = useCheckUpdate();
 
-  /** 暂停所有任务并退出应用 */
-  const pauseAndClose = async () => {
+  const handleLogout = async () => {
     await Promise.all([pauseAllDownloads(), pauseAllUploads()]);
-    await exit(0);
+    userStore.logout();
   };
 
   // 保持菜单高亮与当前路由一致。
@@ -265,34 +252,7 @@
       settingStore.downloadSetting.downloadPath = await downloadDir();
     }
 
-    // 监听系统托盘退出事件，复用前端的任务暂停 + 确认对话框逻辑
-    void listen('tray-quit', async () => {
-      const active = hasActiveDownloads.value || hasActiveUploads.value;
-      if (!active) {
-        await exit(0); // 无活跃任务，直接退出
-        return;
-      }
-
-      if (settingStore.generalSetting.skipExitConfirm) {
-        await pauseAndClose();
-        return;
-      }
-
-      const confirmed = await ask('当前有正在进行的传输任务，确定退出？', {
-        title: '提示',
-        kind: 'warning',
-        okLabel: '确定',
-        cancelLabel: '取消',
-      });
-      if (confirmed) {
-        await pauseAndClose();
-      }
-    });
-
-    // 初始化下载和上传管理器，确保在应用启动时就能正确加载和管理任务。
-    await Promise.all([initDownloadManager(), initUploadManager()]);
-
-    // 启动时自动检查更新
+    // 登录后自动检查更新
     if (settingStore.generalSetting.autoCheckUpdate) {
       void checkForUpdate({ silent: true });
     }
