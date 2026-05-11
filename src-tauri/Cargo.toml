@@ -26,10 +26,10 @@ name = "oof_plus_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.6.0", features = [] }
+tauri-build = { version = "2.6.1", features = [] }
 
 [dependencies]
-tauri = { version = "2.11.0", features = [
+tauri = { version = "2.11.1", features = [
   "devtools",
   "protocol-asset",
   "tray-icon",
@@ -47,7 +47,7 @@ sha1 = "0.11.0"
 reqwest = { version = "0.13.3", features = ["stream"] }
 futures-util = "0.3.32"
 thiserror = "2.0.18"
-tokio = { version = "1.52.1", features = ["full"] }
+tokio = { version = "1.52.3", features = ["full"] }
 uuid = { version = "1.23.1", features = ["v4"] }
 log = "0.4.29"
 tauri-plugin-log = "2.8.0"
