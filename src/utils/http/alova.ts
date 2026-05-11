@@ -18,10 +18,6 @@ export interface ResponseData<T> {
 }
 
 const message = useMessage();
-const userStore = useUserStoreWithOut();
-const settingStore = useSettingStoreWithOut();
-
-const apiLimiter = createRateLimiter(() => settingStore.generalSetting.apiRateLimit);
 
 const { onAuthRequired, onResponseRefreshToken } = createServerTokenAuthentication({
   refreshTokenOnSuccess: {
@@ -33,6 +29,8 @@ const { onAuthRequired, onResponseRefreshToken } = createServerTokenAuthenticati
       return json.code === 40140125 || json.code === 40140121;
     },
     handler: async (_response, _method) => {
+      const userStore = useUserStoreWithOut();
+
       try {
         const res = await refreshToken({
           refresh_token: userStore.refreshToken,
@@ -49,9 +47,13 @@ const { onAuthRequired, onResponseRefreshToken } = createServerTokenAuthenticati
     },
   },
   assignToken: (method) => {
+    const userStore = useUserStoreWithOut();
+
     method.config.headers.Authorization = `Bearer ${userStore.accessToken}`;
   },
   login: async (response, _method) => {
+    const userStore = useUserStoreWithOut();
+
     const json: ResponseData<DeviceCodeToTokenResponseData> = await response.clone().json();
     userStore.accessToken = json.data.access_token;
     userStore.refreshToken = json.data.refresh_token;
@@ -63,6 +65,9 @@ export const alovaInst = createAlova({
   requestAdapter: adapterTauriFetch(),
   timeout: 40000,
   beforeRequest: onAuthRequired(async (method) => {
+    const settingStore = useSettingStoreWithOut();
+    const apiLimiter = createRateLimiter(() => settingStore.generalSetting.apiRateLimit);
+
     // 对非认证请求进行令牌桶限流
     const authRole = method.meta?.authRole;
     if (authRole === undefined) {
@@ -72,6 +77,8 @@ export const alovaInst = createAlova({
   }),
   responded: onResponseRefreshToken({
     onSuccess: async (response, _method) => {
+      const userStore = useUserStoreWithOut();
+
       if (response.status >= 400) {
         throw new Error(response.statusText);
       }
