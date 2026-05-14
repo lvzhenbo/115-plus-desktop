@@ -2,13 +2,13 @@
 
 ![GitHub License](https://img.shields.io/github/license/lvzhenbo/115-plus-desktop) ![GitHub Release](https://img.shields.io/github/v/release/lvzhenbo/115-plus-desktop) ![GitHub Actions](https://img.shields.io/github/actions/workflow/status/lvzhenbo/115-plus-desktop/ci.yml)
 
-基于 [115 网盘开放平台](https://open.115.com/) 的第三方开源桌面客户端，使用 **Tauri 2** + **Vue 3** + **TypeScript** 构建，支持文件管理、Aria2 高速下载、OSS 分片上传和 HLS 视频播放。
+基于 [115 网盘开放平台](https://open.115.com/) 的第三方开源桌面客户端，使用 **Tauri 2** + **Vue 3** + **TypeScript** 构建，支持文件管理、原生高速下载、OSS 分片上传和 HLS 视频播放。
 
 ## 下载
 
-前往 [Releases](https://github.com/lvzhenbo/115-plus-desktop/releases) 下载最新版本安装包，也可到 [GitHub Actions](https://github.com/lvzhenbo/115-plus-desktop/actions) 下载 CI 流水线产物。
+前往 [Releases](https://github.com/lvzhenbo/115-plus-desktop/releases) 下载最新稳定版本安装包，也可到 [GitHub Actions](https://github.com/lvzhenbo/115-plus-desktop/actions) 下载 CI 流水线产物。
 
-支持 Windows、macOS 和 Linux 平台。
+支持 Windows、macOS 和 Linux 平台，**目前非Windows平台正在处于测试状态，欢迎有相关环境和设备的用户使用CI构建测试，一起来推进1.1.0版本。**
 
 ## 功能
 
@@ -27,7 +27,7 @@
 
 ### 文件下载
 
-- [x] Aria2 多线程高速下载
+- [x] 原生多线程高速下载
 - [x] 断点续传
 - [x] 文件夹递归下载
 - [x] 下载暂停/恢复/重试
@@ -45,7 +45,7 @@
 
 - [x] HLS 在线视频播放
 - [x] 播放进度记忆与恢复
-- [ ] 视频字幕
+- [x] 视频字幕
 
 ### 云下载（离线下载）
 
@@ -78,7 +78,6 @@
 | 样式        | Tailwind CSS                  |
 | 状态管理    | Pinia（持久化至 Tauri Store） |
 | HTTP 客户端 | Alova                         |
-| 下载引擎    | Aria2（Sidecar）              |
 | 视频播放    | HLS.js                        |
 | 数据库      | SQLite                        |
 | 后端语言    | Rust                          |
@@ -88,20 +87,43 @@
 ```
 src/                          # 前端源码
 ├── api/                      # 115 网盘 API 封装
+│   └── types/                # API 类型定义
+├── assets/                   # 静态资源
 ├── components/               # 可复用 UI 组件
-├── composables/              # 组合式函数（下载/上传管理、更新检查）
-├── db/                       # SQLite 数据库操作
+│   ├── BatchRenameModal/     # 批量重命名
+│   ├── DetailModal/          # 文件详情
+│   ├── FileExplorer/         # 文件浏览器
+│   ├── FolderModal/          # 文件夹操作
+│   ├── NewFolderModal/       # 新建文件夹
+│   └── RenameModal/          # 重命名
+├── composables/              # 组合式函数（下载/上传管理、更新检查、字幕控制等）
 ├── layout/                   # 布局组件
+│   └── components/           # 布局子组件（离线下载弹窗、搜索弹窗）
 ├── router/                   # 路由配置
 ├── store/                    # Pinia 状态管理
-├── utils/                    # 工具函数（HTTP 适配器等）
+├── styles/                   # 样式文件（Tailwind CSS）
+├── utils/                    # 工具函数
+│   ├── http/                 # HTTP 适配器（Alova、Tauri）
+│   └── subtitles/            # 字幕解析与渲染（ASS/文本）
 └── views/                    # 页面视图
+    ├── About/                # 关于
+    ├── CloudDownload/        # 云下载（离线下载）
+    ├── Download/             # 下载管理
+    ├── Home/                 # 首页（文件列表）
+    ├── Login/                # 登录
+    ├── RecycleBin/           # 回收站
+    ├── Setting/              # 设置
+    ├── Upload/               # 上传管理
+    ├── UserInfo/             # 用户信息
+    └── VideoPlayer/          # 视频播放器
 src-tauri/                    # Tauri 后端（Rust）
 ├── src/
 │   ├── lib.rs                # 主程序（Aria2 管理、插件注册）
-│   ├── upload.rs             # 文件上传（SHA1 计算、OSS 分片上传）
-│   └── main.rs               # 入口
-├── binaries/                 # Aria2 可执行文件
+│   ├── main.rs               # 入口
+│   ├── subtitle.rs           # 字幕处理
+│   ├── tray.rs               # 系统托盘
+│   ├── download/             # 下载引擎（多线程、断点续传、队列管理、持久化）
+│   └── upload/               # 上传引擎（SHA1 计算、OSS 分片上传、队列管理）
 └── capabilities/             # Tauri 权限配置
 ```
 
@@ -121,12 +143,6 @@ src-tauri/                    # Tauri 后端（Rust）
 ```conf
 VITE_APP_ID=你的AppID
 VITE_APP_KEY=你的AppKey
-```
-
-### 获取 Aria2
-
-```bash
-pnpm get-aria2
 ```
 
 ### 开发
