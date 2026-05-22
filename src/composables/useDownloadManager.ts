@@ -132,12 +132,6 @@ const TERMINAL_DOWNLOAD_STATUS_SET = new Set<DownloadStatus>([
   'verify_failed',
 ]);
 const PRESERVED_DOWNLOAD_STATUS_SET = new Set<DownloadStatus>(['active', 'pausing', 'paused']);
-const ACTIVE_PRESENCE_DOWNLOAD_STATUS_SET = new Set<DownloadStatus>([
-  'active',
-  'waiting',
-  'paused',
-  'pausing',
-]);
 const FOLDER_COLLECTION_ABORTED = 'folder-collection-aborted';
 
 /** 统一的下载 command 调用入口。 */
@@ -650,11 +644,10 @@ export const useDownloadManager = createSharedComposable(() => {
     return { activeCount, totalSpeed, completed, failed, paused, waiting, total };
   });
 
-  /** 是否有活跃的下载任务（对齐旧版 db/downloads.ts hasActiveDownloads SQL 语义） */
+  /** 是否有活跃的下载任务（仅统计正在下载、排队等待、或正在收集文件夹文件的任务） */
   const hasActiveDownloads = computed(() =>
     displayList.value.some(
-      (d) =>
-        (d.status != null && ACTIVE_PRESENCE_DOWNLOAD_STATUS_SET.has(d.status)) || d.isCollecting,
+      (d) => d.status === 'active' || d.status === 'waiting' || d.isCollecting,
     ),
   );
 

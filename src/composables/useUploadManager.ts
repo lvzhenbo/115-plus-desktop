@@ -617,9 +617,9 @@ export const useUploadManager = createSharedComposable(() => {
     };
   });
 
-  // 与下载管理器保持一致，布局层和更新器都直接消费这个布尔值。
+  /** 是否有活跃的上传任务（仅统计正在上传或正在计算哈希的任务） */
   const hasActiveUploads = computed(() =>
-    displayList.value.some((item) => ACTIVE_UPLOAD_STATUS_SET.has(item.status)),
+    displayList.value.some((item) => item.status === 'uploading' || item.status === 'hashing'),
   );
 
   // `init` 设计成幂等入口，页面重复调用只会复用同一个初始化 promise。

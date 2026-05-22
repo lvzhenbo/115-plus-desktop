@@ -61,17 +61,27 @@ const { onAuthRequired, onResponseRefreshToken } = createServerTokenAuthenticati
   },
 });
 
+// 全局单例速率限制器 — 惰性初始化，避免模块加载时访问尚未初始化的 Pinia store
+let globalApiLimiter: ReturnType<typeof createRateLimiter> | null = null;
+
+const getApiLimiter = () => {
+  if (!globalApiLimiter) {
+    globalApiLimiter = createRateLimiter(() => {
+      const settingStore = useSettingStoreWithOut();
+      return settingStore.generalSetting.apiRateLimit;
+    });
+  }
+  return globalApiLimiter;
+};
+
 export const alovaInst = createAlova({
   requestAdapter: adapterTauriFetch(),
   timeout: 40000,
   beforeRequest: onAuthRequired(async (method) => {
-    const settingStore = useSettingStoreWithOut();
-    const apiLimiter = createRateLimiter(() => settingStore.generalSetting.apiRateLimit);
-
     // 对非认证请求进行令牌桶限流
     const authRole = method.meta?.authRole;
     if (authRole === undefined) {
-      await apiLimiter.acquire();
+      await getApiLimiter().acquire();
     }
     console.log(method);
   }),
