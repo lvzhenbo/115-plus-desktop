@@ -573,5 +573,9 @@
     getFileList();
   }
 
-  defineExpose({ navigate, refresh });
+  function getItems(): MyFile[] {
+    return data.value;
+  }
+
+  defineExpose({ navigate, refresh, getItems });
 </script>

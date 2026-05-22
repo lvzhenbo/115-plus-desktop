@@ -265,6 +265,14 @@ export interface MyFile {
    */
   upt: number;
   v_img: string;
+  /**
+   * 图片缩略图地址
+   */
+  thumb?: string;
+  /**
+   * 原图地址
+   */
+  uo?: string;
 }
 
 export interface FileLabel {

@@ -68,7 +68,8 @@
 
     <!-- 图标 -->
     <div class="w-16 h-16 flex items-center justify-center mb-2">
-      <span class="text-4xl leading-none">{{ icon }}</span>
+      <img v-if="item.thumb" :src="item.thumb" class="w-full h-full object-cover rounded" />
+      <span v-else class="text-4xl leading-none">{{ icon }}</span>
     </div>
 
     <!-- 文件名 -->
@@ -103,7 +104,8 @@
 
     <!-- 图标 -->
     <div class="w-8 h-8 flex items-center justify-center shrink-0">
-      <span class="text-xl leading-none">{{ icon }}</span>
+      <img v-if="item.thumb" :src="item.thumb" class="w-full h-full object-cover rounded" />
+      <span v-else class="text-xl leading-none">{{ icon }}</span>
     </div>
 
     <!-- 名称 -->

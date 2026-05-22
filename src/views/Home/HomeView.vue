@@ -1,19 +1,28 @@
 <template>
-  <FileExplorer
-    ref="explorerRef"
-    v-model:cid="cid"
-    v-model:view-mode="userStore.homeViewMode"
-    v-model:sort-config="userStore.homeSortConfig"
-    class="h-[calc(100vh-59px)]"
-    @download="handleDownload"
-    @batch-download="handleBatchDownload"
-    @upload-file="handleUploadFiles"
-    @upload-folder="handleUploadFolder"
-    @open-file="handleOpenFile"
-  />
+  <div>
+    <FileExplorer
+      ref="explorerRef"
+      v-model:cid="cid"
+      v-model:view-mode="userStore.homeViewMode"
+      v-model:sort-config="userStore.homeSortConfig"
+      class="h-[calc(100vh-59px)]"
+      @download="handleDownload"
+      @batch-download="handleBatchDownload"
+      @upload-file="handleUploadFiles"
+      @upload-folder="handleUploadFolder"
+      @open-file="handleOpenFile"
+    />
+    <NImageGroup
+      v-model:show="imgPreviewVisible"
+      v-model:current="imgPreviewIndex"
+      :src-list="imgPreviewList"
+      :render-toolbar="renderToolbar"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
+  import type { ImageRenderToolbarProps } from 'naive-ui';
   import { open } from '@tauri-apps/plugin-dialog';
   import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { emit, listen } from '@tauri-apps/api/event';
@@ -27,6 +36,9 @@
   const userStore = useUserStore();
   const explorerRef = useTemplateRef('explorerRef');
   const cid = ref('0');
+  const imgPreviewVisible = ref(false);
+  const imgPreviewList = ref<string[]>([]);
+  const imgPreviewIndex = ref(0);
 
   const { download: downloadFile, batchDownload: batchDownloadFiles } = useDownloadManager();
 
@@ -82,6 +94,20 @@
       } catch (e) {
         console.error(e);
       }
+    } else if (file.uo) {
+      // 收集当前目录下所有图片文件，支持多图预览
+      const allItems = explorerRef.value?.getItems() || [];
+      const imageFiles = allItems.filter((f) => f.uo);
+      if (imageFiles.length > 0) {
+        imgPreviewList.value = imageFiles.map((f) => f.uo!);
+        const idx = imageFiles.findIndex((f) => f.fid === file.fid);
+        imgPreviewIndex.value = idx >= 0 ? idx : 0;
+      } else {
+        // 兜底：至少预览当前点击的图片
+        imgPreviewList.value = [file.uo];
+        imgPreviewIndex.value = 0;
+      }
+      imgPreviewVisible.value = true;
     }
   };
 
@@ -160,5 +186,18 @@
       console.error(error);
       message.error('上传任务添加失败');
     }
+  };
+
+  const renderToolbar = ({ nodes }: ImageRenderToolbarProps) => {
+    return [
+      nodes.prev,
+      nodes.next,
+      nodes.rotateCounterclockwise,
+      nodes.rotateClockwise,
+      nodes.resizeToOriginalSize,
+      nodes.zoomOut,
+      nodes.zoomIn,
+      nodes.close,
+    ];
   };
 </script>
