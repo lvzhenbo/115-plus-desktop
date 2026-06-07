@@ -8,7 +8,9 @@
 
 前往 [Releases](https://github.com/lvzhenbo/115-plus-desktop/releases) 下载最新稳定版本安装包，也可到 [GitHub Actions](https://github.com/lvzhenbo/115-plus-desktop/actions) 下载 CI 流水线产物。
 
-支持 Windows、macOS 和 Linux 平台，**目前非Windows平台正在处于测试状态，欢迎有相关环境和设备的用户使用CI构建测试，一起来推进1.1.0版本。**
+支持 Windows、macOS 和 Linux 平台，**目前非 Windows 平台正在处于测试状态，欢迎有相关环境和设备的用户使用CI构建测试，一起来推进 1.1.0 版本。**
+
+**注意：对于 Linux 这种有多种发行版的平台，限于 CI 限制暂时只提供 Ubuntu 打包出来的包，所以在其他发行版上可能遇到一些非功能性的问题，可尝试自己打包（没有115开放平台的可加入QQ群获取）。**
 
 ## 功能
 
