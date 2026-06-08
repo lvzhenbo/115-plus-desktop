@@ -23,6 +23,10 @@ export const useSettingStore = defineStore(
       apiRateLimit: 2,
       /** 应用日志级别 */
       logLevel: 'info' as AppLogLevel,
+      /** 窗口最小宽度（px） */
+      minWindowWidth: 1280,
+      /** 窗口最小高度（px） */
+      minWindowHeight: 720,
     });
 
     const videoPlayerSetting = ref({

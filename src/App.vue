@@ -3,6 +3,9 @@
   import { useDownloadManager } from '@/composables/useDownloadManager';
   import { useUploadManager } from '@/composables/useUploadManager';
   import { useAppExit } from '@/composables/useAppExit';
+  import { useSettingStoreWithOut } from '@/store/setting';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { LogicalSize } from '@tauri-apps/api/dpi';
 
   const osThemeRef = useOsTheme();
   const theme = computed(() => {
@@ -15,6 +18,16 @@
   const { init: initDownloadManager } = useDownloadManager();
   const { init: initUploadManager } = useUploadManager();
   const { init: initAppExit } = useAppExit();
+
+  // 动态设置窗口最小尺寸
+  const settingStore = useSettingStoreWithOut();
+  watch(
+    () => [settingStore.generalSetting.minWindowWidth, settingStore.generalSetting.minWindowHeight],
+    async ([width, height]) => {
+      await getCurrentWindow().setMinSize(new LogicalSize(width, height));
+    },
+    { immediate: true },
+  );
 
   onMounted(async () => {
     // 初始化下载/上传管理器（幂等，设置事件监听 + 同步后端设置）

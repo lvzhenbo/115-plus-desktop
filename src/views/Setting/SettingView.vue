@@ -45,6 +45,28 @@
               :options="LOG_LEVEL_OPTIONS"
             />
           </NFormItem>
+          <NFormItem label="窗口最小宽度" path="generalSetting.minWindowWidth">
+            <NInputNumber
+              v-model:value="settingStore.generalSetting.minWindowWidth"
+              :min="800"
+              :max="3840"
+              :step="10"
+              placeholder="1280"
+            >
+              <template #suffix> px </template>
+            </NInputNumber>
+          </NFormItem>
+          <NFormItem label="窗口最小高度" path="generalSetting.minWindowHeight">
+            <NInputNumber
+              v-model:value="settingStore.generalSetting.minWindowHeight"
+              :min="600"
+              :max="2160"
+              :step="10"
+              placeholder="720"
+            >
+              <template #suffix> px </template>
+            </NInputNumber>
+          </NFormItem>
         </NForm>
       </NTabPane>
       <NTabPane name="videoPlayerSetting" tab="视频播放器设置">
@@ -173,7 +195,7 @@
       </NTabPane>
       <NTabPane name="downloadSetting" tab="下载设置">
         <NAlert title="注意" type="warning" class="mb-2">
-          理论上，115只允许两个连接，所以每服务器连接数超过2应该是无效的，不过还是按照之前的设置默认为16，如果下载出现问题可改为2。
+          理论上，115只允许两个连接，所以每任务服务器连接数超过2应该是无效的，不过还是按照之前的设置默认为16，如果下载出现问题可改为2。
         </NAlert>
         <NForm label-placement="left" label-width="auto">
           <NFormItem label="下载目录" path="downloadSetting.downloadPath">
@@ -206,7 +228,7 @@
               :step="1"
             />
           </NFormItem>
-          <NFormItem label="全局连接并发数" path="downloadSetting.maxGlobalConnections">
+          <NFormItem label="每任务服务器连接数" path="downloadSetting.maxGlobalConnections">
             <NInputNumber
               v-model:value="settingStore.downloadSetting.maxGlobalConnections"
               :min="1"
