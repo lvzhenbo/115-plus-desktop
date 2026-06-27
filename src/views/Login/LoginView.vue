@@ -55,6 +55,7 @@
   import type { AuthDeviceCodeResponseData } from '@/api/types/user';
   import { authDeviceCode, deviceCodeToToken, qrCodeStatus, userInfo } from '@/api/user';
   import { useUserStore } from '@/store/user';
+  import { randomInt } from 'es-toolkit';
 
   const themeVars = useThemeVars();
   const codeVerifier = ref('');
@@ -84,7 +85,7 @@
   };
 
   const getCodeChallenge = async () => {
-    codeVerifier.value = generateRandomString(Math.floor(Math.random() * (128 - 43 + 1)) + 43);
+    codeVerifier.value = generateRandomString(randomInt(43, 128));
     codeChallenge.value = await generateCodeChallenge();
   };
 
@@ -146,7 +147,7 @@
     let result = '';
     const charactersLength = characters.length;
     for (let i = 0; i < length; i++) {
-      result += characters.charAt(Math.floor(Math.random() * charactersLength));
+      result += characters.charAt(randomInt(0, charactersLength - 1));
     }
     return result;
   };

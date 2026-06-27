@@ -5,6 +5,7 @@ import wasmUrl from 'jassub/dist/wasm/jassub-worker.wasm?url';
 import modernWasmUrl from 'jassub/dist/wasm/jassub-worker-modern.wasm?url';
 import type { ParsedAssSubtitleTrack } from './types';
 import { normalizeFontFamily } from './font';
+import { uniq } from 'es-toolkit';
 
 interface SystemFontSource {
   familyNames: string[];
@@ -20,7 +21,7 @@ interface SystemFontConfig {
 const systemFontConfigPromises = new Map<string, Promise<SystemFontConfig>>();
 
 function buildFontConfigKey(fontFamilies: string[]) {
-  return [...new Set(fontFamilies.map((f) => normalizeFontFamily(f).toLowerCase()).filter(Boolean))]
+  return uniq(fontFamilies.map((f) => normalizeFontFamily(f).toLowerCase()).filter(Boolean))
     .sort()
     .join('\u0000');
 }

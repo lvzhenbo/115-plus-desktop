@@ -35,7 +35,6 @@
   import { quotaInfo, urlTaskAdd } from '@/api/cloud';
   import type { QuotaInfoResponseData } from '@/api/types/cloud';
   import { useUserStore } from '@/store/user';
-  import { trim } from 'radash';
 
   const show = defineModel('show', {
     type: Boolean,
@@ -71,7 +70,7 @@
   };
 
   const handleDownload = async () => {
-    if (!trim(data.value.urls, '\n')) {
+    if (!data.value.urls.trim()) {
       message.error('请输入下载链接');
       return;
     }

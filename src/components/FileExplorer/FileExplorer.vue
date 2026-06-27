@@ -183,7 +183,7 @@
   const cid = defineModel<string>('cid', { default: '0' });
   const viewMode = defineModel<ViewMode>('viewMode', { default: 'list' });
   const sortConfig = defineModel<SortConfig>('sortConfig', {
-    default: { field: 'user_utime', direction: 'desc' },
+    default: () => ({ field: 'user_utime', direction: 'desc' }),
   });
 
   onMounted(() => {

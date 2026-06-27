@@ -6,7 +6,8 @@ import { useUserStoreWithOut } from '@/store/user';
 import type { DeviceCodeToTokenResponseData } from '@/api/types/user';
 import { refreshToken } from '@/api/user';
 import { useSettingStoreWithOut } from '@/store/setting';
-import { createRateLimiter, sleep, getBackoffDelay, MAX_RATE_LIMIT_RETRY } from '@/utils/rateLimit';
+import { createRateLimiter, getBackoffDelay, MAX_RATE_LIMIT_RETRY } from '@/utils/rateLimit';
+import { delay } from 'es-toolkit';
 
 export interface ResponseData<T> {
   state: 0 | 1 | boolean;
@@ -101,9 +102,9 @@ export const alovaInst = createAlova({
           ((_method.meta as Record<string, unknown> | undefined)?.__rateLimitRetry as number) || 0;
         if (retryCount < MAX_RATE_LIMIT_RETRY) {
           _method.meta = { ...(_method.meta || {}), __rateLimitRetry: retryCount + 1 };
-          const delay = getBackoffDelay(retryCount);
-          console.warn(`[限流] ${delay / 1000}s 后重试第 ${retryCount + 1} 次: ${_method.url}`);
-          await sleep(delay);
+          const backoffMs = getBackoffDelay(retryCount);
+          console.warn(`[限流] ${backoffMs / 1000}s 后重试第 ${retryCount + 1} 次: ${_method.url}`);
+          await delay(backoffMs);
           return _method.send();
         }
         // 超过重试次数，直接抛出（不弹 message，由调用方处理）

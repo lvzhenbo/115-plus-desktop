@@ -4,7 +4,8 @@ import { addFolder } from '@/api/file';
 import { uploadGetToken, uploadInit, uploadResume } from '@/api/upload';
 import type { UploadInitParams } from '@/api/types/upload';
 import { useSettingStore } from '@/store/setting';
-import { getBackoffDelay, isRateLimitError, sleep } from '@/utils/rateLimit';
+import { getBackoffDelay, isRateLimitError } from '@/utils/rateLimit';
+import { delay } from 'es-toolkit';
 
 // 上传列表的状态机完全以后端为准，前端只消费这些状态并做交互分发。
 export type UploadStatus =
@@ -320,7 +321,7 @@ export const useUploadManager = createSharedComposable(() => {
         return response.data;
       } catch (error) {
         if (isRateLimitError(error) && attempt < maxRetry) {
-          await sleep(getBackoffDelay(attempt));
+          await delay(getBackoffDelay(attempt));
           continue;
         }
         throw error;

@@ -121,12 +121,8 @@
   import { InfoCircleOutlined } from '@vicons/antd';
   import { updateFile } from '@/api/file';
   import type { MyFile } from '@/api/types/file';
-  import {
-    sleep,
-    isRateLimitError,
-    getBackoffDelay,
-    MAX_RATE_LIMIT_RETRY,
-  } from '@/utils/rateLimit';
+  import { isRateLimitError, getBackoffDelay, MAX_RATE_LIMIT_RETRY } from '@/utils/rateLimit';
+  import { delay } from 'es-toolkit';
   import type { DataTableColumns } from 'naive-ui';
 
   const show = defineModel('show', {
@@ -441,7 +437,7 @@
           } catch (error) {
             if (isRateLimitError(error) && retries < MAX_RATE_LIMIT_RETRY) {
               retries++;
-              await sleep(getBackoffDelay(retries));
+              await delay(getBackoffDelay(retries));
             } else {
               failCount++;
               console.error(`重命名失败: ${item.oldName}`, error);
@@ -451,7 +447,7 @@
         }
         // 请求间隔避免频繁调用
         if (toRename.indexOf(item) < toRename.length - 1) {
-          await sleep(200);
+          await delay(200);
         }
       }
 

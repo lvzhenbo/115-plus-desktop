@@ -600,7 +600,13 @@
     showControls();
     hideControlsDelayed();
   };
-  useEventListener(videoContainer, 'mousemove', handleMouseMove);
+
+  // 当鼠标离开控制条区域时，重新启动自动隐藏计时
+  watch(isHovered, (hovering) => {
+    if (!hovering) {
+      hideControlsDelayed();
+    }
+  });
 
   // 键盘快捷键（带累加跳转）
   const keyPressInterval = 300;
@@ -741,6 +747,9 @@
       const isCurrentlyFullscreen = await appWindow.isFullscreen();
       await appWindow.setFullscreen(!isCurrentlyFullscreen);
       isFullscreen.value = !isCurrentlyFullscreen;
+      // 全屏切换后重新显示控件并启动隐藏计时，避免窗口尺寸变化导致控件状态异常
+      showControls();
+      hideControlsDelayed();
     } catch (err) {
       console.error('全屏切换失败:', err);
       message.error('无法切换全屏模式');

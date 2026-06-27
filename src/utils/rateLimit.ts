@@ -5,7 +5,7 @@ export const BACKOFF_MAX = 60000;
 /** 限流自动重试最大次数 */
 export const MAX_RATE_LIMIT_RETRY = 5;
 
-export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+import { delay, random } from 'es-toolkit';
 
 /** 检测错误是否为限流错误 */
 export const isRateLimitError = (error: unknown): boolean => {
@@ -21,7 +21,7 @@ export const isRateLimitError = (error: unknown): boolean => {
 /** 计算指数退避延迟（含 ±25% 抖动） */
 export const getBackoffDelay = (retryCount: number): number => {
   const delay = Math.min(BACKOFF_BASE * Math.pow(2, retryCount), BACKOFF_MAX);
-  const jitter = delay * 0.25 * (Math.random() * 2 - 1);
+  const jitter = delay * 0.25 * random(-1, 1);
   return Math.round(delay + jitter);
 };
 
@@ -66,7 +66,7 @@ export function createRateLimiter(getRefillRate: () => number) {
         pending.shift()!();
       } else {
         const waitTime = ((1 - tokens) / rate) * 1000;
-        await sleep(waitTime);
+        await delay(waitTime);
       }
     }
 
