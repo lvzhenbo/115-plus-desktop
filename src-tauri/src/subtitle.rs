@@ -12,8 +12,8 @@
 //! 前端调用 subtitle_get_system_font_config(["微软雅黑","SimHei",…])
 //!   └─ resolve_subtitle_system_font_config()  [按平台分发]
 //!       ├─ Windows  → 读注册表 Fonts 键 → 解析 .ttf/.ttc 文件名
-//!       ├─ macOS    → 扫描 /System/Library/Fonts 等目录 → ttf-parser 读 name 表
-//!       └─ Linux    → 扫描 /usr/share/fonts 等目录 → ttf-parser 读 name 表
+//!       ├─ macOS    → 扫描 /System/Library/Fonts 等目录 → skrifa 读 name 表
+//!       └─ Linux    → 扫描 /usr/share/fonts 等目录 → skrifa 读 name 表
 //!           └─ build_font_config()
 //!               ├─ 对每个请求字体名，在候选集中匹配
 //!               ├─ 按平台偏好选出默认字体
@@ -24,7 +24,7 @@
 //!
 //! - **Windows**：通过注册表 `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts`
 //!   获取字体名→文件路径映射，避免遍历整个 Fonts 目录。
-//! - **macOS / Linux**：使用 `ttf-parser` 读取字体文件 name 表获取 family name，
+//! - **macOS / Linux**：使用 `skrifa` 读取字体文件 name 表获取 family name，
 //!   递归扫描标准字体目录。
 //! - 各平台都有**已知字体硬编码列表**作为后备，确保中文字体不会被遗漏。
 
@@ -287,99 +287,64 @@ fn push_unique_alias_inline(aliases: &mut Vec<String>, alias: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// 非 Windows 平台：ttf-parser 读取 name 表
+// 非 Windows 平台：skrifa 读取 name 表
 // ---------------------------------------------------------------------------
 
 /// 从字体文件读取所有 family name（支持 .ttc 集合）。
 #[cfg(not(target_os = "windows"))]
 fn read_font_family_names(path: &str) -> Vec<String> {
+    use skrifa::{FontRef, MetadataProvider};
+
     let Ok(data) = std::fs::read(path) else {
         return Vec::new();
     };
 
     // Try as a single face first
-    if let Ok(face) = ttf_parser::Face::parse(&data, 0) {
-        let names = collect_face_family_names(&face);
+    if let Some(font) = FontRef::new(&data) {
+        let names = collect_font_family_names(&font);
         if !names.is_empty() {
             return names;
         }
     }
 
     // Try as a TrueType Collection (.ttc)
-    let count = ttf_parser::fonts_in_collection(&data).unwrap_or(0);
     let mut all_names = Vec::new();
     let mut seen = HashSet::new();
+    let mut index = 0;
 
-    for index in 0..count {
-        if let Ok(face) = ttf_parser::Face::parse(&data, index) {
-            for name in collect_face_family_names(&face) {
-                let key = name.to_lowercase();
-                if seen.insert(key) {
-                    all_names.push(name);
-                }
+    while let Some(font) = FontRef::from_index(&data, index) {
+        for name in collect_font_family_names(&font) {
+            let key = name.to_lowercase();
+            if seen.insert(key) {
+                all_names.push(name);
             }
         }
+        index += 1;
     }
 
     all_names
 }
 
 #[cfg(not(target_os = "windows"))]
-fn collect_face_family_names(face: &ttf_parser::Face) -> Vec<String> {
-    // Name IDs: 1=Font Family, 16=Typographic Family (preferred)
-    let preferred_ids = [16, 1];
+fn collect_font_family_names(font: &skrifa::FontRef) -> Vec<String> {
+    use skrifa::{MetadataProvider, string::StringId};
+
+    // Name IDs: 16=Typographic Family (preferred), 1=Font Family
+    let preferred_ids = [StringId::new(16), StringId::FAMILY_NAME];
     let mut names = Vec::new();
     let mut seen = HashSet::new();
 
     for &name_id in &preferred_ids {
-        if let Some(name) = find_best_name(face, name_id) {
-            if !name.is_empty() && seen.insert(name.to_lowercase()) {
-                names.push(name);
+        let strings = font.localized_strings(name_id);
+        if let Some(name) = strings.english_or_first() {
+            let name_str = name.to_string().trim().to_string();
+            if !name_str.is_empty() && seen.insert(name_str.to_lowercase()) {
+                names.push(name_str);
             }
         }
     }
 
     names
-}
-
-/// 从 name 表中按语言优先级查找最佳名称（英文 > Macintosh > 其他）。
-#[cfg(not(target_os = "windows"))]
-fn find_best_name(face: &ttf_parser::Face, name_id: u16) -> Option<String> {
-    for record in face.names() {
-        if record.name_id != name_id {
-            continue;
-        }
-
-        let lang_score = record_lang_score(record.platform_id, record.language_id);
-        if lang_score == 0 {
-            continue;
-        }
-
-        if let Some(text) = record.to_string() {
-            let text = text.trim().to_string();
-            if !text.is_empty() {
-                return Some(text);
-            }
-        }
-    }
-
-    None
-}
-
-/// 语言评分：英文(US)最高优先 → 其他 Windows 语言 → Macintosh → 未知。
-#[cfg(not(target_os = "windows"))]
-fn record_lang_score(platform_id: ttf_parser::PlatformId, language_id: u16) -> u32 {
-    match platform_id {
-        ttf_parser::PlatformId::Windows => {
-            if language_id == 0x0409 {
-                3 // English (United States) - highest priority
-            } else {
-                2 // Windows other language
-            }
-        }
-        ttf_parser::PlatformId::Macintosh => 1,
-        _ => 0, // Unknown/unsupported
-    }
 }
 
 // ---------------------------------------------------------------------------
