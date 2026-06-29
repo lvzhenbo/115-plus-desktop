@@ -293,14 +293,14 @@ fn push_unique_alias_inline(aliases: &mut Vec<String>, alias: &str) {
 /// 从字体文件读取所有 family name（支持 .ttc 集合）。
 #[cfg(not(target_os = "windows"))]
 fn read_font_family_names(path: &str) -> Vec<String> {
-    use skrifa::{FontRef, MetadataProvider};
+    use skrifa::FontRef;
 
     let Ok(data) = std::fs::read(path) else {
         return Vec::new();
     };
 
     // Try as a single face first
-    if let Some(font) = FontRef::new(&data) {
+    if let Ok(font) = FontRef::new(&data) {
         let names = collect_font_family_names(&font);
         if !names.is_empty() {
             return names;
@@ -312,7 +312,7 @@ fn read_font_family_names(path: &str) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut index = 0;
 
-    while let Some(font) = FontRef::from_index(&data, index) {
+    while let Ok(font) = FontRef::from_index(&data, index) {
         for name in collect_font_family_names(&font) {
             let key = name.to_lowercase();
             if seen.insert(key) {
