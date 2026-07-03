@@ -88,7 +88,8 @@
     />
     <RenameModal
       v-model:show="renameModalShow"
-      :file="contextMenuState.targetItem"
+      :file-id="contextMenuState.targetItem?.fid || ''"
+      :file-name="contextMenuState.targetItem?.fn || ''"
       @success="getFileList"
     />
     <BatchRenameModal

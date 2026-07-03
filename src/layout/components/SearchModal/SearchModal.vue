@@ -38,12 +38,24 @@
     />
   </NModal>
   <DetailModal v-model:show="detailModalShow" :file-detail-data />
+  <RenameModal
+    v-model:show="renameModalShow"
+    :file-id="renameTarget?.file_id || ''"
+    :file-name="renameTarget?.file_name || ''"
+    @success="handleSearch"
+  />
 </template>
 
 <script setup lang="tsx">
   import type { FileDetail, FileSearchRequestParams, SearchFile } from '@/api/types/file';
   import type { DataTableColumns, SelectOption } from 'naive-ui';
-  import { FolderOutlined, InfoCircleOutlined, SearchOutlined, ClearOutlined } from '@vicons/antd';
+  import {
+    FolderOutlined,
+    InfoCircleOutlined,
+    SearchOutlined,
+    ClearOutlined,
+    EditOutlined,
+  } from '@vicons/antd';
   import { fileDetail, fileSearch } from '@/api/file';
   import { format } from 'date-fns';
 
@@ -73,6 +85,8 @@
   const data = ref<SearchFile[]>([]);
   const count = ref(0);
   const detailModalShow = ref(false);
+  const renameModalShow = ref(false);
+  const renameTarget = ref<SearchFile | null>(null);
   const fileDetailData = ref<FileDetail | null>(null);
   const columns: DataTableColumns<SearchFile> = [
     {
@@ -124,7 +138,7 @@
     {
       title: '操作',
       key: 'action',
-      width: 140,
+      width: 220,
       render: (row) => {
         return (
           <NSpace>
@@ -148,6 +162,23 @@
                   </NIcon>
                 ),
                 default: () => '打开',
+              }}
+            </NButton>
+            <NButton
+              text
+              type="primary"
+              onClick={() => {
+                renameTarget.value = row;
+                renameModalShow.value = true;
+              }}
+            >
+              {{
+                icon: () => (
+                  <NIcon>
+                    <EditOutlined />
+                  </NIcon>
+                ),
+                default: () => '重命名',
               }}
             </NButton>
             <NButton

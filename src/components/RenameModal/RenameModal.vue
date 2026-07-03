@@ -8,7 +8,7 @@
         placeholder="请输入名称"
         clearable
       />
-      <NButton type="primary" @click="name = rawName">重置</NButton>
+      <NButton type="primary" @click="name = props.fileName">重置</NButton>
     </NInputGroup>
     <template #action>
       <NSpace justify="end">
@@ -21,7 +21,6 @@
 
 <script setup lang="ts">
   import { updateFile } from '@/api/file';
-  import type { MyFile } from '@/api/types/file';
 
   const show = defineModel('show', {
     type: Boolean,
@@ -29,20 +28,22 @@
   });
 
   const props = defineProps<{
-    file: MyFile | null;
+    /** 文件/文件夹 ID */
+    fileId: string;
+    /** 文件/文件夹名称 */
+    fileName: string;
   }>();
 
   const emits = defineEmits(['success']);
 
   const name = ref('');
-  const rawName = computed(() => props.file?.fn || '');
   const message = useMessage();
 
   watch(show, (val) => {
-    if (!val) {
-      name.value = '';
+    if (val) {
+      name.value = props.fileName;
     } else {
-      name.value = props.file?.fn || '';
+      name.value = '';
     }
   });
 
@@ -53,7 +54,7 @@
     }
     try {
       await updateFile({
-        file_id: props.file!.fid,
+        file_id: props.fileId,
         file_name: name.value,
       });
       message.success('重命名成功');
