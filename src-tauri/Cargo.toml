@@ -29,7 +29,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
-tauri = { version = "2.11.3", features = [
+tauri = { version = "2.11.5", features = [
   "devtools",
   "protocol-asset",
   "tray-icon",
@@ -64,4 +64,4 @@ tauri-plugin-process = "2.3.1"
 winreg = "0.56.0"
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
-skrifa = "0.43.2"
+skrifa = "0.44.0"
