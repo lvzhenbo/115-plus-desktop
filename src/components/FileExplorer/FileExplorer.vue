@@ -5,6 +5,7 @@
       v-if="toolbarActions.length > 0"
       v-model:search-keyword="searchKeyword"
       :show="toolbarActions"
+      :enable-search="props.enableSearch"
       :view-mode="viewMode"
       :loading="loading"
       :has-selection="selectedItems.size > 0"
@@ -138,7 +139,6 @@
     'rename',
     'delete',
     'viewToggle',
-    'search',
   ];
 
   const allContextMenuActions: ContextMenuAction[] = [

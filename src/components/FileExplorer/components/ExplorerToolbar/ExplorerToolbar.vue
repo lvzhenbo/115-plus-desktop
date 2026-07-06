@@ -22,6 +22,7 @@
     canGoUp: boolean;
     show: ToolbarAction[];
     isSearching: boolean;
+    enableSearch?: boolean;
   }>();
 
   const emit = defineEmits<{
@@ -193,7 +194,7 @@
 
     <!-- 搜索 -->
     <NInput
-      v-if="show.includes('search')"
+      v-if="enableSearch"
       v-model:value="searchKeyword"
       size="small"
       placeholder="搜索文件夹"

@@ -8,7 +8,7 @@
       only-folder
       enable-search
       :show-checkbox="false"
-      :toolbar="['up', 'refresh', 'newFolder', 'viewToggle', 'search']"
+      :toolbar="['up', 'refresh', 'newFolder', 'viewToggle']"
       :context-menu="['open', 'reload']"
       :columns="['createTime', 'modifyTime']"
       class="h-120!"
