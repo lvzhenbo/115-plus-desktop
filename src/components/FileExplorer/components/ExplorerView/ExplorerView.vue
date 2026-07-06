@@ -10,6 +10,7 @@
     sortConfig: SortConfig;
     showCheckbox: boolean;
     columns: ListColumn[];
+    sortDisabled: boolean;
   }>();
 
   const emit = defineEmits<{
@@ -56,6 +57,7 @@
       :sort-config="sortConfig"
       :show-checkbox="showCheckbox"
       :columns="columns"
+      :sort-disabled="sortDisabled"
       @sort="(field: SortField) => emit('sort', field)"
       @toggle-select-all="emit('toggleSelectAll')"
     />

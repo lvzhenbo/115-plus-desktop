@@ -9,6 +9,7 @@
     ArrowUpOutlined,
     AppstoreOutlined,
     UnorderedListOutlined,
+    SearchOutlined,
   } from '@vicons/antd';
   import { DriveFileMoveOutlined, DriveFileRenameOutlineOutlined } from '@vicons/material';
   import type { DropdownOption } from 'naive-ui';
@@ -20,6 +21,7 @@
     hasSelection: boolean;
     canGoUp: boolean;
     show: ToolbarAction[];
+    isSearching: boolean;
   }>();
 
   const emit = defineEmits<{
@@ -34,7 +36,10 @@
     batchMove: [];
     batchRename: [];
     batchDelete: [];
+    search: [];
   }>();
+
+  const searchKeyword = defineModel<string>('searchKeyword', { default: '' });
 
   const uploadOptions: DropdownOption[] = [
     {
@@ -89,7 +94,7 @@
     <!-- 新建文件夹 -->
     <NTooltip v-if="show.includes('newFolder')">
       <template #trigger>
-        <NButton size="small" quaternary @click="emit('newFolder')">
+        <NButton size="small" quaternary :disabled="isSearching" @click="emit('newFolder')">
           <template #icon>
             <NIcon>
               <FolderAddOutlined />
@@ -185,6 +190,23 @@
 
     <!-- 弹性空间 -->
     <div class="flex-1" />
+
+    <!-- 搜索 -->
+    <NInput
+      v-if="show.includes('search')"
+      v-model:value="searchKeyword"
+      size="small"
+      placeholder="搜索文件夹"
+      clearable
+      class="w-40!"
+      @keyup.enter="emit('search')"
+    >
+      <template #prefix>
+        <NIcon :size="14">
+          <SearchOutlined />
+        </NIcon>
+      </template>
+    </NInput>
 
     <!-- 视图切换 -->
     <NButtonGroup v-if="show.includes('viewToggle')" size="small">

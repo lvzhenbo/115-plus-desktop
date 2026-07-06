@@ -8,6 +8,7 @@
     sortConfig: SortConfig;
     showCheckbox: boolean;
     columns: ListColumn[];
+    sortDisabled: boolean;
   }>();
 
   const emit = defineEmits<{
@@ -34,8 +35,9 @@
       />
     </div>
     <div
-      class="flex-1 min-w-0 px-2 cursor-pointer select-none hover:text-(--text-color-2)"
-      @click.stop="emit('sort', 'file_name')"
+      class="flex-1 min-w-0 px-2 select-none"
+      :class="sortDisabled ? '' : 'cursor-pointer hover:text-(--text-color-2)'"
+      @click.stop="!sortDisabled && emit('sort', 'file_name')"
     >
       名称
       <span v-if="sortConfig.field === 'file_name'" class="ml-1">
@@ -44,8 +46,9 @@
     </div>
     <div
       v-if="columns.includes('size')"
-      class="w-24 shrink-0 px-2 cursor-pointer select-none hover:text-(--text-color-2)"
-      @click.stop="emit('sort', 'file_size')"
+      class="w-24 shrink-0 px-2 select-none"
+      :class="sortDisabled ? '' : 'cursor-pointer hover:text-(--text-color-2)'"
+      @click.stop="!sortDisabled && emit('sort', 'file_size')"
     >
       大小
       <span v-if="sortConfig.field === 'file_size'" class="ml-1">
@@ -54,8 +57,9 @@
     </div>
     <div
       v-if="columns.includes('type')"
-      class="w-20 shrink-0 px-2 cursor-pointer select-none hover:text-(--text-color-2)"
-      @click.stop="emit('sort', 'file_type')"
+      class="w-20 shrink-0 px-2 select-none"
+      :class="sortDisabled ? '' : 'cursor-pointer hover:text-(--text-color-2)'"
+      @click.stop="!sortDisabled && emit('sort', 'file_type')"
     >
       种类
       <span v-if="sortConfig.field === 'file_type'" class="ml-1">
@@ -64,8 +68,9 @@
     </div>
     <div
       v-if="columns.includes('createTime')"
-      class="w-40 shrink-0 px-2 cursor-pointer select-none hover:text-(--text-color-2)"
-      @click.stop="emit('sort', 'user_ptime')"
+      class="w-40 shrink-0 px-2 select-none"
+      :class="sortDisabled ? '' : 'cursor-pointer hover:text-(--text-color-2)'"
+      @click.stop="!sortDisabled && emit('sort', 'user_ptime')"
     >
       创建时间
       <span v-if="sortConfig.field === 'user_ptime'" class="ml-1">
@@ -74,8 +79,9 @@
     </div>
     <div
       v-if="columns.includes('modifyTime')"
-      class="w-40 shrink-0 px-2 cursor-pointer select-none hover:text-(--text-color-2)"
-      @click.stop="emit('sort', 'user_utime')"
+      class="w-40 shrink-0 px-2 select-none"
+      :class="sortDisabled ? '' : 'cursor-pointer hover:text-(--text-color-2)'"
+      @click.stop="!sortDisabled && emit('sort', 'user_utime')"
     >
       修改时间
       <span v-if="sortConfig.field === 'user_utime'" class="ml-1">

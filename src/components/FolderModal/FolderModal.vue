@@ -6,8 +6,9 @@
       v-model:view-mode="userStore.folderModalViewMode"
       v-model:sort-config="userStore.folderModalSortConfig"
       only-folder
+      enable-search
       :show-checkbox="false"
-      :toolbar="['up', 'refresh', 'newFolder', 'viewToggle']"
+      :toolbar="['up', 'refresh', 'newFolder', 'viewToggle', 'search']"
       :context-menu="['open', 'reload']"
       :columns="['createTime', 'modifyTime']"
       class="h-120!"

@@ -23,7 +23,8 @@ export type ToolbarAction =
   | 'move'
   | 'rename'
   | 'delete'
-  | 'viewToggle';
+  | 'viewToggle'
+  | 'search';
 
 /** 右键菜单可控制的功能项 */
 export type ContextMenuAction =

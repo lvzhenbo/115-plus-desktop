@@ -3,13 +3,15 @@
     <!-- 工具栏 -->
     <ExplorerToolbar
       v-if="toolbarActions.length > 0"
+      v-model:search-keyword="searchKeyword"
       :show="toolbarActions"
       :view-mode="viewMode"
       :loading="loading"
       :has-selection="selectedItems.size > 0"
       :can-go-up="canGoUp"
+      :is-searching="isSearching"
       @up="goUp"
-      @refresh="getFileList"
+      @refresh="handleRefresh"
       @toggle-view="toggleViewMode"
       @new-folder="newFolderModalShow = true"
       @upload-file="handleUploadFiles"
@@ -19,6 +21,7 @@
       @batch-move="handleBatchMove"
       @batch-rename="handleBatchRename"
       @batch-delete="handleBatchDelete"
+      @search="handleSearch"
     />
 
     <!-- 面包屑 -->
@@ -34,6 +37,7 @@
         :sort-config="sortConfig"
         :show-checkbox="props.showCheckbox"
         :columns="props.columns"
+        :sort-disabled="isSearching"
         @click-item="handleItemClick"
         @dblclick-item="handleItemDblClick"
         @contextmenu-item="handleItemContextMenu"
@@ -67,7 +71,7 @@
       :show="contextMenuActions"
       @close="closeContextMenu"
       @open="handleOpen"
-      @reload="getFileList"
+      @reload="handleRefresh"
       @download="handleDownload"
       @upload-file="handleUploadFiles"
       @copy="handleContextCopy"
@@ -97,18 +101,23 @@
       :files="batchRenameFiles"
       @success="getFileList"
     />
-    <NewFolderModal v-model:show="newFolderModalShow" :pid="params.cid!" @success="getFileList" />
+    <NewFolderModal
+      v-model:show="newFolderModalShow"
+      :pid="params.cid || '0'"
+      @success="getFileList"
+    />
   </NEl>
 </template>
 
 <script setup lang="ts">
   import type { PaginationProps } from 'naive-ui';
-  import { fileDetail, fileList, deleteFile } from '@/api/file';
+  import { fileDetail, fileList, fileSearch, deleteFile } from '@/api/file';
   import type {
     FileDetail,
     FileListRequestParams,
     MyFile,
     Path,
+    SearchFile,
     SortField,
   } from '@/api/types/file';
   import type { ViewMode, SortConfig, ToolbarAction, ContextMenuAction, ListColumn } from './types';
@@ -129,6 +138,7 @@
     'rename',
     'delete',
     'viewToggle',
+    'search',
   ];
 
   const allContextMenuActions: ContextMenuAction[] = [
@@ -151,6 +161,7 @@
       toolbar?: boolean | ToolbarAction[];
       contextMenu?: boolean | ContextMenuAction[];
       columns?: ListColumn[];
+      enableSearch?: boolean;
     }>(),
     {
       showCheckbox: true,
@@ -158,6 +169,7 @@
       toolbar: true,
       contextMenu: true,
       columns: () => ['size', 'type', 'createTime', 'modifyTime'],
+      enableSearch: false,
     },
   );
 
@@ -199,6 +211,18 @@
   const selectedItems = ref<Set<string>>(new Set());
   const lastClickedId = ref<string | null>(null);
   const forderTemp = ref(new Map<string, number>());
+
+  // 搜索状态
+  const searchKeyword = ref('');
+  const isSearching = ref(false);
+
+  // 搜索关键词变化时，清空则退出搜索
+  watch(searchKeyword, (val) => {
+    if (!val && isSearching.value) {
+      exitSearchMode();
+      getFileList();
+    }
+  });
 
   const pagination = reactive<PaginationProps>({
     page: 1,
@@ -247,15 +271,16 @@
   const canGoUp = computed(() => params.cid !== '0');
 
   function goUp() {
+    exitSearchMode();
     handleToFolder(path.value[path.value.length - 2]?.cid ?? '0');
   }
 
   // ============ 数据加载 ============
 
   const getFileList = async () => {
-    if (params.cid) forderTemp.value.set(params.cid, pagination.page!);
+    if (params.cid) forderTemp.value.set(params.cid, pagination.page || 1);
     cid.value = params.cid || '0';
-    params.offset = (pagination.page! - 1) * pagination.pageSize!;
+    params.offset = ((pagination.page || 1) - 1) * (pagination.pageSize || 50);
     loading.value = true;
     try {
       const res = await fileList({ ...params });
@@ -275,6 +300,99 @@
     }
   };
 
+  // ============ 搜索 ============
+
+  /** 将 SearchFile 转换为 MyFile */
+  function searchFileToMyFile(sf: SearchFile): MyFile {
+    return {
+      fid: sf.file_id,
+      fn: sf.file_name,
+      fc: sf.file_category,
+      pid: sf.parent_id,
+      ico: sf.ico || '',
+      fs: Number(sf.file_size) || 0,
+      uppt: Number(sf.user_ptime) || 0,
+      upt: Number(sf.user_utime) || 0,
+      uet: Number(sf.user_utime) || 0,
+      sha1: sf.sha1 || '',
+      aid: sf.area_id,
+      cm: 0,
+      def: 0,
+      def2: 0,
+      fatr: '',
+      fco: '',
+      fdesc: '',
+      fl: [],
+      fta: '1',
+      ftype: '',
+      fuuid: 0,
+      fvs: 0,
+      ic: '',
+      is_top: 0,
+      ism: '0',
+      isp: 0,
+      ispl: 0,
+      iss: 0,
+      issct: 0,
+      isv: 0,
+      multitrack: 0,
+      opt: 0,
+      pc: '',
+      play_long: 0,
+      v_img: '',
+    };
+  }
+
+  function exitSearchMode() {
+    isSearching.value = false;
+    searchKeyword.value = '';
+  }
+
+  /** 执行搜索请求 */
+  async function executeSearch(offset: number) {
+    loading.value = true;
+    try {
+      const res = await fileSearch({
+        search_value: searchKeyword.value,
+        cid: params.cid,
+        limit: pagination.pageSize || 50,
+        offset,
+        fc: 1,
+      });
+      data.value = res.data.map(searchFileToMyFile);
+      pagination.itemCount = res.count;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function handleSearch() {
+    if (!searchKeyword.value) {
+      exitSearchMode();
+      getFileList();
+      return;
+    }
+    isSearching.value = true;
+    pagination.page = 1;
+    await executeSearch(0);
+    path.value = [];
+    clearSelection();
+  }
+
+  async function handleSearchPage() {
+    const offset = ((pagination.page || 1) - 1) * (pagination.pageSize || 50);
+    await executeSearch(offset);
+    clearSelection();
+  }
+
+  function handleRefresh() {
+    if (isSearching.value) {
+      handleSearch();
+    } else {
+      getFileList();
+    }
+  }
+
   // ============ 视图控制 ============
 
   function toggleViewMode() {
@@ -282,6 +400,7 @@
   }
 
   function setSort(field: SortField) {
+    if (isSearching.value) return;
     if (sortConfig.value.field === field) {
       sortConfig.value = {
         field,
@@ -419,6 +538,7 @@
   // ============ 导航 ============
 
   const handleToFolder = (cid: string) => {
+    exitSearchMode();
     params.cid = cid.toString();
     pagination.page = forderTemp.value.get(cid) || 1;
     getFileList();
@@ -426,14 +546,22 @@
 
   const handlePageChange = (page: number) => {
     pagination.page = page;
-    getFileList();
+    if (isSearching.value) {
+      handleSearchPage();
+    } else {
+      getFileList();
+    }
   };
 
   const handlePageSizeChange = (size: number) => {
     pagination.pageSize = size;
     params.limit = size;
     pagination.page = 1;
-    getFileList();
+    if (isSearching.value) {
+      handleSearch();
+    } else {
+      getFileList();
+    }
   };
 
   // ============ 文件操作 ============
@@ -443,6 +571,7 @@
     if (!file) return;
 
     if (file.fc === '0') {
+      exitSearchMode();
       params.cid = file.fid;
       pagination.page = forderTemp.value.get(file.fid) || 1;
       getFileList();
