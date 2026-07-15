@@ -1,5 +1,21 @@
 <template>
-  <div>
+  <div class="relative">
+    <!-- 拖拽遮罩层 -->
+    <NEl
+      v-if="isDragging"
+      class="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+    >
+      <div
+        class="flex flex-col items-center rounded-2xl px-14 py-12 border-2 border-dashed border-(--primary-color) bg-(--modal-color) shadow-(--box-shadow-2) gap-3"
+      >
+        <NIcon size="56" color="var(--primary-color)">
+          <CloudUploadOutlined />
+        </NIcon>
+        <NText type="primary" strong class="text-lg">释放文件以上传到当前目录</NText>
+        <NText depth="3" class="text-sm">文件 / 文件夹均支持</NText>
+      </div>
+    </NEl>
+
     <FileExplorer
       ref="explorerRef"
       v-model:cid="cid"
@@ -25,7 +41,9 @@
   import type { ImageRenderToolbarProps } from 'naive-ui';
   import { open } from '@tauri-apps/plugin-dialog';
   import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import { emit, listen } from '@tauri-apps/api/event';
+  import { CloudUploadOutlined } from '@vicons/antd';
   import type { MyFile } from '@/api/types/file';
   import { useDownloadManager } from '@/composables/useDownloadManager';
   import { useUploadManager } from '@/composables/useUploadManager';
@@ -39,6 +57,7 @@
   const imgPreviewVisible = ref(false);
   const imgPreviewList = ref<string[]>([]);
   const imgPreviewIndex = ref(0);
+  const isDragging = ref(false);
 
   const { download: downloadFile, batchDownload: batchDownloadFiles } = useDownloadManager();
 
@@ -50,8 +69,26 @@
     emit('set-video-list', selectFile.value);
   });
 
+  // ============ 拖拽上传 ============
+
+  const unlistenDragDrop = getCurrentWindow().onDragDropEvent(async (event) => {
+    if (route.name !== 'Home') return;
+    if (event.payload.type === 'over') {
+      isDragging.value = true;
+    } else if (event.payload.type === 'leave') {
+      isDragging.value = false;
+    } else if (event.payload.type === 'drop') {
+      isDragging.value = false;
+      const paths = event.payload.paths;
+      if (paths && paths.length > 0) {
+        await uploadFilesFromPaths(paths);
+      }
+    }
+  });
+
   onUnmounted(() => {
     unlisten.then((f) => f());
+    unlistenDragDrop.then((f) => f());
   });
 
   watch(
@@ -144,27 +181,7 @@
     if (!selected) return;
     const paths = Array.isArray(selected) ? selected : [selected];
     if (paths.length === 0) return;
-
-    const files: { path: string; name: string; size: number }[] = [];
-    for (const filePath of paths) {
-      try {
-        const size: number = await invoke('upload_get_file_size', { filePath });
-        const name = filePath.split(/[\\/]/).pop() || filePath;
-        files.push({ path: filePath, name, size });
-      } catch (e) {
-        console.error('获取文件信息失败:', e);
-      }
-    }
-
-    if (files.length === 0) return;
-
-    message.info(`正在添加 ${files.length} 个文件到上传队列，可在上传列表中查看进度`);
-    try {
-      await uploadFilesToCloud(files, cid.value || '0');
-    } catch (error) {
-      console.error(error);
-      message.error('上传任务添加失败');
-    }
+    await uploadFilesFromPaths(paths);
   };
 
   const handleUploadFolder = async () => {
@@ -185,6 +202,47 @@
     } catch (error) {
       console.error(error);
       message.error('上传任务添加失败');
+    }
+  };
+
+  const uploadFilesFromPaths = async (paths: string[], targetCid?: string) => {
+    const cidToUse = targetCid || cid.value || '0';
+    const files: { path: string; name: string; size: number }[] = [];
+    const folders: { path: string; name: string }[] = [];
+
+    for (const filePath of paths) {
+      try {
+        const isDir: boolean = await invoke('upload_is_directory', { filePath });
+        const name = filePath.split(/[\\/]/).pop() || filePath;
+        if (isDir) {
+          folders.push({ path: filePath, name });
+        } else {
+          const size: number = await invoke('upload_get_file_size', { filePath });
+          files.push({ path: filePath, name, size });
+        }
+      } catch (e) {
+        console.error('获取文件信息失败:', filePath, e);
+      }
+    }
+
+    if (files.length > 0) {
+      message.info(`正在添加 ${files.length} 个文件到上传队列，可在上传列表中查看进度`);
+      try {
+        await uploadFilesToCloud(files, cidToUse);
+      } catch (error) {
+        console.error(error);
+        message.error('上传任务添加失败');
+      }
+    }
+
+    for (const folder of folders) {
+      message.info(`正在添加文件夹 "${folder.name}" 到上传队列，可在上传列表中查看进度`);
+      try {
+        await uploadFolderToCloud(folder.path, folder.name, cidToUse);
+      } catch (error) {
+        console.error(error);
+        message.error('上传任务添加失败');
+      }
     }
   };
 

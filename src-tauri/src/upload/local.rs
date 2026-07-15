@@ -190,6 +190,18 @@ pub async fn upload_get_file_size(file_path: String) -> Result<u64, String> {
         .map_err(|err| err.to_string())
 }
 
+/// 判断路径是否为目录。
+#[tauri::command]
+pub async fn upload_is_directory(file_path: String) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || {
+        std::fs::metadata(&file_path)
+            .map(|m| m.is_dir())
+            .map_err(|e| io_error("读取文件元数据", &file_path, e).to_string())
+    })
+    .await
+    .map_err(|e| message_error("执行目录判断任务", e).to_string())?
+}
+
 /// 供内部流程复用的文件大小读取实现。
 async fn get_file_size_impl(file_path: String) -> UploadResult<u64> {
     tokio::task::spawn_blocking(move || {

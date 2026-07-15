@@ -185,6 +185,7 @@ pub fn run() {
             subtitle::subtitle_get_system_font_config,
             // 上传
             upload::local::upload_get_file_size,
+            upload::local::upload_is_directory,
             upload::api::upload_provide_api_response,
             upload::api::upload_provide_api_error,
             upload::queue::upload_set_max_concurrent,
