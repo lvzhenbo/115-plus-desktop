@@ -17,6 +17,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "release": "release-it",
+    "prerelease": "release-it --preRelease",
     "prepare": "husky"
   },
   "dependencies": {

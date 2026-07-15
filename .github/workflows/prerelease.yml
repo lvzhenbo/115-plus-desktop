@@ -1,0 +1,184 @@
+name: 'Pre-release'
+
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease_type:
+        description: '预发布类型 (alpha / beta / rc)'
+        required: true
+        default: 'beta'
+        type: choice
+        options:
+          - alpha
+          - beta
+          - rc
+      bump_type:
+        description: '版本递增类型'
+        required: true
+        default: 'prerelease'
+        type: choice
+        options:
+          - prerelease
+          - prepatch
+          - preminor
+          - premajor
+      release_notes:
+        description: '可选的 Markdown 发布说明 (支持 GFM alerts，用 \n 换行)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.release-it.outputs.version }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Configure Git
+        run: |
+          git config user.name "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PRE_TYPE='${{ inputs.prerelease_type }}'
+
+          # 生成 changelog（自上次 tag 以来的所有变更）
+          CHANGELOG=$(pnpm release --changelog 2>/dev/null || echo "")
+
+          # 添加预发布警告
+          CHANGELOG=$(printf '> [!WARNING]\n> 这是 **%s** 预发布版本，可能存在不稳定因素，请谨慎用于生产环境。\n\n%s' "$PRE_TYPE" "$CHANGELOG")
+
+          # 如果用户提供了自定义 release notes，追加到最前面
+          NOTES='${{ inputs.release_notes }}'
+          if [ -n "$NOTES" ]; then
+            NOTES=$(printf '%b' "$NOTES")
+            CHANGELOG=$(printf '%s\n\n%s' "$NOTES" "$CHANGELOG")
+          fi
+
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "changelog<<$EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run release-it (pre-release)
+        id: release-it
+        run: |
+          BUMP_TYPE='${{ inputs.bump_type }}'
+          PRE_TYPE='${{ inputs.prerelease_type }}'
+
+          if [ "$BUMP_TYPE" = "prerelease" ]; then
+            # 连续预发布: 1.0.8-beta.0 → 1.0.8-beta.1
+            pnpm release --ci --preRelease="$PRE_TYPE"
+          else
+            # 指定递增类型 + 预发布: prepatch/preminor/premajor
+            pnpm release --ci "$BUMP_TYPE" --preRelease="$PRE_TYPE"
+          fi
+
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    needs: bump
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+          - platform: 'ubuntu-latest'
+            args: ''
+          - platform: 'windows-latest'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: v${{ needs.bump.outputs.version }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Create .env.local file
+        run: |
+          if [ -f .env ]; then
+            cp .env .env.local
+          else
+            touch .env.local
+          fi
+          echo "VITE_APP_ID=${{ secrets.APP_ID }}" >> .env.local
+          echo "VITE_APP_KEY=${{ secrets.APP_KEY }}" >> .env.local
+        shell: bash
+
+      - name: Build and Release Tauri App (Pre-release)
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: '115+ v__VERSION__ (${{ inputs.prerelease_type }})'
+          releaseBody: ${{ needs.bump.outputs.changelog }}
+          prerelease: true
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }}
