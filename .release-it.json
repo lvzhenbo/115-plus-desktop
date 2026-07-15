@@ -13,9 +13,8 @@
     "./scripts/release-it-bumper.ts": {
       "out": [{ "file": "src-tauri/tauri.conf.json", "path": "version" }, "src-tauri/Cargo.toml"]
     },
-    "@release-it/conventional-changelog": {
+    "./scripts/conventional-changelog.ts": {
       "preset": {
-        "name": "conventionalcommits",
         "types": [
           { "type": "feat", "section": "✨ 新功能" },
           { "type": "fix", "section": "🐛 Bug 修复" },

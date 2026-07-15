@@ -20,8 +20,8 @@ jobs:
     permissions:
       contents: write
     outputs:
-      version: ${{ steps.release-it.outputs.version }}
-      changelog: ${{ steps.changelog.outputs.changelog }}
+      version: ${{ steps.release.outputs.version }}
+      changelog: ${{ steps.release.outputs.changelog }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -46,10 +46,15 @@ jobs:
           git config user.name "${GITHUB_ACTOR}"
           git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
 
-      - name: Generate changelog
-        id: changelog
+      - name: Run release-it
+        id: release
         run: |
-          CHANGELOG=$(pnpm release --changelog)
+          npx release-it --ci ${{ inputs.version }} --git.tagExclude="*[-]*"
+
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+          CHANGELOG=$(awk '/^## \[/{if(c++) exit}c' CHANGELOG.md)
 
           # 如果用户提供了自定义 release notes（非默认模板），则追加到 changelog 之前
           NOTES='${{ inputs.release_notes }}'
@@ -63,15 +68,6 @@ jobs:
           echo "changelog<<$EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "$EOF" >> $GITHUB_OUTPUT
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run release-it
-        id: release-it
-        run: |
-          pnpm release --ci ${{ inputs.version }}
-          VERSION=$(node -p "require('./package.json').version")
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
