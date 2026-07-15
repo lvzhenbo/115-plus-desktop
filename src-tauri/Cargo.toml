@@ -1,6 +1,6 @@
 [package]
 name = "oof-plus-desktop"
-version = "1.0.7"
+version = "1.1.0-alpha.0"
 description = "115+ 是一个基于 115 网盘开放平台的开源桌面客户端"
 authors = ["lvzhenbo"]
 edition = "2024"
