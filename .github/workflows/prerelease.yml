@@ -19,9 +19,9 @@ on:
         type: choice
         options:
           - prerelease
-          - prepatch
-          - preminor
-          - premajor
+          - patch
+          - minor
+          - major
       release_notes:
         description: '可选的 Markdown 发布说明 (支持 GFM alerts，用 \n 换行)'
         required: false
@@ -64,9 +64,26 @@ jobs:
         id: changelog
         run: |
           PRE_TYPE='${{ inputs.prerelease_type }}'
+          BUMP_TYPE='${{ inputs.bump_type }}'
 
-          # 生成 changelog（自上次 tag 以来的所有变更）
-          CHANGELOG=$(pnpm release --changelog 2>/dev/null || echo "")
+          # 使用 npx 直接调用 release-it，避免 pnpm 脚本运行器的输出污染
+          # --git.tagExclude 排除预发布标签，与前一个稳定版比较
+          if [ "$BUMP_TYPE" = "prerelease" ]; then
+            CHANGELOG=$(npx release-it --changelog --preRelease --git.tagExclude="*[-]*" 2>/dev/null || echo "")
+          else
+            CHANGELOG=$(npx release-it "$BUMP_TYPE" --changelog --preRelease --preReleaseId="$PRE_TYPE" --git.tagExclude="*[-]*" 2>/dev/null || echo "")
+          fi
+
+          # 如果 changelog 为空（没有新提交），生成简单的提交摘要
+          if [ -z "$CHANGELOG" ]; then
+            LAST_STABLE=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]' --sort=-v:refname | head -1)
+            if [ -n "$LAST_STABLE" ]; then
+              CHANGELOG=$(git log --oneline --no-merges "${LAST_STABLE}..HEAD" 2>/dev/null || echo "")
+              if [ -n "$CHANGELOG" ]; then
+                CHANGELOG=$(printf '### 自 %s 以来的变更\n\n```\n%s\n```' "$LAST_STABLE" "$CHANGELOG")
+              fi
+            fi
+          fi
 
           # 添加预发布警告
           CHANGELOG=$(printf '> [!WARNING]\n> 这是 **%s** 预发布版本，可能存在不稳定因素，请谨慎用于生产环境。\n\n%s' "$PRE_TYPE" "$CHANGELOG")
@@ -92,11 +109,14 @@ jobs:
           PRE_TYPE='${{ inputs.prerelease_type }}'
 
           if [ "$BUMP_TYPE" = "prerelease" ]; then
-            # 连续预发布: 1.0.8-beta.0 → 1.0.8-beta.1
-            pnpm release --ci --preRelease="$PRE_TYPE"
+            # 连续预发布: 1.1.0-alpha.0 → 1.1.0-alpha.1
+            # 不加 --git.tagExclude，与前一个预发布标签比较
+            pnpm release --ci --preRelease
           else
-            # 指定递增类型 + 预发布: prepatch/preminor/premajor
-            pnpm release --ci "$BUMP_TYPE" --preRelease="$PRE_TYPE"
+            # 首次预发布 / 切换预发布类型: patch/minor/major
+            # --git.tagExclude 排除预发布标签，与前一个稳定版比较
+            # 这样 CHANGELOG.md 会包含自上次稳定版以来的所有变更，而不是空条目
+            pnpm release --ci "$BUMP_TYPE" --preRelease --preReleaseId="$PRE_TYPE" --git.tagExclude="*[-]*"
           fi
 
           VERSION=$(node -p "require('./package.json').version")
@@ -119,7 +139,8 @@ jobs:
           - platform: 'ubuntu-latest'
             args: ''
           - platform: 'windows-latest'
-            args: ''
+            # MSI 不支持 semver 预发布版本号（如 1.1.0-alpha.0），预发布仅构建 NSIS
+            args: '--bundles nsis'
 
     runs-on: ${{ matrix.platform }}
 
