@@ -7,6 +7,7 @@
         :allow-input="noSideSpace"
         placeholder="请输入名称"
         clearable
+        @keydown.enter="handleSubmit"
       />
       <NButton type="primary" @click="name = props.fileName">重置</NButton>
     </NInputGroup>
