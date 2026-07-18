@@ -40,15 +40,15 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 tauri-plugin-http = "2.5.9"
 tauri-plugin-dialog = "2.7.1"
-tauri-plugin-pinia = "4.2.1"
+tauri-plugin-pinia = "5.0.0"
 ali-oss-rs = "0.2.5"
 fs4 = { version = "1.1.0", features = ["sync"] }
 sha1 = "0.11.0"
 reqwest = { version = "0.13.4", features = ["stream"] }
 futures-util = "0.3.32"
 thiserror = "2.0.18"
-tokio = { version = "1.52.3", features = ["full"] }
-uuid = { version = "1.23.5", features = ["v4"] }
+tokio = { version = "1.53.0", features = ["full"] }
+uuid = { version = "1.24.0", features = ["v4"] }
 log = "0.4.33"
 tauri-plugin-log = "2.9.0"
 chrono = "0.4.45"
