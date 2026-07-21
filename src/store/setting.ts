@@ -56,6 +56,8 @@ export const useSettingStore = defineStore(
       speedLimitValue: 10,
       /** 限速单位 */
       speedLimitUnit: 'MB/s' as 'KB/s' | 'MB/s',
+      /** 下载前询问每个文件的保存位置 */
+      askSavePath: false,
     });
 
     const uploadSetting = ref({

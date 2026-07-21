@@ -48,10 +48,12 @@
   import { useDownloadManager } from '@/composables/useDownloadManager';
   import { useUploadManager } from '@/composables/useUploadManager';
   import { useUserStore } from '@/store/user';
+  import { useSettingStore } from '@/store/setting';
 
   const route = useRoute();
   const message = useMessage();
   const userStore = useUserStore();
+  const settingStore = useSettingStore();
   const explorerRef = useTemplateRef('explorerRef');
   const cid = ref('0');
   const imgPreviewVisible = ref(false);
@@ -151,9 +153,20 @@
   // ============ 下载 ============
 
   const handleDownload = async (file: MyFile) => {
-    message.info('正在获取下载链接，可在下载列表中查看下载进度');
     try {
-      await downloadFile(file);
+      let targetPath: string | undefined;
+      if (settingStore.downloadSetting.askSavePath) {
+        const dir = await open({
+          directory: true,
+          multiple: false,
+          title: '选择保存目录',
+          defaultPath: settingStore.downloadSetting.downloadPath || undefined,
+        });
+        if (!dir) return;
+        targetPath = `${dir}/${file.fn}`;
+      }
+      message.info('正在获取下载链接，可在下载列表中查看下载进度');
+      await downloadFile(file, targetPath);
     } catch (error) {
       console.error(error);
       message.error('下载任务添加失败');
@@ -162,9 +175,20 @@
 
   const handleBatchDownload = async (files: MyFile[]) => {
     if (files.length === 0) return;
-    message.info(`正在添加 ${files.length} 个文件到下载队列，可在下载列表中查看进度`);
     try {
-      await batchDownloadFiles(files);
+      let targetDir: string | undefined;
+      if (settingStore.downloadSetting.askSavePath) {
+        const dir = await open({
+          directory: true,
+          multiple: false,
+          title: '选择保存目录',
+          defaultPath: settingStore.downloadSetting.downloadPath || undefined,
+        });
+        if (!dir) return;
+        targetDir = dir;
+      }
+      message.info(`正在添加 ${files.length} 个文件到下载队列，可在下载列表中查看进度`);
+      await batchDownloadFiles(files, targetDir);
     } catch (error) {
       console.error(error);
       message.error('批量下载任务添加失败');

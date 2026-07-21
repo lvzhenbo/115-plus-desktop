@@ -429,9 +429,11 @@ export const useDownloadManager = createSharedComposable(() => {
   const enqueueCollectedFolder = async (
     folder: FolderDownloadTarget,
     reuseExistingTask = false,
+    customParentPath?: string,
   ) => {
     const parentGid = folder.gid ?? `folder-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const parentPath = `${settingStore.downloadSetting.downloadPath}/${folder.name}`;
+    const parentPath =
+      customParentPath ?? `${settingStore.downloadSetting.downloadPath}/${folder.name}`;
 
     cancelledFolderCollections.delete(parentGid);
 
@@ -492,16 +494,29 @@ export const useDownloadManager = createSharedComposable(() => {
 
   // ---------- 公开接口 ----------
 
-  /** 下载单个文件或文件夹 */
-  const download = async (file: MyFile) => {
+  /**
+   * 下载单个文件或文件夹
+   * @param file 要下载的文件/文件夹
+   * @param targetPath 可选的自定义保存路径：
+   *   - 文件：完整的保存路径（含文件名）
+   *   - 文件夹：文件夹的保存路径
+   *   不传则使用设置中的 downloadPath
+   */
+  const download = async (file: MyFile, targetPath?: string) => {
     const downloadPath = settingStore.downloadSetting.downloadPath;
 
     if (file.fc === '0') {
-      await enqueueCollectedFolder({
-        fid: file.fid,
-        name: file.fn,
-        pickCode: file.pc,
-      });
+      // 文件夹下载
+      const folderParentPath = targetPath ?? `${downloadPath}/${file.fn}`;
+      await enqueueCollectedFolder(
+        {
+          fid: file.fid,
+          name: file.fn,
+          pickCode: file.pc,
+        },
+        false,
+        folderParentPath,
+      );
     } else {
       // 单文件下载
       const res = await fileDownloadUrl({ pick_code: file.pc });
@@ -510,7 +525,9 @@ export const useDownloadManager = createSharedComposable(() => {
         logDownloadManagerError(`获取文件 ${file.fn} 下载信息失败`, res.data);
         return;
       }
-      const savePath = `${downloadPath}/${fileData.file_name}`;
+
+      const savePath = targetPath ?? `${downloadPath}/${fileData.file_name}`;
+
       await invokeDownloadCommand('download_enqueue_file', {
         fid: file.fid,
         name: file.fn,
@@ -523,10 +540,20 @@ export const useDownloadManager = createSharedComposable(() => {
     }
   };
 
-  /** 批量下载多个文件/文件夹 */
-  const batchDownload = async (files: MyFile[]) => {
+  /**
+   * 批量下载多个文件/文件夹
+   * @param files 要下载的文件/文件夹列表
+   * @param targetDir 可选的目标目录（所有文件/文件夹保存到此目录下）
+   *   不传则每个文件使用设置中的 downloadPath
+   */
+  const batchDownload = async (files: MyFile[], targetDir?: string) => {
     for (const file of files) {
-      await download(file);
+      if (targetDir !== undefined) {
+        const customPath = `${targetDir}/${file.fn}`;
+        await download(file, customPath);
+      } else {
+        await download(file);
+      }
     }
   };
 

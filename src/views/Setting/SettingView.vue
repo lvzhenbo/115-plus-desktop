@@ -255,6 +255,9 @@
               />
             </NInputGroup>
           </NFormItem>
+          <NFormItem label="下载前询问保存位置" path="downloadSetting.askSavePath">
+            <NSwitch v-model:value="settingStore.downloadSetting.askSavePath" />
+          </NFormItem>
         </NForm>
       </NTabPane>
       <NTabPane name="uploadSetting" tab="上传设置">
