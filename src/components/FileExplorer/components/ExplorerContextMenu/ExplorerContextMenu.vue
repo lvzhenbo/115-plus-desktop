@@ -8,8 +8,11 @@
     DownloadOutlined,
     UploadOutlined,
     OrderedListOutlined,
+    StarOutlined,
+    StarFilled,
   } from '@vicons/antd';
   import { DriveFileMoveOutlined, DriveFileRenameOutlineOutlined } from '@vicons/material';
+  import { useUserStore } from '@/store/user';
   import type { DropdownOption } from 'naive-ui';
   import type { MyFile } from '@/api/types/file';
   import type { ContextMenuAction } from '../../types';
@@ -38,6 +41,12 @@
   }>();
 
   const themeVars = useThemeVars();
+  const userStore = useUserStore();
+
+  const isTargetFavorited = computed(() => {
+    if (!props.targetItem || props.targetItem.fc !== '0') return false;
+    return userStore.isFavorited(props.targetItem.fid);
+  });
 
   const fileMenuOptions = computed<DropdownOption[]>(() => {
     const items: DropdownOption[] = [
@@ -116,7 +125,21 @@
           </NIcon>
         ),
       },
-      { type: 'divider', key: 'd3' },
+      ...(props.targetItem?.fc === '0'
+        ? [
+            { type: 'divider', key: 'd3' },
+            {
+              label: isTargetFavorited.value ? '取消收藏' : '添加到收藏夹',
+              key: 'toggleFavorite',
+              icon: () => (
+                <NIcon color={isTargetFavorited.value ? 'var(--warning-color)' : undefined}>
+                  {isTargetFavorited.value ? <StarFilled /> : <StarOutlined />}
+                </NIcon>
+              ),
+            },
+          ]
+        : []),
+      { type: 'divider', key: 'd4' },
       {
         label: '详情',
         key: 'detail',
@@ -195,6 +218,14 @@
       move: () => emit('move'),
       rename: () => emit('rename'),
       batchRename: () => emit('batchRename'),
+      toggleFavorite: () => {
+        if (!props.targetItem || props.targetItem.fc !== '0') return;
+        if (isTargetFavorited.value) {
+          userStore.removeFavorite(props.targetItem.fid);
+        } else {
+          userStore.addFavorite(props.targetItem.fid, props.targetItem.fn, props.targetItem.pid);
+        }
+      },
       detail: () => emit('detail'),
       delete: () => emit('delete'),
     };

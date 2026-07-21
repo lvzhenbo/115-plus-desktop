@@ -36,7 +36,8 @@ export type ContextMenuAction =
   | 'rename'
   | 'batchRename'
   | 'detail'
-  | 'delete';
+  | 'delete'
+  | 'toggleFavorite';
 
 /** 列表模式可展示的列（name 始终展示） */
 export type ListColumn = 'size' | 'type' | 'createTime' | 'modifyTime';

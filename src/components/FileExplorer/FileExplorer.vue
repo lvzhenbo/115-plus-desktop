@@ -26,10 +26,21 @@
     />
 
     <!-- 面包屑 -->
-    <ExplorerBreadcrumb :path="path" :loading="loading" @navigate="handleToFolder" />
+    <ExplorerBreadcrumb
+      :path="path"
+      :loading="loading"
+      @navigate="handleToFolder"
+      @toggle-favorite="toggleFavorite"
+    />
 
     <!-- 主区域 -->
     <div class="flex flex-1 overflow-hidden min-h-0">
+      <ExplorerFavorites
+        v-if="props.showFavorites"
+        v-model:collapsed="favoriteCollapsed"
+        :current-cid="params.cid || '0'"
+        @navigate="handleNavigateToFavorite"
+      />
       <ExplorerView
         :items="filteredItems"
         :view-mode="viewMode"
@@ -152,6 +163,7 @@
     'batchRename',
     'detail',
     'delete',
+    'toggleFavorite',
   ];
 
   const props = withDefaults(
@@ -162,6 +174,7 @@
       contextMenu?: boolean | ContextMenuAction[];
       columns?: ListColumn[];
       enableSearch?: boolean;
+      showFavorites?: boolean;
     }>(),
     {
       showCheckbox: true,
@@ -170,6 +183,7 @@
       contextMenu: true,
       columns: () => ['size', 'type', 'createTime', 'modifyTime'],
       enableSearch: false,
+      showFavorites: true,
     },
   );
 
@@ -259,6 +273,7 @@
   const batchRenameFiles = ref<MyFile[]>([]);
   const newFolderModalShow = ref(false);
   const ids = ref('');
+  const favoriteCollapsed = ref(true);
 
   // ============ 计算属性 ============
 
@@ -414,6 +429,10 @@
     getFileList();
   }
 
+  const toggleFavorite = () => {
+    favoriteCollapsed.value = !favoriteCollapsed.value;
+  };
+
   // ============ 选择 ============
 
   function toggleSelect(item: MyFile, multi = false) {
@@ -543,6 +562,10 @@
     pagination.page = forderTemp.value.get(cid) || 1;
     getFileList();
   };
+
+  function handleNavigateToFavorite(cid: string) {
+    handleToFolder(cid);
+  }
 
   const handlePageChange = (page: number) => {
     pagination.page = page;

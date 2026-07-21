@@ -3,6 +3,13 @@ import type { SortConfig, ViewMode } from '@/components/FileExplorer/types';
 import store from '.';
 import router from '@/router';
 
+export interface FavoriteFolder {
+  cid: string;
+  name: string;
+  pid: string;
+  favoritedAt: number;
+}
+
 export const useUserStore = defineStore(
   'user',
   () => {
@@ -20,6 +27,27 @@ export const useUserStore = defineStore(
     const folderModalViewMode = ref<ViewMode>('list');
     const folderModalSortConfig = ref<SortConfig>({ field: 'user_utime', direction: 'desc' });
 
+    const favorites = ref<FavoriteFolder[]>([]);
+
+    function addFavorite(cid: string, name: string, pid: string) {
+      const existing = favorites.value.find((f) => f.cid === cid);
+      if (!existing) {
+        favorites.value.push({ cid, name, pid, favoritedAt: Date.now() });
+      } else {
+        existing.name = name;
+        existing.pid = pid;
+        existing.favoritedAt = Date.now();
+      }
+    }
+
+    function removeFavorite(cid: string) {
+      favorites.value = favorites.value.filter((f) => f.cid !== cid);
+    }
+
+    function isFavorited(cid: string): boolean {
+      return favorites.value.some((f) => f.cid === cid);
+    }
+
     const logout = () => {
       accessToken.value = '';
       refreshToken.value = '';
@@ -28,6 +56,7 @@ export const useUserStore = defineStore(
       latestCopyFolder.value = '0';
       latestMoveFolder.value = '0';
       latestSaveFolder.value = '0';
+      favorites.value = [];
       router.replace({
         name: 'Login',
       });
@@ -64,6 +93,10 @@ export const useUserStore = defineStore(
       homeSortConfig,
       folderModalViewMode,
       folderModalSortConfig,
+      favorites,
+      addFavorite,
+      removeFavorite,
+      isFavorited,
       logout,
       setLatestFolder,
       getLatestFolder,
