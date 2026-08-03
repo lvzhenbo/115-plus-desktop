@@ -87,6 +87,7 @@
         v-if="subtitleList.length > 0"
         v-model:value="currentSubtitleValue"
         :options="subtitleOptions"
+        virtual-scroll
       >
         <NButton quaternary round size="small" class="text-white!">
           {{ currentSubtitleLabel }}
