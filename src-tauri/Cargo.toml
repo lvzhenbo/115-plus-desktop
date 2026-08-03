@@ -40,7 +40,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 tauri-plugin-http = "2.5.9"
 tauri-plugin-dialog = "2.7.2"
-tauri-plugin-pinia = "5.0.0"
+tauri-plugin-pinia = "5.0.2"
 ali-oss-rs = "0.2.5"
 fs4 = { version = "1.1.0", features = ["sync"] }
 sha1 = "0.11.0"
@@ -64,4 +64,4 @@ tauri-plugin-process = "2.3.1"
 winreg = "0.56.0"
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
-skrifa = "0.44.0"
+skrifa = "0.45.1"
