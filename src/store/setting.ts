@@ -65,6 +65,10 @@ export const useSettingStore = defineStore(
       maxRetry: 3,
       /** 并行上传任务数 */
       maxConcurrent: 5,
+      /** 是否为 OSS 数据上传启用独立代理 */
+      uploadProxyEnabled: false,
+      /** OSS 数据上传代理地址 */
+      uploadProxy: '',
     });
 
     const subtitleStyleSetting = ref({
