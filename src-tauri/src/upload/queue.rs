@@ -31,13 +31,16 @@ use super::control::{upload_cancel, upload_pause};
 use super::error::UploadError;
 use super::folder::{enqueue_folder_impl, sync_parent_folder};
 use super::local::compute_file_hash_internal;
-use super::oss::{OssUploadInitEvent, UploadHooks, UploadProgressEvent, upload_to_oss_internal};
+use super::oss::{
+    OssUploadInitEvent, UploadHooks, UploadProgressEvent, UploadProxyConfig, upload_to_oss_internal,
+};
 use super::progress::UploadProgressRegistry;
 use super::store::{DbHandle, TaskUpdate, UploadStoreError, UploadTask};
 use super::sync::UploadStateSync;
 
 const ERR_QUEUE_CHANNEL_CLOSED: &str = "上传队列不可用：调度通道已关闭";
 const ERR_COLLECTION_STATE_POISONED: &str = "上传收集状态异常：内部锁已损坏";
+const ERR_PROXY_STATE_POISONED: &str = "上传代理设置异常：内部锁已损坏";
 const STATUS_PAUSED: &str = "paused";
 const STATUS_PAUSING: &str = "pausing";
 
@@ -170,6 +173,7 @@ pub struct UploadQueue {
     control_tx: mpsc::Sender<ControlCommand>,
     max_concurrent: Arc<AtomicUsize>,
     max_retry: Arc<AtomicUsize>,
+    upload_proxy: Arc<Mutex<UploadProxyConfig>>,
     collecting_folders: Arc<Mutex<HashSet<String>>>,
     cancelled_folder_collections: Arc<Mutex<HashSet<String>>>,
     paused_folders: Arc<Mutex<HashSet<String>>>,
@@ -189,6 +193,7 @@ impl UploadQueue {
         let (completion_tx, completion_rx) = mpsc::channel::<TaskCompletion>(256);
         let max_concurrent = Arc::new(AtomicUsize::new(3));
         let max_retry = Arc::new(AtomicUsize::new(3));
+        let upload_proxy = Arc::new(Mutex::new(UploadProxyConfig::default()));
         let collecting_folders = Arc::new(Mutex::new(HashSet::new()));
         let cancelled_folder_collections = Arc::new(Mutex::new(HashSet::new()));
         let paused_folders = Arc::new(Mutex::new(HashSet::new()));
@@ -199,6 +204,7 @@ impl UploadQueue {
             control_tx,
             max_concurrent,
             max_retry,
+            upload_proxy,
             collecting_folders,
             cancelled_folder_collections,
             paused_folders,
@@ -317,6 +323,15 @@ impl UploadQueue {
         self.max_retry.store(n.min(10), Ordering::SeqCst);
     }
 
+    fn set_upload_proxy(&self, enabled: bool, url: String) -> Result<(), UploadQueueError> {
+        let mut config = self
+            .upload_proxy
+            .lock()
+            .map_err(|_| UploadQueueError::Internal(ERR_PROXY_STATE_POISONED.into()))?;
+        *config = UploadProxyConfig::new(enabled, url);
+        Ok(())
+    }
+
     fn collection_lock(
         set: &Mutex<HashSet<String>>,
     ) -> Result<std::sync::MutexGuard<'_, HashSet<String>>, UploadQueueError> {
@@ -416,6 +431,7 @@ async fn queue_loop(
                     state_sync.clone(),
                     api_resolver.clone(),
                     max_retry.clone(),
+                    queue.upload_proxy.clone(),
                 );
                 active.insert(id, handle);
             } else {
@@ -920,6 +936,7 @@ fn spawn_upload_task(
     state_sync: UploadStateSync,
     api_resolver: Arc<UploadApiResolver>,
     max_retry: Arc<AtomicUsize>,
+    upload_proxy: Arc<Mutex<UploadProxyConfig>>,
 ) -> JoinHandle<()> {
     tauri::async_runtime::spawn(async move {
         let completion = run_upload_task(
@@ -930,6 +947,7 @@ fn spawn_upload_task(
             state_sync,
             api_resolver,
             max_retry,
+            upload_proxy,
         )
         .await;
         let _ = completion_tx.send(completion).await;
@@ -950,8 +968,18 @@ async fn run_upload_task(
     state_sync: UploadStateSync,
     api_resolver: Arc<UploadApiResolver>,
     max_retry: Arc<AtomicUsize>,
+    upload_proxy: Arc<Mutex<UploadProxyConfig>>,
 ) -> TaskCompletion {
     let max_attempts = max_retry.load(Ordering::SeqCst);
+    let upload_proxy = match upload_proxy.lock() {
+        Ok(config) => config.clone(),
+        Err(_) => {
+            return TaskCompletion::Failed {
+                id: task.id,
+                error: ERR_PROXY_STATE_POISONED.to_string(),
+            };
+        }
+    };
 
     for attempt in 0..=max_attempts {
         info!(
@@ -960,8 +988,16 @@ async fn run_upload_task(
             attempt + 1,
             max_attempts + 1
         );
-        match run_upload_task_once(&task, &mut signal_rx, &app, &db, &state_sync, &api_resolver)
-            .await
+        match run_upload_task_once(
+            &task,
+            &mut signal_rx,
+            &app,
+            &db,
+            &state_sync,
+            &api_resolver,
+            &upload_proxy,
+        )
+        .await
         {
             Ok(TaskCompletion::Completed { .. }) => {
                 info!(
@@ -1079,6 +1115,7 @@ async fn run_upload_task_once(
     db: &DbHandle,
     state_sync: &UploadStateSync,
     api_resolver: &Arc<UploadApiResolver>,
+    upload_proxy: &UploadProxyConfig,
 ) -> Result<TaskCompletion, TaskCompletion> {
     if let Some(completion) = check_signal(signal_rx) {
         return Ok(completion_for(task, completion));
@@ -1211,6 +1248,7 @@ async fn run_upload_task_once(
             db,
             state_sync,
             api_resolver,
+            upload_proxy,
         )
         .await
         {
@@ -1248,6 +1286,7 @@ async fn execute_oss_upload(
     db: &DbHandle,
     state_sync: &UploadStateSync,
     api_resolver: &Arc<UploadApiResolver>,
+    upload_proxy: &UploadProxyConfig,
 ) -> Result<(), UploadError> {
     let _ = safe_update_task(
         db,
@@ -1387,6 +1426,7 @@ async fn execute_oss_upload(
             target.callback.callback_var.clone(),
             current_oss_upload_id.clone(),
             token_expiration_ms,
+            upload_proxy.clone(),
             hooks,
         )
         .await
@@ -1751,6 +1791,16 @@ pub async fn upload_set_max_retry(
 ) -> Result<(), UploadQueueError> {
     queue.set_max_retry(n);
     Ok(())
+}
+
+/// 更新新启动 OSS 任务使用的独立上传代理设置。
+#[tauri::command]
+pub async fn upload_set_proxy(
+    enabled: bool,
+    url: String,
+    queue: tauri::State<'_, UploadQueue>,
+) -> Result<(), UploadQueueError> {
+    queue.set_upload_proxy(enabled, url)
 }
 
 /// 批量创建普通文件上传任务并入队。

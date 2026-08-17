@@ -278,6 +278,24 @@
               :step="1"
             />
           </NFormItem>
+          <NFormItem label="启用上传代理" path="uploadSetting.uploadProxyEnabled">
+            <NSwitch v-model:value="settingStore.uploadSetting.uploadProxyEnabled" />
+          </NFormItem>
+          <NFormItem label="代理类型">
+            <NSelect value="HTTP" :options="UPLOAD_PROXY_TYPE_OPTIONS" class="w-40" disabled />
+          </NFormItem>
+          <NFormItem
+            label="代理地址"
+            path="uploadSetting.uploadProxy"
+            :validation-status="uploadProxyValidationStatus"
+            :feedback="uploadProxyValidationFeedback"
+          >
+            <NInput
+              v-model:value="settingStore.uploadSetting.uploadProxy"
+              placeholder="http://127.0.0.1:7897"
+              clearable
+            />
+          </NFormItem>
         </NForm>
       </NTabPane>
     </NTabs>
@@ -301,6 +319,29 @@
     { label: 'Warn', value: 'warn' },
     { label: 'Error', value: 'error' },
   ];
+  const UPLOAD_PROXY_TYPE_OPTIONS = [{ label: 'HTTP', value: 'HTTP' }];
+
+  const uploadProxyValidationFeedback = computed(() => {
+    if (!settingStore.uploadSetting.uploadProxyEnabled) return undefined;
+
+    const proxyUrl = settingStore.uploadSetting.uploadProxy.trim();
+    if (!proxyUrl) return '启用上传代理后必须填写代理地址';
+
+    try {
+      const parsedUrl = new URL(proxyUrl);
+      if (!['http:', 'https:'].includes(parsedUrl.protocol) || !parsedUrl.hostname) {
+        return '请输入有效的 HTTP 或 HTTPS 代理地址';
+      }
+    } catch {
+      return '请输入有效的 HTTP 或 HTTPS 代理地址';
+    }
+
+    return undefined;
+  });
+
+  const uploadProxyValidationStatus = computed<'error' | undefined>(() =>
+    uploadProxyValidationFeedback.value ? 'error' : undefined,
+  );
 
   /** 字幕预览样式 */
   const subtitlePreviewStyle = computed<CSSProperties>(() => {

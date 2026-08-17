@@ -190,6 +190,7 @@ pub fn run() {
             upload::api::upload_provide_api_error,
             upload::queue::upload_set_max_concurrent,
             upload::queue::upload_set_max_retry,
+            upload::queue::upload_set_proxy,
             upload::queue::upload_enqueue_files,
             upload::queue::upload_enqueue_folder,
             upload::queue::upload_pause_task,
