@@ -13,9 +13,11 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use ali_oss_rs::ClientBuilder;
+use ali_oss_rs::error::Error as OssError;
 use ali_oss_rs::multipart::MultipartUploadsOperations;
 use ali_oss_rs::multipart_common::{
-    CompleteMultipartUploadOptions, CompleteMultipartUploadRequest, UploadPartRequest,
+    CompleteMultipartUploadOptions, CompleteMultipartUploadRequest, ListPartsOptions,
+    ListPartsResult, ListPartsResultItem, UploadPartRequest,
 };
 use ali_oss_rs::object::ObjectOperations;
 use ali_oss_rs::object_common::{Callback, CallbackBodyType, PutObjectOptionsBuilder};
@@ -28,6 +30,7 @@ use super::control::{UploadSignal, upload_signal_registry};
 use super::error::{UploadError, UploadResult, io_error, message_error};
 
 const UPLOAD_PROXY_ENV: &str = "OOF_UPLOAD_PROXY";
+const LIST_PARTS_PAGE_SIZE: u32 = 1000;
 
 /// 前端上传代理设置的一次任务级快照。
 ///
@@ -68,6 +71,35 @@ struct EffectiveUploadProxy {
     source: UploadProxySource,
 }
 
+#[derive(Default)]
+struct ListedParts {
+    parts: Vec<ListPartsResultItem>,
+    next_marker: Option<u32>,
+}
+
+impl ListedParts {
+    fn push_page(&mut self, page: ListPartsResult) -> ali_oss_rs::Result<bool> {
+        let next_marker = if page.is_truncated {
+            let marker = page.next_part_number_marker.ok_or_else(|| {
+                OssError::Other("OSS 分片列表已截断，但响应缺少下一页游标".to_string())
+            })?;
+            let current_marker = self.next_marker.unwrap_or(0);
+            if marker <= current_marker {
+                return Err(OssError::Other(format!(
+                    "OSS 分片列表分页游标未前进: current={current_marker}, next={marker}"
+                )));
+            }
+            Some(marker)
+        } else {
+            None
+        };
+
+        self.parts.extend(page.parts);
+        self.next_marker = next_marker;
+        Ok(next_marker.is_some())
+    }
+}
+
 fn resolve_upload_proxy(
     config: &UploadProxyConfig,
     environment_proxy: Option<&str>,
@@ -91,6 +123,71 @@ fn resolve_upload_proxy(
             url: url.to_string(),
             source: UploadProxySource::Environment,
         })
+}
+
+async fn list_all_uploaded_parts(
+    client: &ali_oss_rs::Client,
+    bucket: &str,
+    object: &str,
+    oss_upload_id: &str,
+) -> ali_oss_rs::Result<Vec<ListPartsResultItem>> {
+    let mut listed = ListedParts::default();
+
+    loop {
+        let page = client
+            .list_parts(
+                bucket,
+                object,
+                oss_upload_id,
+                Some(ListPartsOptions {
+                    max_parts: Some(LIST_PARTS_PAGE_SIZE),
+                    part_number_marker: listed.next_marker,
+                }),
+            )
+            .await?;
+
+        if !listed.push_page(page)? {
+            return Ok(listed.parts);
+        }
+    }
+}
+
+async fn initiate_sequential_upload(
+    client: &ali_oss_rs::Client,
+    bucket: &str,
+    object: &str,
+    app: &AppHandle,
+    hooks: &UploadHooks,
+    upload_id: &str,
+    source: &str,
+) -> UploadResult<String> {
+    let init_options = PutObjectOptionsBuilder::new()
+        .parameter("sequential", "")
+        .build();
+    let init_result = client
+        .initiate_multipart_uploads(bucket, object, Some(init_options))
+        .await
+        .map_err(|e| message_error("初始化分片上传", e))?;
+    let new_id = init_result.upload_id;
+
+    info!(
+        "[上传任务][{}] 创建分片会话 oss_upload_id={} 来源={}",
+        upload_id, new_id, source
+    );
+    emit_oss_init(
+        app,
+        hooks,
+        OssUploadInitEvent {
+            upload_id: upload_id.to_string(),
+            oss_upload_id: new_id.clone(),
+        },
+    );
+
+    Ok(new_id)
+}
+
+fn is_part_already_exist(error: &OssError) -> bool {
+    matches!(error, OssError::ApiError(response) if response.code == "PartAlreadyExist")
 }
 
 /// 上传中的进度快照事件。
@@ -303,11 +400,11 @@ async fn upload_file_impl(
         total_parts
     );
 
-    // 优先复用旧 upload id，只有在 list_parts 失败时才重新初始化分片上传会话。
-    let current_oss_upload_id = if let Some(ref existing_id) = oss_upload_id {
-        match client.list_parts(&bucket, &object, existing_id, None).await {
-            Ok(list_result) => {
-                for part in &list_result.parts {
+    // 优先复用旧 upload id；ListParts 单页最多返回 1000 条，必须读取全部分页。
+    let mut current_oss_upload_id = if let Some(ref existing_id) = oss_upload_id {
+        match list_all_uploaded_parts(&client, &bucket, &object, existing_id).await {
+            Ok(parts) => {
+                for part in &parts {
                     upload_results.push((part.part_number, part.etag.clone()));
                     completed_parts.insert(part.part_number);
                     uploaded_size += part.size;
@@ -338,51 +435,21 @@ async fn upload_file_impl(
                     "[上传任务][{}] 断点探测失败 oss_upload_id={}，重新初始化: {}",
                     upload_id, existing_id, err
                 );
-                let init_options = PutObjectOptionsBuilder::new()
-                    .parameter("sequential", "")
-                    .build();
-                let init_result = client
-                    .initiate_multipart_uploads(&bucket, &object, Some(init_options))
-                    .await
-                    .map_err(|e| message_error("初始化分片上传", e))?;
-                let new_id = init_result.upload_id.clone();
-                info!(
-                    "[上传任务][{}] 创建分片会话 oss_upload_id={} 来源=重建",
-                    upload_id, new_id
-                );
-                emit_oss_init(
+                initiate_sequential_upload(
+                    &client,
+                    &bucket,
+                    &object,
                     &app,
                     &hooks,
-                    OssUploadInitEvent {
-                        upload_id: upload_id.clone(),
-                        oss_upload_id: new_id.clone(),
-                    },
-                );
-                new_id
+                    &upload_id,
+                    "断点探测失败重建",
+                )
+                .await?
             }
         }
     } else {
-        let init_options = PutObjectOptionsBuilder::new()
-            .parameter("sequential", "")
-            .build();
-        let init_result = client
-            .initiate_multipart_uploads(&bucket, &object, Some(init_options))
-            .await
-            .map_err(|e| message_error("初始化分片上传", e))?;
-        let new_id = init_result.upload_id.clone();
-        info!(
-            "[上传任务][{}] 创建分片会话 oss_upload_id={} 来源=新建",
-            upload_id, new_id
-        );
-        emit_oss_init(
-            &app,
-            &hooks,
-            OssUploadInitEvent {
-                upload_id: upload_id.clone(),
-                oss_upload_id: new_id.clone(),
-            },
-        );
-        new_id
+        initiate_sequential_upload(&client, &bucket, &object, &app, &hooks, &upload_id, "新建")
+            .await?
     };
 
     let mut ranges: Vec<(u32, Range<u64>)> = Vec::new();
@@ -395,74 +462,126 @@ async fn upload_file_impl(
         part_number += 1;
     }
 
-    for (part_num, range) in &ranges {
-        // 已完成的分片不重复上传，这也是断点续传生效的关键。
-        if completed_parts.contains(part_num) {
-            continue;
-        }
+    let mut reset_after_part_conflict = false;
 
-        // 每个分片开始前都重新检查 STS 是否安全可用。
-        if let Some(deadline_ms) = token_deadline_ms {
-            let now_ms = std::time::SystemTime::now()
-                .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
-            if now_ms >= deadline_ms {
-                warn!(
-                    "[上传任务][{}] STS 凭证即将过期，终止本次上传 deadline_ms={} now_ms={}",
-                    upload_id, deadline_ms, now_ms
-                );
-                return Err(UploadError::TokenExpired);
+    'upload_session: loop {
+        for (part_num, range) in &ranges {
+            // 已完成的分片不重复上传，这也是断点续传生效的关键。
+            if completed_parts.contains(part_num) {
+                continue;
             }
-        }
 
-        {
-            // 分片边界是最稳定的暂停/取消检查点：不破坏已完成分片，也不会丢掉进度。
-            let signal = rx.borrow().clone();
-            match signal {
-                UploadSignal::Paused => {
-                    info!("[上传任务][{}] 收到控制信号: paused", upload_id);
-                    return Err(UploadError::Paused);
+            // 每个分片开始前都重新检查 STS 是否安全可用。
+            if let Some(deadline_ms) = token_deadline_ms {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                if now_ms >= deadline_ms {
+                    warn!(
+                        "[上传任务][{}] STS 凭证即将过期，终止本次上传 deadline_ms={} now_ms={}",
+                        upload_id, deadline_ms, now_ms
+                    );
+                    return Err(UploadError::TokenExpired);
                 }
-                UploadSignal::Cancelled => {
-                    info!("[上传任务][{}] 收到控制信号: cancelled", upload_id);
-                    let _ = client
-                        .abort_multipart_uploads(&bucket, &object, &current_oss_upload_id)
-                        .await;
-                    return Err(UploadError::Cancelled);
-                }
-                UploadSignal::Running => {}
             }
-        }
 
-        let upload_data = UploadPartRequest {
-            part_number: *part_num,
-            upload_id: current_oss_upload_id.clone(),
-        };
+            {
+                // 分片边界是最稳定的暂停/取消检查点：不破坏已完成分片，也不会丢掉进度。
+                let signal = rx.borrow().clone();
+                match signal {
+                    UploadSignal::Paused => {
+                        info!("[上传任务][{}] 收到控制信号: paused", upload_id);
+                        return Err(UploadError::Paused);
+                    }
+                    UploadSignal::Cancelled => {
+                        info!("[上传任务][{}] 收到控制信号: cancelled", upload_id);
+                        let _ = client
+                            .abort_multipart_uploads(&bucket, &object, &current_oss_upload_id)
+                            .await;
+                        return Err(UploadError::Cancelled);
+                    }
+                    UploadSignal::Running => {}
+                }
+            }
 
-        let upload_result = client
-            .upload_part_from_file(&bucket, &object, &file_path, range.clone(), upload_data)
-            .await
-            .map_err(|e| UploadError::Message {
-                action: "上传分片",
-                detail: format!("分片 {} 上传失败：{}", part_num, e),
-            })?;
-
-        upload_results.push((*part_num, upload_result.etag));
-        uploaded_size += range.end - range.start;
-
-        emit_progress(
-            &app,
-            &hooks,
-            UploadProgressEvent {
-                upload_id: upload_id.clone(),
-                uploaded_size,
-                total_size: file_size,
+            let upload_data = UploadPartRequest {
                 part_number: *part_num,
-                total_parts,
-                status: "uploading".to_string(),
-            },
-        );
+                upload_id: current_oss_upload_id.clone(),
+            };
+
+            let upload_result = match client
+                .upload_part_from_file(&bucket, &object, &file_path, range.clone(), upload_data)
+                .await
+            {
+                Ok(result) => result,
+                Err(err) if is_part_already_exist(&err) && !reset_after_part_conflict => {
+                    warn!(
+                        "[上传任务][{}] 顺序分片冲突 oss_upload_id={} part={}，废弃会话并从头重传",
+                        upload_id, current_oss_upload_id, part_num
+                    );
+                    if let Err(abort_err) = client
+                        .abort_multipart_uploads(&bucket, &object, &current_oss_upload_id)
+                        .await
+                    {
+                        warn!(
+                            "[上传任务][{}] 废弃冲突会话失败 oss_upload_id={}: {}",
+                            upload_id, current_oss_upload_id, abort_err
+                        );
+                    }
+                    current_oss_upload_id = initiate_sequential_upload(
+                        &client,
+                        &bucket,
+                        &object,
+                        &app,
+                        &hooks,
+                        &upload_id,
+                        "PartAlreadyExist重建",
+                    )
+                    .await?;
+                    upload_results.clear();
+                    completed_parts.clear();
+                    uploaded_size = 0;
+                    reset_after_part_conflict = true;
+                    emit_progress(
+                        &app,
+                        &hooks,
+                        UploadProgressEvent {
+                            upload_id: upload_id.clone(),
+                            uploaded_size,
+                            total_size: file_size,
+                            part_number: 0,
+                            total_parts,
+                            status: "uploading".to_string(),
+                        },
+                    );
+                    continue 'upload_session;
+                }
+                Err(err) => {
+                    return Err(UploadError::Message {
+                        action: "上传分片",
+                        detail: format!("分片 {} 上传失败：{}", part_num, err),
+                    });
+                }
+            };
+
+            upload_results.push((*part_num, upload_result.etag));
+            uploaded_size += range.end - range.start;
+
+            emit_progress(
+                &app,
+                &hooks,
+                UploadProgressEvent {
+                    upload_id: upload_id.clone(),
+                    uploaded_size,
+                    total_size: file_size,
+                    part_number: *part_num,
+                    total_parts,
+                    status: "uploading".to_string(),
+                },
+            );
+        }
+        break;
     }
 
     upload_results.sort_by_key(|(n, _)| *n);
@@ -608,10 +727,89 @@ fn emit_oss_init(app: &AppHandle, hooks: &UploadHooks, event: OssUploadInitEvent
 
 #[cfg(test)]
 mod tests {
+    use ali_oss_rs::error::ErrorResponse;
+
     use super::{
-        ClientBuilder, HttpClient, Proxy, UploadProxyConfig, UploadProxySource,
-        resolve_upload_proxy,
+        ClientBuilder, HttpClient, ListPartsResult, ListPartsResultItem, ListedParts, OssError,
+        Proxy, UploadProxyConfig, UploadProxySource, is_part_already_exist, resolve_upload_proxy,
     };
+
+    fn listed_part(part_number: u32) -> ListPartsResultItem {
+        ListPartsResultItem {
+            part_number,
+            etag: format!("etag-{part_number}"),
+            size: 5 * 1024 * 1024,
+            last_modified: String::new(),
+        }
+    }
+
+    #[test]
+    fn collects_more_than_one_thousand_listed_parts() {
+        let mut listed = ListedParts::default();
+        let first_page = ListPartsResult {
+            next_part_number_marker: Some(1000),
+            is_truncated: true,
+            parts: (1..=1000).map(listed_part).collect(),
+            ..ListPartsResult::default()
+        };
+
+        assert!(listed.push_page(first_page).unwrap());
+        assert_eq!(listed.next_marker, Some(1000));
+
+        let last_page = ListPartsResult {
+            is_truncated: false,
+            parts: (1001..=1005).map(listed_part).collect(),
+            ..ListPartsResult::default()
+        };
+
+        assert!(!listed.push_page(last_page).unwrap());
+        assert_eq!(listed.next_marker, None);
+        assert_eq!(listed.parts.len(), 1005);
+        assert_eq!(listed.parts.last().unwrap().part_number, 1005);
+    }
+
+    #[test]
+    fn rejects_truncated_page_without_next_marker() {
+        let mut listed = ListedParts::default();
+        let page = ListPartsResult {
+            is_truncated: true,
+            parts: vec![listed_part(1)],
+            ..ListPartsResult::default()
+        };
+
+        assert!(listed.push_page(page).is_err());
+    }
+
+    #[test]
+    fn rejects_list_parts_marker_that_does_not_advance() {
+        let mut listed = ListedParts {
+            next_marker: Some(1000),
+            ..ListedParts::default()
+        };
+        let page = ListPartsResult {
+            next_part_number_marker: Some(1000),
+            is_truncated: true,
+            parts: vec![listed_part(1001)],
+            ..ListPartsResult::default()
+        };
+
+        assert!(listed.push_page(page).is_err());
+    }
+
+    #[test]
+    fn identifies_part_already_exist_api_error() {
+        let conflict = OssError::ApiError(Box::new(ErrorResponse {
+            code: "PartAlreadyExist".to_string(),
+            ..ErrorResponse::default()
+        }));
+        let other = OssError::ApiError(Box::new(ErrorResponse {
+            code: "NoSuchUpload".to_string(),
+            ..ErrorResponse::default()
+        }));
+
+        assert!(is_part_already_exist(&conflict));
+        assert!(!is_part_already_exist(&other));
+    }
 
     #[test]
     fn enabled_setting_takes_priority_over_environment() {
