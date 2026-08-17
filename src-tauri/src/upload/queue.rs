@@ -1449,6 +1449,14 @@ async fn execute_oss_upload(
     Err(UploadError::TokenExpired)
 }
 
+fn should_recover_as_paused(is_folder: bool, status: &str) -> bool {
+    if is_folder {
+        !matches!(status, "complete" | "error" | "cancelled")
+    } else {
+        matches!(status, "pending" | "hashing" | "uploading" | STATUS_PAUSING)
+    }
+}
+
 /// 把数据库中遗留的未完成任务恢复为 paused。
 async fn recover_tasks(db: &DbHandle, state_sync: &UploadStateSync) {
     let tasks = match db.get_all_tasks().await {
@@ -1462,13 +1470,7 @@ async fn recover_tasks(db: &DbHandle, state_sync: &UploadStateSync) {
     let mut recovered = 0usize;
 
     for task in tasks {
-        let should_pause = if task.is_folder {
-            task.status != "complete" && task.status != "error" && task.status != "cancelled"
-        } else {
-            matches!(task.status.as_str(), "pending" | "hashing" | "uploading")
-        };
-
-        if should_pause {
+        if should_recover_as_paused(task.is_folder, &task.status) {
             let _ = safe_update_task(
                 db,
                 task.id,
@@ -1486,6 +1488,25 @@ async fn recover_tasks(db: &DbHandle, state_sync: &UploadStateSync) {
         info!("[上传队列] 已恢复遗留任务 count={}", recovered);
     }
     state_sync.notify_state_change();
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::{STATUS_PAUSING, should_recover_as_paused};
+
+    #[test]
+    fn recovers_interrupted_file_states() {
+        for status in ["pending", "hashing", "uploading", STATUS_PAUSING] {
+            assert!(should_recover_as_paused(false, status), "status={status}");
+        }
+    }
+
+    #[test]
+    fn leaves_stable_file_states_unchanged() {
+        for status in ["paused", "complete", "error", "cancelled"] {
+            assert!(!should_recover_as_paused(false, status), "status={status}");
+        }
+    }
 }
 
 /// 计算指数退避时间，并限制在 30 秒内。
