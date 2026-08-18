@@ -11,6 +11,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ali_oss_rs::ClientBuilder;
 use ali_oss_rs::error::Error as OssError;
@@ -25,12 +26,15 @@ use ali_oss_rs::reqwest::{Client as HttpClient, Proxy};
 use log::{error, info, warn};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::watch;
+use tokio::time::sleep;
 
 use super::control::{UploadSignal, upload_signal_registry};
 use super::error::{UploadError, UploadResult, io_error, message_error};
 
 const UPLOAD_PROXY_ENV: &str = "OOF_UPLOAD_PROXY";
 const LIST_PARTS_PAGE_SIZE: u32 = 1000;
+const LIST_PARTS_MAX_ATTEMPTS: usize = 4;
+const LIST_PARTS_RETRY_BASE_DELAY_MS: u64 = 1000;
 
 /// 前端上传代理设置的一次任务级快照。
 ///
@@ -100,6 +104,29 @@ impl ListedParts {
     }
 }
 
+fn is_no_such_upload(error: &OssError) -> bool {
+    matches!(error, OssError::ApiError(response) if response.code == "NoSuchUpload")
+}
+
+fn is_retryable_list_parts_error(error: &OssError) -> bool {
+    match error {
+        OssError::ReqwestError(_) | OssError::XmlParseError(_) => true,
+        OssError::StatusError(status) => {
+            status.is_server_error()
+                || *status == ali_oss_rs::reqwest::StatusCode::REQUEST_TIMEOUT
+                || *status == ali_oss_rs::reqwest::StatusCode::TOO_MANY_REQUESTS
+        }
+        OssError::ApiError(response) => matches!(
+            response.code.as_str(),
+            "RequestTimeout" | "ServiceUnavailable" | "InternalError" | "SlowDown"
+        ),
+        _ => false,
+    }
+}
+
+fn list_parts_retry_delay_ms(attempt: usize) -> u64 {
+    LIST_PARTS_RETRY_BASE_DELAY_MS.saturating_mul(1_u64 << attempt.saturating_sub(1).min(10))
+}
 fn resolve_upload_proxy(
     config: &UploadProxyConfig,
     environment_proxy: Option<&str>,
@@ -130,21 +157,47 @@ async fn list_all_uploaded_parts(
     bucket: &str,
     object: &str,
     oss_upload_id: &str,
+    upload_id: &str,
 ) -> ali_oss_rs::Result<Vec<ListPartsResultItem>> {
     let mut listed = ListedParts::default();
 
     loop {
-        let page = client
-            .list_parts(
-                bucket,
-                object,
-                oss_upload_id,
-                Some(ListPartsOptions {
-                    max_parts: Some(LIST_PARTS_PAGE_SIZE),
-                    part_number_marker: listed.next_marker,
-                }),
-            )
-            .await?;
+        let marker = listed.next_marker;
+        let mut attempt = 1;
+        let page = loop {
+            match client
+                .list_parts(
+                    bucket,
+                    object,
+                    oss_upload_id,
+                    Some(ListPartsOptions {
+                        max_parts: Some(LIST_PARTS_PAGE_SIZE),
+                        part_number_marker: marker,
+                    }),
+                )
+                .await
+            {
+                Ok(page) => break page,
+                Err(err)
+                    if attempt < LIST_PARTS_MAX_ATTEMPTS && is_retryable_list_parts_error(&err) =>
+                {
+                    let delay_ms = list_parts_retry_delay_ms(attempt);
+                    warn!(
+                        "[上传任务][{}] ListParts 临时失败 oss_upload_id={} marker={:?} attempt={}/{} delay={}ms: {}",
+                        upload_id,
+                        oss_upload_id,
+                        marker,
+                        attempt,
+                        LIST_PARTS_MAX_ATTEMPTS,
+                        delay_ms,
+                        err
+                    );
+                    sleep(Duration::from_millis(delay_ms)).await;
+                    attempt += 1;
+                }
+                Err(err) => return Err(err),
+            }
+        };
 
         if !listed.push_page(page)? {
             return Ok(listed.parts);
@@ -402,7 +455,7 @@ async fn upload_file_impl(
 
     // 优先复用旧 upload id；ListParts 单页最多返回 1000 条，必须读取全部分页。
     let mut current_oss_upload_id = if let Some(ref existing_id) = oss_upload_id {
-        match list_all_uploaded_parts(&client, &bucket, &object, existing_id).await {
+        match list_all_uploaded_parts(&client, &bucket, &object, existing_id, &upload_id).await {
             Ok(parts) => {
                 for part in &parts {
                     upload_results.push((part.part_number, part.etag.clone()));
@@ -430,9 +483,9 @@ async fn upload_file_impl(
                 );
                 existing_id.clone()
             }
-            Err(err) => {
+            Err(err) if is_no_such_upload(&err) => {
                 warn!(
-                    "[上传任务][{}] 断点探测失败 oss_upload_id={}，重新初始化: {}",
+                    "[上传任务][{}] 旧分片会话不存在 oss_upload_id={}，重新初始化: {}",
                     upload_id, existing_id, err
                 );
                 initiate_sequential_upload(
@@ -442,9 +495,19 @@ async fn upload_file_impl(
                     &app,
                     &hooks,
                     &upload_id,
-                    "断点探测失败重建",
+                    "旧会话不存在重建",
                 )
                 .await?
+            }
+            Err(err) => {
+                warn!(
+                    "[上传任务][{}] 断点探测失败 oss_upload_id={}，保留原会话并终止本次尝试: {}",
+                    upload_id, existing_id, err
+                );
+                return Err(message_error(
+                    "查询已上传分片",
+                    format!("保留原 UploadId，等待重试：{err}"),
+                ));
             }
         }
     } else {
@@ -728,11 +791,20 @@ fn emit_oss_init(app: &AppHandle, hooks: &UploadHooks, event: OssUploadInitEvent
 #[cfg(test)]
 mod tests {
     use ali_oss_rs::error::ErrorResponse;
+    use ali_oss_rs::reqwest::StatusCode;
 
     use super::{
         ClientBuilder, HttpClient, ListPartsResult, ListPartsResultItem, ListedParts, OssError,
-        Proxy, UploadProxyConfig, UploadProxySource, is_part_already_exist, resolve_upload_proxy,
+        Proxy, UploadProxyConfig, UploadProxySource, is_no_such_upload, is_part_already_exist,
+        is_retryable_list_parts_error, list_parts_retry_delay_ms, resolve_upload_proxy,
     };
+
+    fn api_error(code: &str) -> OssError {
+        OssError::ApiError(Box::new(ErrorResponse {
+            code: code.to_string(),
+            ..ErrorResponse::default()
+        }))
+    }
 
     fn listed_part(part_number: u32) -> ListPartsResultItem {
         ListPartsResultItem {
@@ -797,18 +869,36 @@ mod tests {
     }
 
     #[test]
-    fn identifies_part_already_exist_api_error() {
-        let conflict = OssError::ApiError(Box::new(ErrorResponse {
-            code: "PartAlreadyExist".to_string(),
-            ..ErrorResponse::default()
-        }));
-        let other = OssError::ApiError(Box::new(ErrorResponse {
-            code: "NoSuchUpload".to_string(),
-            ..ErrorResponse::default()
-        }));
+    fn identifies_upload_session_api_errors() {
+        let conflict = api_error("PartAlreadyExist");
+        let missing = api_error("NoSuchUpload");
 
         assert!(is_part_already_exist(&conflict));
-        assert!(!is_part_already_exist(&other));
+        assert!(!is_part_already_exist(&missing));
+        assert!(is_no_such_upload(&missing));
+        assert!(!is_no_such_upload(&conflict));
+    }
+
+    #[test]
+    fn retries_only_transient_list_parts_errors() {
+        let timeout = api_error("RequestTimeout");
+        let unavailable = OssError::StatusError(StatusCode::SERVICE_UNAVAILABLE);
+        let rate_limited = OssError::StatusError(StatusCode::TOO_MANY_REQUESTS);
+        let missing = api_error("NoSuchUpload");
+        let denied = api_error("AccessDenied");
+
+        assert!(is_retryable_list_parts_error(&timeout));
+        assert!(is_retryable_list_parts_error(&unavailable));
+        assert!(is_retryable_list_parts_error(&rate_limited));
+        assert!(!is_retryable_list_parts_error(&missing));
+        assert!(!is_retryable_list_parts_error(&denied));
+    }
+
+    #[test]
+    fn list_parts_retry_delay_uses_exponential_backoff() {
+        assert_eq!(list_parts_retry_delay_ms(1), 1000);
+        assert_eq!(list_parts_retry_delay_ms(2), 2000);
+        assert_eq!(list_parts_retry_delay_ms(3), 4000);
     }
 
     #[test]
