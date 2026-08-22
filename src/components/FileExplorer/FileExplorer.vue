@@ -249,11 +249,18 @@
     show_dir: 1,
     offset: 0,
     limit: pagination.pageSize,
-    o: sortConfig.value.field,
-    asc: sortConfig.value.direction === 'asc' ? 1 : 0,
-    custom_order: settingStore.generalSetting.customOrder,
     nf: props.onlyFolder ? 1 : 0,
   });
+
+  const manualCustomOrder = ref<1 | 2 | null>(null);
+  let latestFileListRequest = 0;
+
+  watch(
+    () => settingStore.generalSetting.customOrder,
+    () => {
+      manualCustomOrder.value = null;
+    },
+  );
 
   // 右键菜单
   const contextMenuState = ref({
@@ -292,18 +299,27 @@
 
   // ============ 数据加载 ============
 
-  const getFileList = async () => {
+  const getFileList = async (requestedSort: SortConfig = sortConfig.value) => {
     if (params.cid) forderTemp.value.set(params.cid, pagination.page || 1);
     cid.value = params.cid || '0';
     params.offset = ((pagination.page || 1) - 1) * (pagination.pageSize || 50);
+    const requestId = ++latestFileListRequest;
+    const customOrder = manualCustomOrder.value ?? settingStore.generalSetting.customOrder;
+    const requestParams: FileListRequestParams = {
+      ...params,
+      o: requestedSort.field,
+      asc: requestedSort.direction === 'asc' ? 1 : 0,
+      custom_order: customOrder,
+    };
     loading.value = true;
     try {
-      const res = await fileList({ ...params });
+      const res = await fileList(requestParams);
+      if (requestId !== latestFileListRequest) return;
       data.value = res.data;
       pagination.itemCount = res.count;
       path.value = res.path;
       // 记忆排序时，根据接口返回的排序信息更新展示
-      if (settingStore.generalSetting.customOrder === 0) {
+      if (customOrder === 0) {
         sortConfig.value = {
           field: res.order,
           direction: res.is_asc === 1 ? 'asc' : 'desc',
@@ -311,7 +327,7 @@
       }
       clearSelection();
     } finally {
-      loading.value = false;
+      if (requestId === latestFileListRequest) loading.value = false;
     }
   };
 
@@ -416,17 +432,20 @@
 
   function setSort(field: SortField) {
     if (isSearching.value) return;
+    let nextSortConfig: SortConfig;
     if (sortConfig.value.field === field) {
-      sortConfig.value = {
+      nextSortConfig = {
         field,
         direction: sortConfig.value.direction === 'asc' ? 'desc' : 'asc',
       };
     } else {
-      sortConfig.value = { field, direction: 'asc' };
+      nextSortConfig = { field, direction: 'asc' };
     }
-    params.o = sortConfig.value.field;
-    params.asc = sortConfig.value.direction === 'asc' ? 1 : 0;
-    getFileList();
+    sortConfig.value = nextSortConfig;
+    pagination.page = 1;
+    // Clicking a header is an explicit sort, even when the default mode uses server memory.
+    manualCustomOrder.value = settingStore.generalSetting.customOrder === 2 ? 2 : 1;
+    getFileList(nextSortConfig);
   }
 
   const toggleFavorite = () => {
