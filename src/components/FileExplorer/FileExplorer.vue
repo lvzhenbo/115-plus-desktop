@@ -133,6 +133,7 @@
     SortField,
   } from '@/api/types/file';
   import type { ViewMode, SortConfig, ToolbarAction, ContextMenuAction, ListColumn } from './types';
+  import { useExplorerShortcuts } from '@/composables/useExplorerShortcuts';
   import { useSettingStore } from '@/store/setting';
 
   const dialog = useDialog();
@@ -703,24 +704,83 @@
 
   // ============ 键盘快捷键 ============
 
-  onKeyStroke(['a', 'A'], (e) => {
-    if (e.ctrlKey || e.metaKey) {
+  // 页面上可能同时存在多个 FileExplorer 实例（例如 FolderModal 弹窗内复用的列表），
+  // 快捷键只应由「最上层」实例响应；被弹窗遮挡的背景实例（如离线下载弹窗）同样不再响应。
+  const shortcutToken = Symbol('file-explorer');
+  const explorerShortcuts = useExplorerShortcuts();
+
+  // 注册顺序即实例创建顺序：后打开的实例（例如弹窗内的列表）自动排在栈顶；
+  // 卸载时由 scope 清理兜底注销。
+  explorerShortcuts.register(shortcutToken);
+
+  tryOnScopeDispose(() => {
+    explorerShortcuts.unregister(shortcutToken);
+  });
+
+  /** 组件根 DOM（NEl 渲染出的 div）。 */
+  const rootElement = (): HTMLElement | null => {
+    const el = getCurrentInstance()?.proxy?.$el;
+    return el instanceof HTMLElement ? el : null;
+  };
+
+  /** 当前实例是否被已打开的弹窗遮挡（自身位于弹窗内时不算被遮挡）。 */
+  const isCoveredByModal = () => {
+    const root = rootElement();
+    if (!root) return false;
+    if (root.closest('.n-modal-container')) return false;
+
+    return document.querySelector('.n-modal-container') !== null;
+  };
+
+  /** 事件是否发生在输入类元素内，此类场景不拦截按键（如搜索框内的 Ctrl+A / Delete）。 */
+  const isEditingText = (event: KeyboardEvent) => {
+    const target = event.target;
+    return (
+      target instanceof HTMLElement &&
+      target.closest('input, textarea, [contenteditable="true"]') !== null
+    );
+  };
+
+  /** 快捷键是否应由当前实例处理：位于实例栈顶且未被弹窗遮挡。 */
+  const shouldHandleShortcut = () => explorerShortcuts.isTop(shortcutToken) && !isCoveredByModal();
+
+  // `dedupe` 让 vueuse 忽略按住按键产生的重复事件（避免 F5 连发请求、Delete 连弹确认框）。
+  onKeyStroke(
+    ['a', 'A'],
+    (e) => {
+      if (isEditingText(e) || !shouldHandleShortcut()) return;
+
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        selectAll();
+      }
+    },
+    { dedupe: true },
+  );
+
+  onKeyStroke(
+    'Delete',
+    (e) => {
+      if (isEditingText(e) || !shouldHandleShortcut()) return;
+
+      if (selectedItems.value.size > 0) {
+        ids.value = Array.from(selectedItems.value).join(',');
+        handleDelete();
+      }
+    },
+    { dedupe: true },
+  );
+
+  onKeyStroke(
+    'F5',
+    (e) => {
+      if (!shouldHandleShortcut()) return;
+
       e.preventDefault();
-      selectAll();
-    }
-  });
-
-  onKeyStroke('Delete', () => {
-    if (selectedItems.value.size > 0) {
-      ids.value = Array.from(selectedItems.value).join(',');
-      handleDelete();
-    }
-  });
-
-  onKeyStroke('F5', (e) => {
-    e.preventDefault();
-    getFileList();
-  });
+      getFileList();
+    },
+    { dedupe: true },
+  );
 
   // ============ 对外暴露 ============
 
