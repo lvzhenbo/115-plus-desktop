@@ -86,10 +86,11 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          args: ${{ matrix.platform == 'windows-latest' && steps.version-check.outputs.is_prerelease == 'true' && '--bundles nsis' || matrix.args }}
+          # CI 产物仅用于验证构建与下载，不用于应用内更新：
+          # 通过 --config 关闭 updater 产物（.sig / latest.json），因此无需 TAURI_SIGNING_PRIVATE_KEY，
+          # 在 PR 等没有 secrets 的场景下也能正常构建。
+          args: ${{ matrix.platform == 'windows-latest' && steps.version-check.outputs.is_prerelease == 'true' && '--bundles nsis' || matrix.args }} --config src-tauri/tauri.ci.conf.json
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
