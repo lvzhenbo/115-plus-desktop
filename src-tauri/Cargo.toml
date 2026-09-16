@@ -35,28 +35,35 @@ tauri = { version = "2.11.5", features = [
   "tray-icon",
   "image-png",
 ] }
-tauri-plugin-opener = "2.5.4"
+tauri-plugin-opener = "2.5.5"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-tauri-plugin-http = "2.5.9"
-tauri-plugin-dialog = "2.7.2"
+tauri-plugin-http = "2.6.1"
+tauri-plugin-dialog = "2.7.3"
 tauri-plugin-pinia = "5.0.2"
 ali-oss-rs = "0.2.5"
 fs4 = { version = "1.1.0", features = ["sync"] }
 sha1 = "0.11.0"
-reqwest = { version = "0.13.4", features = ["stream"] }
-futures-util = "0.3.33"
-thiserror = "2.0.19"
+# socks feature 让下载 / 更新代理支持 socks4 / socks5 协议。
+reqwest = { version = "0.13.5", features = ["stream", "socks"] }
+# ali-oss-rs 内部使用 reqwest 0.12 系列且关闭了默认 features；
+# 这里通过重命名直接依赖给同一版本合并 socks feature（Cargo 会取各依赖方 features 的并集），
+# 使上传代理同样支持 socks 协议。
+reqwest-0-12 = { package = "reqwest", version = "0.12", features = [
+  "socks",
+], default-features = false }
+futures-util = "0.3.34"
+thiserror = "2.0.20"
 tokio = { version = "1.53.1", features = ["full"] }
-uuid = { version = "1.24.0", features = ["v4"] }
-log = "0.4.33"
-tauri-plugin-log = "2.9.0"
+uuid = { version = "1.26.1", features = ["v4"] }
+log = "0.4.34"
+tauri-plugin-log = "2.9.1"
 chrono = "0.4.45"
-rusqlite = { version = "0.40.1", features = ["bundled"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-single-instance = "2.4.3"
-tauri-plugin-updater = "2.10.1"
+tauri-plugin-single-instance = "2.4.4"
+tauri-plugin-updater = "2.11.0"
 tauri-plugin-window-state = "2.4.1"
 tauri-plugin-process = "2.3.1"
 
@@ -64,4 +71,4 @@ tauri-plugin-process = "2.3.1"
 winreg = "0.56.0"
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
-skrifa = "0.45.1"
+skrifa = "0.47.0"
