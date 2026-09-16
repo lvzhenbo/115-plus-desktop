@@ -42,6 +42,7 @@
 
   const themeVars = useThemeVars();
   const userStore = useUserStore();
+  const message = useMessage();
 
   const isTargetFavorited = computed(() => {
     if (!props.targetItem || props.targetItem.fc !== '0') return false;
@@ -222,8 +223,10 @@
         if (!props.targetItem || props.targetItem.fc !== '0') return;
         if (isTargetFavorited.value) {
           userStore.removeFavorite(props.targetItem.fid);
+          message.success('已取消收藏');
         } else {
           userStore.addFavorite(props.targetItem.fid, props.targetItem.fn, props.targetItem.pid);
+          message.success('已添加到收藏夹');
         }
       },
       detail: () => emit('detail'),

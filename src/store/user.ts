@@ -28,20 +28,28 @@ export const useUserStore = defineStore(
     const folderModalSortConfig = ref<SortConfig>({ field: 'user_utime', direction: 'desc' });
 
     const favorites = ref<FavoriteFolder[]>([]);
+    /** 收藏夹面板是否收起（持久化，下次启动保持） */
+    const favoritesCollapsed = ref(true);
 
     function addFavorite(cid: string, name: string, pid: string) {
       const existing = favorites.value.find((f) => f.cid === cid);
-      if (!existing) {
-        favorites.value.push({ cid, name, pid, favoritedAt: Date.now() });
-      } else {
+      if (existing) {
         existing.name = name;
         existing.pid = pid;
         existing.favoritedAt = Date.now();
+        return;
       }
+
+      favorites.value.push({ cid, name, pid, favoritedAt: Date.now() });
     }
 
     function removeFavorite(cid: string) {
       favorites.value = favorites.value.filter((f) => f.cid !== cid);
+    }
+
+    function renameFavorite(cid: string, name: string) {
+      const target = favorites.value.find((f) => f.cid === cid);
+      if (target) target.name = name;
     }
 
     function isFavorited(cid: string): boolean {
@@ -94,8 +102,10 @@ export const useUserStore = defineStore(
       folderModalViewMode,
       folderModalSortConfig,
       favorites,
+      favoritesCollapsed,
       addFavorite,
       removeFavorite,
+      renameFavorite,
       isFavorited,
       logout,
       setLatestFolder,

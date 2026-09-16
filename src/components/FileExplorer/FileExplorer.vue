@@ -29,18 +29,17 @@
     <ExplorerBreadcrumb
       :path="path"
       :loading="loading"
+      :favorited="currentFolderFavorited"
+      :favorite-disabled="favoriteDisabled"
+      :show-favorites="props.showFavorites"
+      :favorites-open="!userStore.favoritesCollapsed"
       @navigate="handleToFolder"
       @toggle-favorite="toggleFavorite"
+      @toggle-favorites="toggleFavoritesPanel"
     />
 
     <!-- 主区域 -->
     <div class="flex flex-1 overflow-hidden min-h-0">
-      <ExplorerFavorites
-        v-if="props.showFavorites"
-        v-model:collapsed="favoriteCollapsed"
-        :current-cid="params.cid || '0'"
-        @navigate="handleNavigateToFavorite"
-      />
       <ExplorerView
         :items="filteredItems"
         :view-mode="viewMode"
@@ -58,6 +57,12 @@
         @clear-selection="clearSelection"
         @check-item="handleCheckItem"
         @toggle-select-all="handleToggleSelectAll"
+      />
+      <ExplorerFavorites
+        v-if="props.showFavorites"
+        v-model:collapsed="userStore.favoritesCollapsed"
+        :current-cid="params.cid || '0'"
+        @navigate="handleNavigateToFavorite"
       />
     </div>
 
@@ -136,10 +141,12 @@
   import { useExplorerShortcuts } from '@/composables/useExplorerShortcuts';
   import { useModalQuerySync } from '@/composables/useModalQuerySync';
   import { useSettingStore } from '@/store/setting';
+  import { useUserStore } from '@/store/user';
 
   const dialog = useDialog();
   const message = useMessage();
   const settingStore = useSettingStore();
+  const userStore = useUserStore();
 
   const allToolbarActions: ToolbarAction[] = [
     'up',
@@ -279,7 +286,6 @@
   const batchRenameFiles = ref<MyFile[]>([]);
   const newFolderModalShow = ref(false);
   const ids = ref('');
-  const favoriteCollapsed = ref(true);
 
   // ============ 计算属性 ============
 
@@ -445,9 +451,37 @@
     getFileList();
   }
 
-  const toggleFavorite = () => {
-    favoriteCollapsed.value = !favoriteCollapsed.value;
-  };
+  // ============ 收藏 ============
+
+  /** 根目录与搜索模式下不提供收藏入口 */
+  const favoriteDisabled = computed(() => (params.cid || '0') === '0' || isSearching.value);
+
+  const currentFolderFavorited = computed(() => {
+    const currentCid = params.cid || '0';
+    return currentCid !== '0' && userStore.isFavorited(currentCid);
+  });
+
+  /** 收藏 / 取消收藏当前所在目录 */
+  function toggleFavorite() {
+    const currentCid = params.cid || '0';
+    if (currentCid === '0' || isSearching.value) return;
+
+    if (userStore.isFavorited(currentCid)) {
+      userStore.removeFavorite(currentCid);
+      message.success('已取消收藏');
+      return;
+    }
+
+    const current = path.value[path.value.length - 1];
+    const parent = path.value[path.value.length - 2];
+    userStore.addFavorite(currentCid, current?.name || '未命名文件夹', parent?.cid || '0');
+    message.success('已添加到收藏夹');
+  }
+
+  /** 展开 / 收起收藏夹面板 */
+  function toggleFavoritesPanel() {
+    userStore.favoritesCollapsed = !userStore.favoritesCollapsed;
+  }
 
   // ============ 选择 ============
 
