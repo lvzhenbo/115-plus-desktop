@@ -1,9 +1,9 @@
 import type { Update } from '@tauri-apps/plugin-updater';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
-import { useSettingStore } from '@/store/setting';
 import { useDownloadManager } from '@/composables/useDownloadManager';
 import { useUploadManager } from '@/composables/useUploadManager';
+import { invoke } from '@tauri-apps/api/core';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { filesize } from 'filesize';
 import {
@@ -29,6 +29,26 @@ import {
 
 // 更新检查是全局单例流程，避免多个页面同时发起重复检查。
 const isChecking = ref(false);
+
+/** Rust `proxy_get_effective` 返回的代理决策（与 `ProxyDecision` 对应）。 */
+interface ProxyDecisionResult {
+  mode: 'explicit' | 'system' | 'direct';
+  url?: string;
+}
+
+// 检查更新前从 Rust 查询"更新"场景当前生效的代理。
+// 只有显式代理会传给 updater；跟随系统代理与直连返回 undefined，交由 updater 自身的默认网络行为处理。
+async function resolveUpdateProxy(): Promise<string | undefined> {
+  try {
+    const decision = await invoke<ProxyDecisionResult>('proxy_get_effective', {
+      feature: 'update',
+    });
+    return decision.mode === 'explicit' ? decision.url : undefined;
+  } catch (error) {
+    console.error('获取更新代理配置失败，将使用默认网络设置:', error);
+    return undefined;
+  }
+}
 
 type GfmAlertKind = 'note' | 'tip' | 'important' | 'warning' | 'caution';
 
@@ -110,7 +130,6 @@ export const useCheckUpdate = () => {
   const message = useMessage();
   const dialog = useDialog();
   const notification = useNotification();
-  const settingStore = useSettingStore();
   const { hasActiveDownloads, pauseAllTasks: pauseAllDownloads } = useDownloadManager();
   const { hasActiveUploads, pauseAllTasks: pauseAllUploads } = useUploadManager();
 
@@ -282,12 +301,12 @@ export const useCheckUpdate = () => {
   // `silent` 模式用于启动时后台检查，只在发现更新时给一个轻提示。
   async function checkForUpdate(options?: { silent?: boolean }) {
     const silent = options?.silent ?? false;
-    const proxy = settingStore.generalSetting.updateProxy || undefined;
 
     if (isChecking.value) return;
     isChecking.value = true;
 
     try {
+      const proxy = await resolveUpdateProxy();
       const update = await check({ proxy });
 
       if (!update) {

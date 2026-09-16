@@ -21,13 +21,6 @@
           <NFormItem label="启动时自动检查更新" path="generalSetting.autoCheckUpdate">
             <NSwitch v-model:value="settingStore.generalSetting.autoCheckUpdate" />
           </NFormItem>
-          <NFormItem label="更新代理地址" path="generalSetting.updateProxy">
-            <NInput
-              v-model:value="settingStore.generalSetting.updateProxy"
-              placeholder="http://127.0.0.1:7890"
-              clearable
-            />
-          </NFormItem>
           <NFormItem label="接口速率限制" path="generalSetting.apiRateLimit">
             <NInputNumber
               v-model:value="settingStore.generalSetting.apiRateLimit"
@@ -66,6 +59,74 @@
             >
               <template #suffix> px </template>
             </NInputNumber>
+          </NFormItem>
+        </NForm>
+      </NTabPane>
+      <NTabPane name="proxySetting" tab="代理设置">
+        <NForm label-placement="left" label-width="auto">
+          <NFormItem
+            label="跟随系统代理"
+            path="proxySetting.followSystemProxy"
+            feedback="统一代理与单独代理都未设置时生效；关闭后直接连接"
+          >
+            <NSwitch v-model:value="settingStore.proxySetting.followSystemProxy" />
+          </NFormItem>
+          <NFormItem
+            label="统一代理"
+            path="proxySetting.unifiedProxy"
+            :validation-status="proxyErrors.unifiedProxy ? 'error' : undefined"
+            :feedback="proxyErrors.unifiedProxy"
+          >
+            <NInput
+              v-model:value="settingStore.proxySetting.unifiedProxy"
+              placeholder="http://127.0.0.1:7890"
+              clearable
+              @blur="finishProxyEditing('unifiedProxy')"
+            />
+          </NFormItem>
+          <NDivider title-placement="left"> 单独代理 </NDivider>
+          <NAlert type="info" class="mb-4">
+            留空时沿用统一代理；填写 direct 可强制直连；协议按前缀自动识别（如
+            socks5://），未填写前缀时按 HTTP 代理处理。
+          </NAlert>
+          <NFormItem
+            label="更新代理"
+            path="proxySetting.updateProxy"
+            :validation-status="proxyErrors.updateProxy ? 'error' : undefined"
+            :feedback="proxyErrors.updateProxy"
+          >
+            <NInput
+              v-model:value="settingStore.proxySetting.updateProxy"
+              placeholder="留空沿用统一代理"
+              clearable
+              @blur="finishProxyEditing('updateProxy')"
+            />
+          </NFormItem>
+          <NFormItem
+            label="下载代理"
+            path="proxySetting.downloadProxy"
+            :validation-status="proxyErrors.downloadProxy ? 'error' : undefined"
+            :feedback="proxyErrors.downloadProxy"
+          >
+            <NInput
+              v-model:value="settingStore.proxySetting.downloadProxy"
+              placeholder="留空沿用统一代理"
+              clearable
+              @blur="finishProxyEditing('downloadProxy')"
+            />
+          </NFormItem>
+          <NFormItem
+            label="上传代理"
+            path="proxySetting.uploadProxy"
+            :validation-status="proxyErrors.uploadProxy ? 'error' : undefined"
+            :feedback="proxyErrors.uploadProxy"
+          >
+            <NInput
+              v-model:value="settingStore.proxySetting.uploadProxy"
+              placeholder="留空沿用统一代理"
+              clearable
+              @blur="finishProxyEditing('uploadProxy')"
+            />
           </NFormItem>
         </NForm>
       </NTabPane>
@@ -278,24 +339,6 @@
               :step="1"
             />
           </NFormItem>
-          <NFormItem label="启用上传代理" path="uploadSetting.uploadProxyEnabled">
-            <NSwitch v-model:value="settingStore.uploadSetting.uploadProxyEnabled" />
-          </NFormItem>
-          <NFormItem label="代理类型">
-            <NSelect value="HTTP" :options="UPLOAD_PROXY_TYPE_OPTIONS" class="w-40" disabled />
-          </NFormItem>
-          <NFormItem
-            label="代理地址"
-            path="uploadSetting.uploadProxy"
-            :validation-status="uploadProxyValidationStatus"
-            :feedback="uploadProxyValidationFeedback"
-          >
-            <NInput
-              v-model:value="settingStore.uploadSetting.uploadProxy"
-              placeholder="http://127.0.0.1:7897"
-              clearable
-            />
-          </NFormItem>
         </NForm>
       </NTabPane>
     </NTabs>
@@ -307,6 +350,7 @@
   import type { SliderProps } from 'naive-ui';
   import { open } from '@tauri-apps/plugin-dialog';
   import { generateTextShadow } from '@/utils/subtitleStyleUtils';
+  import { normalizeProxyInput, validateProxyInput } from '@/utils/proxy';
   import type { CSSProperties } from 'vue';
 
   const settingStore = useSettingStore();
@@ -319,29 +363,27 @@
     { label: 'Warn', value: 'warn' },
     { label: 'Error', value: 'error' },
   ];
-  const UPLOAD_PROXY_TYPE_OPTIONS = [{ label: 'HTTP', value: 'HTTP' }];
 
-  const uploadProxyValidationFeedback = computed(() => {
-    if (!settingStore.uploadSetting.uploadProxyEnabled) return undefined;
+  type ProxyTextField = 'unifiedProxy' | 'updateProxy' | 'downloadProxy' | 'uploadProxy';
 
-    const proxyUrl = settingStore.uploadSetting.uploadProxy.trim();
-    if (!proxyUrl) return '启用上传代理后必须填写代理地址';
+  /** 四个代理输入框的实时校验结果（留空合法）。 */
+  const proxyErrors = computed<Record<ProxyTextField, string | undefined>>(() => ({
+    unifiedProxy: validateProxyInput(settingStore.proxySetting.unifiedProxy),
+    updateProxy: validateProxyInput(settingStore.proxySetting.updateProxy),
+    downloadProxy: validateProxyInput(settingStore.proxySetting.downloadProxy),
+    uploadProxy: validateProxyInput(settingStore.proxySetting.uploadProxy),
+  }));
 
-    try {
-      const parsedUrl = new URL(proxyUrl);
-      if (!['http:', 'https:'].includes(parsedUrl.protocol) || !parsedUrl.hostname) {
-        return '请输入有效的 HTTP 或 HTTPS 代理地址';
-      }
-    } catch {
-      return '请输入有效的 HTTP 或 HTTPS 代理地址';
+  /** 失焦时补齐可识别的协议前缀（如 127.0.0.1:7890 → http://127.0.0.1:7890）。 */
+  const finishProxyEditing = (field: ProxyTextField) => {
+    const current = settingStore.proxySetting[field];
+    if (!current.trim()) return;
+
+    const normalized = normalizeProxyInput(current);
+    if (normalized && normalized !== current) {
+      settingStore.proxySetting[field] = normalized;
     }
-
-    return undefined;
-  });
-
-  const uploadProxyValidationStatus = computed<'error' | undefined>(() =>
-    uploadProxyValidationFeedback.value ? 'error' : undefined,
-  );
+  };
 
   /** 字幕预览样式 */
   const subtitlePreviewStyle = computed<CSSProperties>(() => {

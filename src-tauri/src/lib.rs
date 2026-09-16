@@ -22,9 +22,12 @@
 //! | 模块 | 职责 |
 //! |------|------|
 //! | `tray`     | 系统托盘图标、右键菜单、点击事件 |
+//! | `proxy`    | 全局代理配置：更新 / 下载 / 上传的统一解析 |
 //! | `download` | HTTP 多分片并发下载、断点续传、限速 |
 //! | `upload`   | 115 网盘 OSS 上传、分片、队列调度 |
 //! | `subtitle` | 系统字体扫描、ASS 字幕字体匹配 |
+
+use std::sync::Arc;
 
 use chrono::Local;
 use serde::Deserialize;
@@ -34,6 +37,7 @@ use tauri_plugin_pinia::ManagerExt as PiniaManagerExt;
 use tauri_plugin_window_state::StateFlags;
 
 mod download;
+mod proxy;
 mod subtitle;
 mod tray;
 mod upload;
@@ -173,6 +177,10 @@ pub fn run() {
                 }
             }
 
+            // 全局代理状态：下载 / 上传模块与命令层共享同一份代理解析结果。
+            let proxy_state = Arc::new(proxy::ProxyState::new());
+            app.manage(proxy_state);
+
             upload::init(app).map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
             download::init(app).map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
             tray::create(app.handle())?;
@@ -183,6 +191,9 @@ pub fn run() {
         // ---- Tauri command 注册 ----
         .invoke_handler(tauri::generate_handler![
             subtitle::subtitle_get_system_font_config,
+            // 代理
+            proxy::proxy_set_config,
+            proxy::proxy_get_effective,
             // 上传
             upload::local::upload_get_file_size,
             upload::local::upload_is_directory,
@@ -190,7 +201,6 @@ pub fn run() {
             upload::api::upload_provide_api_error,
             upload::queue::upload_set_max_concurrent,
             upload::queue::upload_set_max_retry,
-            upload::queue::upload_set_proxy,
             upload::queue::upload_enqueue_files,
             upload::queue::upload_enqueue_folder,
             upload::queue::upload_pause_task,

@@ -17,8 +17,6 @@ export const useSettingStore = defineStore(
       skipExitConfirm: false,
       /** 启动时自动检查更新 */
       autoCheckUpdate: true,
-      /** 更新请求代理地址（留空不使用代理） */
-      updateProxy: '',
       /** 115接口速率限制（每秒请求数，0为不限制） */
       apiRateLimit: 2,
       /** 应用日志级别 */
@@ -65,9 +63,18 @@ export const useSettingStore = defineStore(
       maxRetry: 3,
       /** 并行上传任务数 */
       maxConcurrent: 5,
-      /** 是否为 OSS 数据上传启用独立代理 */
-      uploadProxyEnabled: false,
-      /** OSS 数据上传代理地址 */
+    });
+
+    const proxySetting = ref({
+      /** 统一代理与单独代理都未设置时，是否跟随系统代理 */
+      followSystemProxy: true,
+      /** 统一代理（更新 / 下载 / 上传共用，留空表示未设置） */
+      unifiedProxy: '',
+      /** 更新代理（留空沿用统一代理） */
+      updateProxy: '',
+      /** 下载代理（留空沿用统一代理） */
+      downloadProxy: '',
+      /** 上传代理（留空沿用统一代理） */
       uploadProxy: '',
     });
 
@@ -96,6 +103,7 @@ export const useSettingStore = defineStore(
       cloudDownloadSetting,
       downloadSetting,
       uploadSetting,
+      proxySetting,
       subtitleStyleSetting,
     };
   },

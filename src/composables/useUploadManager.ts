@@ -9,14 +9,7 @@ import { delay } from 'es-toolkit';
 
 // 上传列表的状态机完全以后端为准，前端只消费这些状态并做交互分发。
 export type UploadStatus =
-  | 'pending'
-  | 'hashing'
-  | 'uploading'
-  | 'pausing'
-  | 'paused'
-  | 'complete'
-  | 'error'
-  | 'cancelled';
+  'pending' | 'hashing' | 'uploading' | 'pausing' | 'paused' | 'complete' | 'error' | 'cancelled';
 
 // Rust 存储层同步给前端的上传任务快照。
 export interface UploadFile {
@@ -305,15 +298,8 @@ export const useUploadManager = createSharedComposable(() => {
     await invokeUploadCommand('upload_set_max_retry', { n });
   };
 
-  const syncUploadProxy = async (
-    enabled = Boolean(settingStore.uploadSetting.uploadProxyEnabled),
-    url = settingStore.uploadSetting.uploadProxy || '',
-  ) => {
-    await invokeUploadCommand('upload_set_proxy', { enabled, url });
-  };
-
   const syncUploadSettings = async () => {
-    await Promise.all([syncMaxConcurrent(), syncMaxRetry(), syncUploadProxy()]);
+    await Promise.all([syncMaxConcurrent(), syncMaxRetry()]);
   };
 
   // 远端目录创建仍复用现有前端 API，并带上限流退避，避免文件夹批量展开时击穿接口。
@@ -508,17 +494,6 @@ export const useUploadManager = createSharedComposable(() => {
         (n) => {
           void syncMaxRetry(n).catch((error) => {
             logUploadManagerError('同步上传重试设置失败:', error);
-          });
-        },
-      ),
-      watch(
-        [
-          () => settingStore.uploadSetting.uploadProxyEnabled,
-          () => settingStore.uploadSetting.uploadProxy,
-        ],
-        ([enabled, url]) => {
-          void syncUploadProxy(Boolean(enabled), url || '').catch((error) => {
-            logUploadManagerError('同步上传代理设置失败:', error);
           });
         },
       ),

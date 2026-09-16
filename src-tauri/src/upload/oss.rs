@@ -24,56 +24,17 @@ use ali_oss_rs::object::ObjectOperations;
 use ali_oss_rs::object_common::{Callback, CallbackBodyType, PutObjectOptionsBuilder};
 use ali_oss_rs::reqwest::{Client as HttpClient, Proxy};
 use log::{error, info, warn};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::watch;
 use tokio::time::sleep;
 
 use super::control::{UploadSignal, upload_signal_registry};
 use super::error::{UploadError, UploadResult, io_error, message_error};
+use crate::proxy::{ProxyDecision, ProxyFeature, ProxyState};
 
-const UPLOAD_PROXY_ENV: &str = "OOF_UPLOAD_PROXY";
 const LIST_PARTS_PAGE_SIZE: u32 = 1000;
 const LIST_PARTS_MAX_ATTEMPTS: usize = 4;
 const LIST_PARTS_RETRY_BASE_DELAY_MS: u64 = 1000;
-
-/// 前端上传代理设置的一次任务级快照。
-///
-/// `url` 即使在关闭时也会保留，用来区分“用户显式关闭”与“从未配置”；后者允许读取
-/// `OOF_UPLOAD_PROXY` 作为启动级 fallback。
-#[derive(Clone, Default)]
-pub(crate) struct UploadProxyConfig {
-    enabled: bool,
-    url: String,
-}
-
-impl UploadProxyConfig {
-    pub(crate) fn new(enabled: bool, url: String) -> Self {
-        Self {
-            enabled,
-            url: url.trim().to_string(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum UploadProxySource {
-    Setting,
-    Environment,
-}
-
-impl UploadProxySource {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Setting => "setting",
-            Self::Environment => "environment",
-        }
-    }
-}
-
-struct EffectiveUploadProxy {
-    url: String,
-    source: UploadProxySource,
-}
 
 #[derive(Default)]
 struct ListedParts {
@@ -127,29 +88,22 @@ fn is_retryable_list_parts_error(error: &OssError) -> bool {
 fn list_parts_retry_delay_ms(attempt: usize) -> u64 {
     LIST_PARTS_RETRY_BASE_DELAY_MS.saturating_mul(1_u64 << attempt.saturating_sub(1).min(10))
 }
-fn resolve_upload_proxy(
-    config: &UploadProxyConfig,
-    environment_proxy: Option<&str>,
-) -> Option<EffectiveUploadProxy> {
-    if config.enabled {
-        return Some(EffectiveUploadProxy {
-            url: config.url.clone(),
-            source: UploadProxySource::Setting,
-        });
-    }
 
-    // 地址非空说明用户保存过 UI 配置并显式关闭，此时不能再被环境变量重新启用。
-    if !config.url.is_empty() {
-        return None;
-    }
+/// 按代理决策构建 OSS 上传使用的 HTTP 客户端。
+fn build_oss_http_client(decision: &ProxyDecision) -> UploadResult<HttpClient> {
+    let builder = match decision {
+        ProxyDecision::Explicit { url } => {
+            let proxy = Proxy::all(url).map_err(|err| message_error("解析上传代理", err))?;
+            HttpClient::builder().proxy(proxy)
+        }
+        // 不显式设置代理时，reqwest 会自动使用系统代理。
+        ProxyDecision::System => HttpClient::builder(),
+        ProxyDecision::Direct => HttpClient::builder().no_proxy(),
+    };
 
-    environment_proxy
-        .map(str::trim)
-        .filter(|url| !url.is_empty())
-        .map(|url| EffectiveUploadProxy {
-            url: url.to_string(),
-            source: UploadProxySource::Environment,
-        })
+    builder
+        .build()
+        .map_err(|err| message_error("创建上传 HTTP 客户端", err))
 }
 
 async fn list_all_uploaded_parts(
@@ -287,7 +241,6 @@ pub(crate) async fn upload_to_oss_internal(
     callback_var: String,
     oss_upload_id: Option<String>,
     token_expiration_ms: Option<u64>,
-    upload_proxy: UploadProxyConfig,
     hooks: UploadHooks,
 ) -> UploadResult<String> {
     info!(
@@ -316,7 +269,6 @@ pub(crate) async fn upload_to_oss_internal(
         callback_var,
         oss_upload_id,
         token_expiration_ms,
-        upload_proxy,
         rx,
         hooks,
     )
@@ -357,7 +309,6 @@ async fn upload_file_impl(
     callback_var: String,
     oss_upload_id: Option<String>,
     token_expiration_ms: Option<u64>,
-    upload_proxy: UploadProxyConfig,
     rx: watch::Receiver<UploadSignal>,
     hooks: UploadHooks,
 ) -> UploadResult<String> {
@@ -378,33 +329,24 @@ async fn upload_file_impl(
     let clean_endpoint = endpoint
         .trim_start_matches("https://")
         .trim_start_matches("http://");
-    let mut oss_builder = ClientBuilder::new(&access_key_id, &access_key_secret, clean_endpoint)
+
+    // 按统一代理设置解析本场景使用的代理（功能代理 → 统一代理 → 跟随系统 / 直连）。
+    let proxy_decision = app
+        .state::<Arc<ProxyState>>()
+        .inner()
+        .clone()
+        .resolve(ProxyFeature::Upload);
+    info!(
+        "[上传任务][{}] 网络代理：{}",
+        upload_id,
+        proxy_decision.describe()
+    );
+    let http_client = build_oss_http_client(&proxy_decision)?;
+
+    let client = ClientBuilder::new(&access_key_id, &access_key_secret, clean_endpoint)
         .sts_token(&security_token)
-        .scheme("https");
-
-    let environment_proxy = std::env::var(UPLOAD_PROXY_ENV).ok();
-    if let Some(effective_proxy) = resolve_upload_proxy(&upload_proxy, environment_proxy.as_deref())
-    {
-        if effective_proxy.url.is_empty() {
-            return Err(message_error("解析上传代理", "代理地址不能为空"));
-        }
-
-        let proxy = Proxy::all(effective_proxy.url.as_str())
-            .map_err(|e| message_error("解析上传代理", e))?;
-        let http_client = HttpClient::builder()
-            .proxy(proxy)
-            .build()
-            .map_err(|e| message_error("创建上传代理客户端", e))?;
-
-        oss_builder = oss_builder.client(http_client);
-        info!(
-            "[上传任务][{}] 已启用上传代理 source={}",
-            upload_id,
-            effective_proxy.source.label()
-        );
-    }
-
-    let client = oss_builder
+        .scheme("https")
+        .client(http_client)
         .build()
         .map_err(|e| message_error("创建 OSS 客户端", e))?;
 
@@ -795,9 +737,10 @@ mod tests {
 
     use super::{
         ClientBuilder, HttpClient, ListPartsResult, ListPartsResultItem, ListedParts, OssError,
-        Proxy, UploadProxyConfig, UploadProxySource, is_no_such_upload, is_part_already_exist,
-        is_retryable_list_parts_error, list_parts_retry_delay_ms, resolve_upload_proxy,
+        Proxy, build_oss_http_client, is_no_such_upload, is_part_already_exist,
+        is_retryable_list_parts_error, list_parts_retry_delay_ms,
     };
+    use crate::proxy::ProxyDecision;
 
     fn api_error(code: &str) -> OssError {
         OssError::ApiError(Box::new(ErrorResponse {
@@ -902,44 +845,15 @@ mod tests {
     }
 
     #[test]
-    fn enabled_setting_takes_priority_over_environment() {
-        let config = UploadProxyConfig::new(true, " http://127.0.0.1:7897 ".to_string());
-        let proxy = resolve_upload_proxy(&config, Some("http://127.0.0.1:7898")).unwrap();
+    fn builds_http_clients_for_all_proxy_decisions() {
+        // 显式代理（含 socks5）、跟随系统与直连都应能构建客户端。
+        let explicit = ProxyDecision::Explicit {
+            url: "socks5://127.0.0.1:1080".to_string(),
+        };
 
-        assert_eq!(proxy.url, "http://127.0.0.1:7897");
-        assert!(proxy.source == UploadProxySource::Setting);
-    }
-
-    #[test]
-    fn disabled_saved_setting_suppresses_environment_fallback() {
-        let config = UploadProxyConfig::new(false, "http://127.0.0.1:7897".to_string());
-
-        assert!(resolve_upload_proxy(&config, Some("http://127.0.0.1:7898")).is_none());
-    }
-
-    #[test]
-    fn enabled_blank_setting_does_not_fall_back_to_environment() {
-        let config = UploadProxyConfig::new(true, "   ".to_string());
-        let proxy = resolve_upload_proxy(&config, Some("http://127.0.0.1:7898")).unwrap();
-
-        assert!(proxy.url.is_empty());
-        assert!(proxy.source == UploadProxySource::Setting);
-    }
-
-    #[test]
-    fn empty_unconfigured_setting_uses_environment_fallback() {
-        let config = UploadProxyConfig::default();
-        let proxy = resolve_upload_proxy(&config, Some(" http://127.0.0.1:7897 ")).unwrap();
-
-        assert_eq!(proxy.url, "http://127.0.0.1:7897");
-        assert!(proxy.source == UploadProxySource::Environment);
-    }
-
-    #[test]
-    fn blank_environment_proxy_is_ignored() {
-        let config = UploadProxyConfig::default();
-
-        assert!(resolve_upload_proxy(&config, Some("   ")).is_none());
+        assert!(build_oss_http_client(&explicit).is_ok());
+        assert!(build_oss_http_client(&ProxyDecision::System).is_ok());
+        assert!(build_oss_http_client(&ProxyDecision::Direct).is_ok());
     }
 
     #[test]

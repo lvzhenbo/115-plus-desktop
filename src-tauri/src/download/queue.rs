@@ -8,6 +8,7 @@ use tokio::task::JoinHandle;
 
 use tauri::AppHandle;
 
+use super::DownloadHttpClient;
 use super::events::{EventBridge, FolderAggregator, ProgressRegistry, UrlResolver};
 use super::http::{ConnectionController, DownloadSignal};
 use super::persistence::ProgressFile;
@@ -150,7 +151,7 @@ impl TaskQueue {
         state_sync_notify: Arc<Notify>,
         url_resolver: Arc<UrlResolver>,
         progress_registry: Arc<ProgressRegistry>,
-        http_client: reqwest::Client,
+        http_client: Arc<DownloadHttpClient>,
         progress_file: Arc<ProgressFile>,
         folder_aggregator: Arc<FolderAggregator>,
     ) -> Self {
@@ -319,7 +320,7 @@ async fn queue_loop(
     state_sync_notify: Arc<Notify>,
     url_resolver: Arc<UrlResolver>,
     progress_registry: Arc<ProgressRegistry>,
-    http_client: reqwest::Client,
+    http_client: Arc<DownloadHttpClient>,
     progress_file: Arc<ProgressFile>,
     folder_aggregator: Arc<FolderAggregator>,
     frozen: Arc<AtomicBool>,
@@ -372,7 +373,7 @@ async fn queue_loop(
                     state_sync_notify.clone(),
                     url_resolver.clone(),
                     progress_registry.clone(),
-                    http_client.clone(),
+                    http_client.client(),
                     progress_file.clone(),
                     segment_semaphore.clone(),
                     conn_controller.clone(),
