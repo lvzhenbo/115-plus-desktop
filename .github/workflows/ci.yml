@@ -30,10 +30,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      # pnpm/setup 一步安装 pnpm 与 Node.js，并自动执行 pnpm install（工作区存在 package.json 时）
+      - name: Setup pnpm and Node.js
+        uses: pnpm/setup@v2
         with:
-          node-version: lts/*
+          runtime: node@lts
+          cache: true
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -50,14 +52,6 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          cache: true
-
-      - name: Install frontend dependencies
-        run: pnpm install
 
       - name: Create .env.local file
         run: |
