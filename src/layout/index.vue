@@ -140,6 +140,7 @@
   import { useSettingStore } from '@/store/setting';
   import { downloadDir } from '@tauri-apps/api/path';
   import { useDownloadManager } from '@/composables/useDownloadManager';
+  import { useModalQuerySync } from '@/composables/useModalQuerySync';
   import { useUploadManager } from '@/composables/useUploadManager';
   import { useCheckUpdate } from '@/composables/useCheckUpdate';
 
@@ -227,6 +228,10 @@
   const settingStore = useSettingStore();
   const offlineDownloadShow = ref(false);
   const searchShow = ref(false);
+
+  // 全局弹窗也参与应用回退：打开时写入路由 query，侧键 / 快捷键回退时优先关闭弹窗。
+  useModalQuerySync(offlineDownloadShow, 'offlineDownload');
+  useModalQuerySync(searchShow, 'search');
 
   // 退出登录前暂停所有传输任务，避免 token 失效后任务异常。
   const { pauseAllTasks: pauseAllDownloads } = useDownloadManager();

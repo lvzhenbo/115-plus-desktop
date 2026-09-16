@@ -21,7 +21,9 @@
       v-model:cid="cid"
       v-model:view-mode="userStore.homeViewMode"
       v-model:sort-config="userStore.homeSortConfig"
+      defer-navigation
       class="h-[calc(100vh-59px)]"
+      @navigate-request="handleExplorerNavigate"
       @download="handleDownload"
       @batch-download="handleBatchDownload"
       @upload-file="handleUploadFiles"
@@ -51,11 +53,14 @@
   import { useSettingStore } from '@/store/setting';
 
   const route = useRoute();
+  const router = useRouter();
   const message = useMessage();
   const userStore = useUserStore();
   const settingStore = useSettingStore();
   const explorerRef = useTemplateRef('explorerRef');
-  const cid = ref('0');
+  // 目录由路由 query 承载：初次加载时从 URL 恢复，之后的目录切换都会写回 URL，
+  // 使浏览器 / 鼠标侧键的回退能逐级返回浏览过的目录。
+  const cid = ref(route.query.fid ? String(route.query.fid) : '0');
   const imgPreviewVisible = ref(false);
   const imgPreviewList = ref<string[]>([]);
   const imgPreviewIndex = ref(0);
@@ -93,15 +98,25 @@
     unlistenDragDrop.then((f) => f());
   });
 
+  // 目录导航委托给路由（见 FileExplorer 的 defer-navigation）：URL 变化后再驱动列表加载。
+  // 无 fid 的历史条目对应根目录；从其它页面切回主页（fid 无变化）时不会触发，从而保留当前目录。
   watch(
-    route,
-    () => {
-      if (route.name === 'Home') {
-        explorerRef.value?.navigate(route.query.fid?.toString());
-      }
+    () => route.query.fid,
+    (fid) => {
+      if (route.name !== 'Home') return;
+      explorerRef.value?.navigate(fid ? String(fid) : '0');
     },
-    { deep: true },
   );
+
+  /** FileExplorer 请求导航到目标目录：写入路由，由上面的 watch 统一加载。 */
+  const handleExplorerNavigate = (targetCid: string) => {
+    if (String(route.query.fid ?? '0') === targetCid) return;
+
+    const query = { ...route.query };
+    if (targetCid === '0') delete query.fid;
+    else query.fid = targetCid;
+    router.push({ name: 'Home', query });
+  };
 
   // ============ 打开文件 ============
 

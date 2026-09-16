@@ -134,6 +134,7 @@
   } from '@/api/types/file';
   import type { ViewMode, SortConfig, ToolbarAction, ContextMenuAction, ListColumn } from './types';
   import { useExplorerShortcuts } from '@/composables/useExplorerShortcuts';
+  import { useModalQuerySync } from '@/composables/useModalQuerySync';
   import { useSettingStore } from '@/store/setting';
 
   const dialog = useDialog();
@@ -176,6 +177,8 @@
       columns?: ListColumn[];
       enableSearch?: boolean;
       showFavorites?: boolean;
+      /** 目录导航委托给外部处理（主页会写入路由，由 URL 变化驱动加载），默认直接本地跳转 */
+      deferNavigation?: boolean;
     }>(),
     {
       showCheckbox: true,
@@ -185,6 +188,7 @@
       columns: () => ['size', 'type', 'createTime', 'modifyTime'],
       enableSearch: false,
       showFavorites: true,
+      deferNavigation: false,
     },
   );
 
@@ -206,6 +210,7 @@
     'upload-file': [];
     'upload-folder': [];
     'open-file': [file: MyFile];
+    'navigate-request': [cid: string];
   }>();
 
   const cid = defineModel<string>('cid', { default: '0' });
@@ -567,11 +572,22 @@
 
   // ============ 导航 ============
 
-  const handleToFolder = (cid: string) => {
+  /**
+   * 统一的目录导航入口：
+   * - 外部接管（主页路由）时只发出请求，由 URL 变化后再驱动加载；
+   * - 其它场景（如弹窗内复用）直接本地跳转。
+   */
+  const requestFolderNavigation = (cid: string) => {
     exitSearchMode();
-    params.cid = cid.toString();
-    pagination.page = forderTemp.value.get(cid) || 1;
-    getFileList();
+    if (props.deferNavigation) {
+      emit('navigate-request', cid);
+      return;
+    }
+    navigate(cid);
+  };
+
+  const handleToFolder = (cid: string) => {
+    requestFolderNavigation(cid);
   };
 
   function handleNavigateToFavorite(cid: string) {
@@ -605,10 +621,7 @@
     if (!file) return;
 
     if (file.fc === '0') {
-      exitSearchMode();
-      params.cid = file.fid;
-      pagination.page = forderTemp.value.get(file.fid) || 1;
-      getFileList();
+      requestFolderNavigation(file.fid);
     } else {
       emit('open-file', file);
     }
@@ -701,6 +714,17 @@
   const handleUploadFolder = () => {
     emit('upload-folder');
   };
+
+  // ============ 路由联动 ============
+
+  // 仅主页场景（deferNavigation）下让弹窗参与全局回退：
+  // 打开弹窗会写入路由 query，侧键 / 快捷键回退时优先关闭最上层弹窗。
+  const modalQueryEnabled = () => props.deferNavigation;
+
+  useModalQuerySync(folderModalShow, 'folder', modalQueryEnabled);
+  useModalQuerySync(newFolderModalShow, 'newFolder', modalQueryEnabled);
+  useModalQuerySync(renameModalShow, 'rename', modalQueryEnabled);
+  useModalQuerySync(batchRenameModalShow, 'batchRename', modalQueryEnabled);
 
   // ============ 键盘快捷键 ============
 
