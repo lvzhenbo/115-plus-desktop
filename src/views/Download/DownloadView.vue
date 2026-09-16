@@ -1,7 +1,7 @@
 <template>
-  <div class="p-4">
+  <div class="flex flex-col h-[calc(100vh-59px)]">
     <!-- 工具栏 -->
-    <NSpace class="mb-4" align="center">
+    <NSpace class="px-4 pt-4" align="center">
       <NButton type="primary" @click="handleClear">
         <template #icon>
           <NIcon>
@@ -35,10 +35,9 @@
       </NText>
     </NSpace>
 
-    <!-- 卡片列表 -->
-    <NScrollbar class="h-[calc(100vh-141px)]!">
-      <NEmpty v-if="displayList.length === 0" description="暂无下载任务" class="h-full" />
-      <NSpace v-else vertical>
+    <!-- 卡片列表（滚动条贴边，边距由内容自添） -->
+    <NScrollbar v-if="displayList.length > 0" class="flex-1 min-h-0">
+      <NSpace vertical class="p-4">
         <NCard
           v-for="item in displayList"
           :key="item.gid"
@@ -184,6 +183,11 @@
         </NCard>
       </NSpace>
     </NScrollbar>
+
+    <!-- 空状态 -->
+    <div v-else class="flex-1 flex items-center justify-center">
+      <NEmpty description="暂无下载任务" />
+    </div>
   </div>
 </template>
 
