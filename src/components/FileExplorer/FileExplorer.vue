@@ -416,6 +416,16 @@
 
   function setSort(field: SortField) {
     if (isSearching.value) return;
+
+    // 记忆排序由 115 服务端控制：开放平台未提供排序接口，本地排序请求不会生效。
+    if (settingStore.generalSetting.customOrder === 0) {
+      message.warning(
+        '记忆排序模式下无法手动调整排序：115 开放平台未提供排序接口，列表始终按其返回顺序展示。可在「设置 → 排序方式」中切换为「自定义排序」。',
+        { duration: 5000 },
+      );
+      return;
+    }
+
     if (sortConfig.value.field === field) {
       sortConfig.value = {
         field,
