@@ -1,5 +1,43 @@
 # 更新日志
 
+## [1.1.0-alpha.1](https://github.com/lvzhenbo/115-plus-desktop/compare/v1.1.0-alpha.0...v1.1.0-alpha.1) (2026-09-16)
+
+### ✨ 新功能
+
+- 字幕选择列表添加虚拟滚动 ([2d3519d](https://github.com/lvzhenbo/115-plus-desktop/commit/2d3519d75f1558b3856eed604e65d2ad01487beb))
+- 弹窗支持浏览器回退键关闭并将主页目录导航纳入路由 ([f0dd950](https://github.com/lvzhenbo/115-plus-desktop/commit/f0dd9509a445821c8ebea67cd95fa3a1ede871c4))
+- 支持下载前选择保存目录 ([ade246a](https://github.com/lvzhenbo/115-plus-desktop/commit/ade246a9892e62511beef1335258a054c4ecb34f))
+- 支持收藏文件夹功能及侧边栏展示 ([31dc2d2](https://github.com/lvzhenbo/115-plus-desktop/commit/31dc2d2d8e385f9401bb5f1b5125fe63c52f3558))
+- 添加 OSS 独立上传代理设置 ([#28](https://github.com/lvzhenbo/115-plus-desktop/issues/28)) ([68d1aa7](https://github.com/lvzhenbo/115-plus-desktop/commit/68d1aa78ae8412bdea6b61b8e24d7739eb3dd0a3))
+- 添加统一代理设置，更新/下载/上传共用一份配置 ([7baf8ef](https://github.com/lvzhenbo/115-plus-desktop/commit/7baf8ef8a0fa87e8d3898544544eec750db071b8))
+- 重命名输入框支持回车键提交 ([c2a5a3b](https://github.com/lvzhenbo/115-plus-desktop/commit/c2a5a3b8a2c66d91b1eed291403f2ad938cb517b))
+- 重构收藏夹交互，支持重命名、右键菜单与状态持久化 ([3212f83](https://github.com/lvzhenbo/115-plus-desktop/commit/3212f8346d3e8b6d526a01decb413dfde7c530b0))
+
+### 🐛 Bug 修复
+
+- 上传暂停恢复与 OSS UploadId 意外重置 ([#30](https://github.com/lvzhenbo/115-plus-desktop/issues/30)) ([e4ce091](https://github.com/lvzhenbo/115-plus-desktop/commit/e4ce091d39bd312273ac1c20235d3dd013889c21))
+- 优化下载页滚动区域布局，避免滚动条遮挡内容 ([42e85dc](https://github.com/lvzhenbo/115-plus-desktop/commit/42e85dc80f0f23ad559c588b11cc672751794447))
+- 修复 OSS 大文件断点续传 PartAlreadyExist 循环 ([#29](https://github.com/lvzhenbo/115-plus-desktop/issues/29)) ([e2d72ec](https://github.com/lvzhenbo/115-plus-desktop/commit/e2d72ec0c7239150d158ed3d89c4532462bd7523))
+- 记忆排序模式下禁用表头手动排序并提示 ([9e3dde5](https://github.com/lvzhenbo/115-plus-desktop/commit/9e3dde5780356d2e2b1e095d2332cc9b9f136d14))
+- 限制快捷键仅由最上层文件列表实例响应 ([799ccd9](https://github.com/lvzhenbo/115-plus-desktop/commit/799ccd958c028cd4955549d1b38ca34b80781a3d))
+
+### ♻️ 代码重构
+
+- 上传页由数据表格重构为卡片列表布局 ([444bf40](https://github.com/lvzhenbo/115-plus-desktop/commit/444bf40a77c8f574b491321126cb928a37169656))
+
+### 🔧 其他更新
+
+- 更新依赖 ([1eb9557](https://github.com/lvzhenbo/115-plus-desktop/commit/1eb9557fb7c1d86edaf7ff7f757bdcf52fffe772))
+- 更新依赖 ([f463d12](https://github.com/lvzhenbo/115-plus-desktop/commit/f463d1228d8aee30398f985b5afe69c4ba0cd3c3))
+- 更新依赖版本 ([1ba1395](https://github.com/lvzhenbo/115-plus-desktop/commit/1ba139515d83f74fdb01095f6b344b410843609f))
+- 更新依赖版本 ([97a59eb](https://github.com/lvzhenbo/115-plus-desktop/commit/97a59eb3a9e70dc9f6c1fb67b6fb6b942a4cd7f8))
+
+### 👷 CI 配置
+
+- 为 Windows 预发布版本指定 NSIS 打包格式 ([9861118](https://github.com/lvzhenbo/115-plus-desktop/commit/98611188bc2fe3a10656cdc434a85bfc63e2a08c))
+- 使用 pnpm/setup 统一安装 pnpm 与 Node.js ([3161215](https://github.com/lvzhenbo/115-plus-desktop/commit/3161215780688fc7a2bcc6f63055392eb2901ad7))
+- 关闭 CI 构建的 updater 产物 ([6a41803](https://github.com/lvzhenbo/115-plus-desktop/commit/6a41803b84ce1ec00838282e2e740be0c1f792ac))
+
 ## [1.1.0-alpha.0](https://github.com/lvzhenbo/115-plus-desktop/compare/v1.0.7...v1.1.0-alpha.0) (2026-07-15)
 
 ### ✨ 新功能
