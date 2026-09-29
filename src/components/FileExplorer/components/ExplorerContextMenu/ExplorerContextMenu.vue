@@ -22,7 +22,8 @@
     x: number;
     y: number;
     targetItem: MyFile | null;
-    hasSelection: boolean;
+    /** 当前选中项数量：0 = 空白处右键，1 = 单文件菜单，>1 = 多选菜单 */
+    selectedCount: number;
     show: ContextMenuAction[];
   }>();
 
@@ -119,7 +120,7 @@
       {
         label: '批量重命名',
         key: 'batchRename',
-        disabled: !props.hasSelection,
+        disabled: props.selectedCount === 0,
         icon: () => (
           <NIcon>
             <OrderedListOutlined />
@@ -161,12 +162,91 @@
       },
     ];
 
-    // 根据 show 过滤菜单项
+    return normalizeOptions(items);
+  });
+
+  /**
+   * 多选（>1）时的菜单：只保留可作用于整个选区的项，
+   * 打开 / 重命名 / 详情 / 收藏等单文件项不展示，避免"高亮多个却只操作一个"。
+   */
+  const multiMenuOptions = computed<DropdownOption[]>(() => {
+    const count = props.selectedCount;
+    const items: DropdownOption[] = [
+      {
+        label: '刷新',
+        key: 'reload',
+        icon: () => (
+          <NIcon>
+            <ReloadOutlined />
+          </NIcon>
+        ),
+      },
+      {
+        label: '上传文件',
+        key: 'uploadFile',
+        icon: () => (
+          <NIcon>
+            <UploadOutlined />
+          </NIcon>
+        ),
+      },
+      { type: 'divider', key: 'd1' },
+      {
+        label: `下载 (${count})`,
+        key: 'download',
+        icon: () => (
+          <NIcon>
+            <DownloadOutlined />
+          </NIcon>
+        ),
+      },
+      {
+        label: `复制到 (${count})`,
+        key: 'copy',
+        icon: () => (
+          <NIcon>
+            <CopyOutlined />
+          </NIcon>
+        ),
+      },
+      {
+        label: `移动到 (${count})`,
+        key: 'move',
+        icon: () => (
+          <NIcon>
+            <DriveFileMoveOutlined />
+          </NIcon>
+        ),
+      },
+      {
+        label: `批量重命名 (${count})`,
+        key: 'batchRename',
+        icon: () => (
+          <NIcon>
+            <OrderedListOutlined />
+          </NIcon>
+        ),
+      },
+      { type: 'divider', key: 'd2' },
+      {
+        label: () => <NText type="error">{`删除 (${count})`}</NText>,
+        key: 'delete',
+        icon: () => (
+          <NIcon color={themeVars.value.errorColor}>
+            <DeleteOutlined />
+          </NIcon>
+        ),
+      },
+    ];
+    return normalizeOptions(items);
+  });
+
+  /** 按 show 过滤菜单项，并移除首尾 / 连续的分割线 */
+  function normalizeOptions(items: DropdownOption[]): DropdownOption[] {
     const filtered = items.filter(
       (item) => item.type === 'divider' || props.show.includes(item.key as ContextMenuAction),
     );
 
-    // 移除首尾和连续的分割线
     const result: DropdownOption[] = [];
     for (const item of filtered) {
       if (item.type === 'divider') {
@@ -181,7 +261,7 @@
       result.pop();
     }
     return result;
-  });
+  }
 
   const bgMenuOptions = computed<DropdownOption[]>(() => {
     const items: DropdownOption[] = [
@@ -207,7 +287,11 @@
     return items.filter((item) => props.show.includes(item.key as ContextMenuAction));
   });
 
-  const options = computed(() => (props.targetItem ? fileMenuOptions.value : bgMenuOptions.value));
+  const options = computed(() => {
+    if (!props.targetItem) return bgMenuOptions.value;
+    if (props.selectedCount > 1) return multiMenuOptions.value;
+    return fileMenuOptions.value;
+  });
 
   function handleSelect(key: string) {
     const eventMap: Record<string, () => void> = {

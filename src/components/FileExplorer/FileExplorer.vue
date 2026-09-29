@@ -84,7 +84,7 @@
       :x="contextMenuState.x"
       :y="contextMenuState.y"
       :target-item="contextMenuState.targetItem"
-      :has-selection="selectedItems.size > 0"
+      :selected-count="selectedItems.size"
       :show="contextMenuActions"
       @close="closeContextMenu"
       @open="handleOpen"
@@ -662,6 +662,11 @@
   };
 
   const handleDownload = () => {
+    // 多选时对整个选区批量下载
+    if (selectedItems.value.size > 1) {
+      handleBatchDownload();
+      return;
+    }
     const file = contextMenuState.value.targetItem;
     if (!file) return;
     emit('download', file);
@@ -673,21 +678,31 @@
     emit('batch-download', selectedFiles);
   };
 
+  /** 右键菜单要操作的对象：多选时为整个选区，否则为当前右键项 */
+  function contextMenuTargetIds(): string[] {
+    if (selectedItems.value.size > 1) return Array.from(selectedItems.value);
+    const item = contextMenuState.value.targetItem;
+    return item ? [item.fid] : [];
+  }
+
   const handleContextCopy = () => {
-    if (!contextMenuState.value.targetItem) return;
-    ids.value = contextMenuState.value.targetItem.fid;
+    const targets = contextMenuTargetIds();
+    if (targets.length === 0) return;
+    ids.value = targets.join(',');
     handleOpenFolderModal('copy');
   };
 
   const handleContextMove = () => {
-    if (!contextMenuState.value.targetItem) return;
-    ids.value = contextMenuState.value.targetItem.fid;
+    const targets = contextMenuTargetIds();
+    if (targets.length === 0) return;
+    ids.value = targets.join(',');
     handleOpenFolderModal('move');
   };
 
   const handleContextDelete = () => {
-    if (!contextMenuState.value.targetItem) return;
-    ids.value = contextMenuState.value.targetItem.fid;
+    const targets = contextMenuTargetIds();
+    if (targets.length === 0) return;
+    ids.value = targets.join(',');
     handleDelete();
   };
 
