@@ -142,19 +142,7 @@
       render: (row) => {
         return (
           <NSpace>
-            <NButton
-              text
-              type="primary"
-              onClick={() => {
-                router.push({
-                  name: 'Home',
-                  query: {
-                    fid: row.file_category === '0' ? row.file_id : row.parent_id,
-                  },
-                });
-                show.value = false;
-              }}
-            >
+            <NButton text type="primary" onClick={() => handleOpen(row)}>
               {{
                 icon: () => (
                   <NIcon>
@@ -206,6 +194,26 @@
       },
     },
   ];
+
+  /**
+   * 打开搜索结果：目录由主页路由承载（URL 变化后 HomeView 驱动列表加载）。
+   * 必须等导航完成后再关闭弹窗——弹窗关闭会触发 query 清理（replace），
+   * 与本次 push 同帧发出时会取消导航，导致「打开」失效。
+   */
+  const handleOpen = async (row: SearchFile) => {
+    try {
+      await router.push({
+        name: 'Home',
+        query: {
+          fid: row.file_category === '0' ? row.file_id : row.parent_id,
+        },
+      });
+    } catch (error) {
+      console.error('打开目录失败:', error);
+    } finally {
+      show.value = false;
+    }
+  };
 
   const handleSearch = async () => {
     if (!searchParams.search_value) {
