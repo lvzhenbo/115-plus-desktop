@@ -64,17 +64,25 @@ jobs:
           echo "VITE_APP_KEY=${{ secrets.APP_KEY }}" >> .env.local
         shell: bash
 
-      - name: Detect pre-release version
-        id: version-check
-        if: matrix.platform == 'windows-latest'
+      # MSI 与 RPM 都无法表达 semver 预发布版本号（如 1.1.0-alpha.1）：
+      #   - MSI 因此回退到 NSIS；
+      #   - RPM 的 version 字段不允许 `-`（该字符是 version 与 release 的分隔符），
+      #     故预发布跳过 rpm，仅打包 deb 与 appimage（appimage 也是 Linux 端应用内更新的产物）。
+      - name: Resolve bundle arguments
+        id: bundle-args
         shell: bash
         run: |
+          ARGS='${{ matrix.args }}'
+
           VERSION=$(node -p "require('./package.json').version")
           if [[ "$VERSION" == *"-"* ]]; then
-            echo "is_prerelease=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            case '${{ matrix.platform }}' in
+              windows-latest) ARGS='--bundles nsis' ;;
+              ubuntu-latest) ARGS='--bundles deb,appimage' ;;
+            esac
           fi
+
+          echo "args=$ARGS" >> $GITHUB_OUTPUT
 
       - name: Build Tauri App
         uses: tauri-apps/tauri-action@v1
@@ -84,7 +92,7 @@ jobs:
           # CI 产物仅用于验证构建与下载，不用于应用内更新：
           # 通过 --config 关闭 updater 产物（.sig / latest.json），因此无需 TAURI_SIGNING_PRIVATE_KEY，
           # 在 PR 等没有 secrets 的场景下也能正常构建。
-          args: ${{ matrix.platform == 'windows-latest' && steps.version-check.outputs.is_prerelease == 'true' && '--bundles nsis' || matrix.args }} --config src-tauri/tauri.ci.conf.json
+          args: ${{ steps.bundle-args.outputs.args }} --config src-tauri/tauri.ci.conf.json
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7

@@ -105,7 +105,8 @@ jobs:
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
           - platform: 'ubuntu-latest'
-            args: ''
+            # RPM 的 version 字段不允许 `-`（如 1.1.0-alpha.1），预发布仅构建 deb 与 appimage
+            args: '--bundles deb,appimage'
           - platform: 'windows-latest'
             # MSI 不支持 semver 预发布版本号（如 1.1.0-alpha.0），预发布仅构建 NSIS
             args: '--bundles nsis'
