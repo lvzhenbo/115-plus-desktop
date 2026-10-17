@@ -32,7 +32,7 @@
       :favorited="currentFolderFavorited"
       :favorite-disabled="favoriteDisabled"
       :show-favorites="props.showFavorites"
-      :favorites-open="!userStore.favoritesCollapsed"
+      :favorites-open="!favoritesCollapsed"
       @navigate="handleToFolder"
       @toggle-favorite="toggleFavorite"
       @toggle-favorites="toggleFavoritesPanel"
@@ -60,7 +60,7 @@
       />
       <ExplorerFavorites
         v-if="props.showFavorites"
-        v-model:collapsed="userStore.favoritesCollapsed"
+        v-model:collapsed="favoritesCollapsed"
         :current-cid="params.cid || '0'"
         @navigate="handleNavigateToFavorite"
       />
@@ -225,6 +225,8 @@
   const sortConfig = defineModel<SortConfig>('sortConfig', {
     default: () => ({ field: 'user_utime', direction: 'desc' }),
   });
+  // 收藏夹面板状态由使用方各自持有（主页 / 弹窗），避免同屏多个实例共享同一份状态互相干扰
+  const favoritesCollapsed = defineModel<boolean>('favoritesCollapsed', { default: true });
 
   onMounted(() => {
     getFileList();
@@ -304,16 +306,21 @@
 
   // ============ 数据加载 ============
 
+  /** 统一 cid 形式：接口根目录返回数字 0，空值同样按根目录处理，最终归一为字符串。 */
+  const normalizeCid = (cid?: string | number) => String(cid || '0');
+
   const getFileList = async () => {
+    params.cid = normalizeCid(params.cid);
     if (params.cid) forderTemp.value.set(params.cid, pagination.page || 1);
-    cid.value = params.cid || '0';
+    cid.value = params.cid;
     params.offset = ((pagination.page || 1) - 1) * (pagination.pageSize || 50);
     loading.value = true;
     try {
       const res = await fileList({ ...params });
       data.value = res.data;
       pagination.itemCount = res.count;
-      path.value = res.path;
+      // 根目录项的 cid 是数字 0，统一成字符串，避免下游用真值判断时被丢弃
+      path.value = res.path.map((item) => ({ ...item, cid: normalizeCid(item.cid) }));
       // 记忆排序时，根据接口返回的排序信息更新展示
       if (settingStore.generalSetting.customOrder === 0) {
         sortConfig.value = {
@@ -474,13 +481,13 @@
 
     const current = path.value[path.value.length - 1];
     const parent = path.value[path.value.length - 2];
-    userStore.addFavorite(currentCid, current?.name || '未命名文件夹', parent?.cid || '0');
+    userStore.addFavorite(currentCid, current?.name || '未命名文件夹', String(parent?.cid || '0'));
     message.success('已添加到收藏夹');
   }
 
   /** 展开 / 收起收藏夹面板 */
   function toggleFavoritesPanel() {
-    userStore.favoritesCollapsed = !userStore.favoritesCollapsed;
+    favoritesCollapsed.value = !favoritesCollapsed.value;
   }
 
   // ============ 选择 ============
@@ -611,16 +618,17 @@
    * - 外部接管（主页路由）时只发出请求，由 URL 变化后再驱动加载；
    * - 其它场景（如弹窗内复用）直接本地跳转。
    */
-  const requestFolderNavigation = (cid: string) => {
+  const requestFolderNavigation = (cid: string | number) => {
     exitSearchMode();
+    const target = normalizeCid(cid);
     if (props.deferNavigation) {
-      emit('navigate-request', cid);
+      emit('navigate-request', target);
       return;
     }
-    navigate(cid);
+    navigate(target);
   };
 
-  const handleToFolder = (cid: string) => {
+  const handleToFolder = (cid: string | number) => {
     requestFolderNavigation(cid);
   };
 
@@ -857,10 +865,11 @@
 
   // ============ 对外暴露 ============
 
-  function navigate(cid?: string) {
-    if (cid) {
-      params.cid = cid;
-      pagination.page = forderTemp.value.get(cid) || 1;
+  /** 目录切换入口：cid 兼容数字（接口根目录为 0）与空值，统一按字符串处理。 */
+  function navigate(cid?: string | number) {
+    if (cid !== undefined && cid !== null) {
+      params.cid = normalizeCid(cid);
+      pagination.page = forderTemp.value.get(params.cid) || 1;
     }
     getFileList();
   }

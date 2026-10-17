@@ -21,15 +21,17 @@ export const useUserStore = defineStore(
     const latestMoveFolder = ref('0');
     const latestSaveFolder = ref('0');
 
-    // FileExplorer 视图设置
+    // FileExplorer 视图设置：主页与弹窗各自保存一份，避免同屏多个实例共享状态互相干扰
     const homeViewMode = ref<ViewMode>('list');
     const homeSortConfig = ref<SortConfig>({ field: 'user_utime', direction: 'desc' });
+    /** 主页收藏夹面板是否收起（持久化，下次启动保持） */
+    const homeFavoritesCollapsed = ref(true);
     const folderModalViewMode = ref<ViewMode>('list');
     const folderModalSortConfig = ref<SortConfig>({ field: 'user_utime', direction: 'desc' });
+    /** 弹窗收藏夹面板是否收起（持久化，下次启动保持） */
+    const folderModalFavoritesCollapsed = ref(true);
 
     const favorites = ref<FavoriteFolder[]>([]);
-    /** 收藏夹面板是否收起（持久化，下次启动保持） */
-    const favoritesCollapsed = ref(true);
 
     function addFavorite(cid: string, name: string, pid: string) {
       const existing = favorites.value.find((f) => f.cid === cid);
@@ -99,10 +101,11 @@ export const useUserStore = defineStore(
       latestSaveFolder,
       homeViewMode,
       homeSortConfig,
+      homeFavoritesCollapsed,
       folderModalViewMode,
       folderModalSortConfig,
+      folderModalFavoritesCollapsed,
       favorites,
-      favoritesCollapsed,
       addFavorite,
       removeFavorite,
       renameFavorite,

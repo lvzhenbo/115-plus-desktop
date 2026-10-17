@@ -28,7 +28,11 @@
     class="flex items-center px-3 py-1.5 border-b border-(--border-color) bg-(--action-color) min-h-9 gap-2"
   >
     <NBreadcrumb class="flex-1">
-      <NBreadcrumbItem v-for="item in path" :key="item.cid" @click="emit('navigate', item.cid)">
+      <NBreadcrumbItem
+        v-for="item in path"
+        :key="item.cid"
+        @click="emit('navigate', String(item.cid))"
+      >
         <NEllipsis
           class="max-w-60!"
           :tooltip="{

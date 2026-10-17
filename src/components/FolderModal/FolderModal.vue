@@ -5,6 +5,7 @@
       v-model:cid="currentCid"
       v-model:view-mode="userStore.folderModalViewMode"
       v-model:sort-config="userStore.folderModalSortConfig"
+      v-model:favorites-collapsed="userStore.folderModalFavoritesCollapsed"
       only-folder
       enable-search
       :show-checkbox="false"

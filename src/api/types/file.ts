@@ -138,7 +138,8 @@ export interface FileListResponseData extends ResponseData<MyFile[]> {
 
 export interface Path {
   name: string;
-  cid: string;
+  /** 目录 id：接口对根目录返回数字 0，其余层级返回字符串 */
+  cid: string | number;
   pid: string;
   isp: string;
   p_cid: string;

@@ -21,6 +21,7 @@
       v-model:cid="cid"
       v-model:view-mode="userStore.homeViewMode"
       v-model:sort-config="userStore.homeSortConfig"
+      v-model:favorites-collapsed="userStore.homeFavoritesCollapsed"
       defer-navigation
       class="h-[calc(100vh-59px)]"
       @navigate-request="handleExplorerNavigate"
