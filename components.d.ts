@@ -17,9 +17,9 @@ declare module 'vue' {
     DetailModal: typeof import('./src/components/DetailModal/DetailModal.vue')['default']
     ExplorerBreadcrumb: typeof import('./src/components/FileExplorer/components/ExplorerBreadcrumb/ExplorerBreadcrumb.vue')['default']
     ExplorerContextMenu: typeof import('./src/components/FileExplorer/components/ExplorerContextMenu/ExplorerContextMenu.vue')['default']
-    ExplorerFavorites: typeof import('./src/components/FileExplorer/components/ExplorerFavorites/ExplorerFavorites.vue')['default']
     ExplorerStatusbar: typeof import('./src/components/FileExplorer/components/ExplorerStatusbar/ExplorerStatusbar.vue')['default']
     ExplorerToolbar: typeof import('./src/components/FileExplorer/components/ExplorerToolbar/ExplorerToolbar.vue')['default']
+    ExplorerToolbarLayout: typeof import('./src/components/FileExplorer/components/ExplorerToolbarLayout/ExplorerToolbarLayout.vue')['default']
     ExplorerView: typeof import('./src/components/FileExplorer/components/ExplorerView/ExplorerView.vue')['default']
     FileExplorer: typeof import('./src/components/FileExplorer/FileExplorer.vue')['default']
     FileItemView: typeof import('./src/components/FileExplorer/components/FileItemView/FileItemView.vue')['default']
@@ -92,6 +92,7 @@ declare module 'vue' {
     RenameModal: typeof import('./src/components/RenameModal/RenameModal.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    TaskStatus: typeof import('./src/components/TaskStatus/TaskStatus.vue')['default']
   }
 }
 
@@ -102,9 +103,9 @@ declare global {
   const DetailModal: typeof import('./src/components/DetailModal/DetailModal.vue')['default']
   const ExplorerBreadcrumb: typeof import('./src/components/FileExplorer/components/ExplorerBreadcrumb/ExplorerBreadcrumb.vue')['default']
   const ExplorerContextMenu: typeof import('./src/components/FileExplorer/components/ExplorerContextMenu/ExplorerContextMenu.vue')['default']
-  const ExplorerFavorites: typeof import('./src/components/FileExplorer/components/ExplorerFavorites/ExplorerFavorites.vue')['default']
   const ExplorerStatusbar: typeof import('./src/components/FileExplorer/components/ExplorerStatusbar/ExplorerStatusbar.vue')['default']
   const ExplorerToolbar: typeof import('./src/components/FileExplorer/components/ExplorerToolbar/ExplorerToolbar.vue')['default']
+  const ExplorerToolbarLayout: typeof import('./src/components/FileExplorer/components/ExplorerToolbarLayout/ExplorerToolbarLayout.vue')['default']
   const ExplorerView: typeof import('./src/components/FileExplorer/components/ExplorerView/ExplorerView.vue')['default']
   const FileExplorer: typeof import('./src/components/FileExplorer/FileExplorer.vue')['default']
   const FileItemView: typeof import('./src/components/FileExplorer/components/FileItemView/FileItemView.vue')['default']
@@ -177,4 +178,5 @@ declare global {
   const RenameModal: typeof import('./src/components/RenameModal/RenameModal.vue')['default']
   const RouterLink: typeof import('vue-router')['RouterLink']
   const RouterView: typeof import('vue-router')['RouterView']
+  const TaskStatus: typeof import('./src/components/TaskStatus/TaskStatus.vue')['default']
 }

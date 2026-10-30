@@ -11,6 +11,7 @@
       :has-selection="selectedItems.size > 0"
       :can-go-up="canGoUp"
       :is-searching="isSearching"
+      :file-type="params.type"
       @up="goUp"
       @refresh="handleRefresh"
       @toggle-view="toggleViewMode"
@@ -23,19 +24,15 @@
       @batch-rename="handleBatchRename"
       @batch-delete="handleBatchDelete"
       @search="handleSearch"
+      @filter="handleTypeChange"
     />
 
     <!-- 面包屑 -->
     <ExplorerBreadcrumb
+      v-if="props.showBreadcrumb"
       :path="path"
       :loading="loading"
-      :favorited="currentFolderFavorited"
-      :favorite-disabled="favoriteDisabled"
-      :show-favorites="props.showFavorites"
-      :favorites-open="!favoritesCollapsed"
       @navigate="handleToFolder"
-      @toggle-favorite="toggleFavorite"
-      @toggle-favorites="toggleFavoritesPanel"
     />
 
     <!-- 主区域 -->
@@ -57,12 +54,6 @@
         @clear-selection="clearSelection"
         @check-item="handleCheckItem"
         @toggle-select-all="handleToggleSelectAll"
-      />
-      <ExplorerFavorites
-        v-if="props.showFavorites"
-        v-model:collapsed="favoritesCollapsed"
-        :current-cid="params.cid || '0'"
-        @navigate="handleNavigateToFavorite"
       />
     </div>
 
@@ -96,6 +87,7 @@
       @rename="renameModalShow = true"
       @batch-rename="handleBatchRename"
       @detail="handleDetail"
+      @toggle-star="handleToggleStar"
       @delete="handleContextDelete"
     />
 
@@ -128,7 +120,7 @@
 
 <script setup lang="ts">
   import type { PaginationProps } from 'naive-ui';
-  import { fileDetail, fileList, fileSearch, deleteFile } from '@/api/file';
+  import { fileDetail, fileList, fileSearch, deleteFile, updateFile } from '@/api/file';
   import type {
     FileDetail,
     FileListRequestParams,
@@ -141,12 +133,11 @@
   import { useExplorerShortcuts } from '@/composables/useExplorerShortcuts';
   import { useModalQuerySync } from '@/composables/useModalQuerySync';
   import { useSettingStore } from '@/store/setting';
-  import { useUserStore } from '@/store/user';
+  import type { MediaSource } from '@/utils/media';
 
   const dialog = useDialog();
   const message = useMessage();
   const settingStore = useSettingStore();
-  const userStore = useUserStore();
 
   const allToolbarActions: ToolbarAction[] = [
     'up',
@@ -158,6 +149,7 @@
     'move',
     'rename',
     'delete',
+    'filter',
     'viewToggle',
   ];
 
@@ -172,29 +164,32 @@
     'batchRename',
     'detail',
     'delete',
-    'toggleFavorite',
+    'toggleStar',
   ];
 
   const props = withDefaults(
     defineProps<{
       showCheckbox?: boolean;
+      showBreadcrumb?: boolean;
       onlyFolder?: boolean;
       toolbar?: boolean | ToolbarAction[];
       contextMenu?: boolean | ContextMenuAction[];
       columns?: ListColumn[];
       enableSearch?: boolean;
-      showFavorites?: boolean;
+      /** 查看云端星标文件，目录打开行为仍由外部导航处理 */
+      starred?: boolean;
       /** 目录导航委托给外部处理（主页会写入路由，由 URL 变化驱动加载），默认直接本地跳转 */
       deferNavigation?: boolean;
     }>(),
     {
       showCheckbox: true,
+      showBreadcrumb: true,
       onlyFolder: false,
       toolbar: true,
       contextMenu: true,
       columns: () => ['size', 'type', 'createTime', 'modifyTime'],
       enableSearch: false,
-      showFavorites: true,
+      starred: false,
       deferNavigation: false,
     },
   );
@@ -223,10 +218,8 @@
   const cid = defineModel<string>('cid', { default: '0' });
   const viewMode = defineModel<ViewMode>('viewMode', { default: 'list' });
   const sortConfig = defineModel<SortConfig>('sortConfig', {
-    default: () => ({ field: 'user_utime', direction: 'desc' }),
+    default: () => ({ field: 'user_ptime', direction: 'desc' }),
   });
-  // 收藏夹面板状态由使用方各自持有（主页 / 弹窗），避免同屏多个实例共享同一份状态互相干扰
-  const favoritesCollapsed = defineModel<boolean>('favoritesCollapsed', { default: true });
 
   onMounted(() => {
     getFileList();
@@ -266,7 +259,6 @@
     limit: pagination.pageSize,
     o: sortConfig.value.field,
     asc: sortConfig.value.direction === 'asc' ? 1 : 0,
-    custom_order: settingStore.generalSetting.customOrder,
     nf: props.onlyFolder ? 1 : 0,
   });
 
@@ -297,7 +289,7 @@
     Math.max(1, Math.ceil((pagination.itemCount || 0) / (pagination.pageSize || 50))),
   );
 
-  const canGoUp = computed(() => params.cid !== '0');
+  const canGoUp = computed(() => !props.starred && params.cid !== '0');
 
   function goUp() {
     exitSearchMode();
@@ -309,28 +301,36 @@
   /** 统一 cid 形式：接口根目录返回数字 0，空值同样按根目录处理，最终归一为字符串。 */
   const normalizeCid = (cid?: string | number) => String(cid || '0');
 
+  const getListParams = (): FileListRequestParams => ({
+    ...params,
+    custom_order: settingStore.generalSetting.customOrder,
+    ...(params.type ? { cur: 0, show_dir: 0 } : {}),
+    ...(props.starred ? { star: 1, cur: 0 } : {}),
+  });
+
+  let listRequest = 0;
+
   const getFileList = async () => {
+    const request = ++listRequest;
     params.cid = normalizeCid(params.cid);
-    if (params.cid) forderTemp.value.set(params.cid, pagination.page || 1);
+    if (params.cid && !params.type) forderTemp.value.set(params.cid, pagination.page || 1);
     cid.value = params.cid;
     params.offset = ((pagination.page || 1) - 1) * (pagination.pageSize || 50);
     loading.value = true;
     try {
-      const res = await fileList({ ...params });
+      const res = await fileList(getListParams());
+      if (request !== listRequest) return;
       data.value = res.data;
       pagination.itemCount = res.count;
       // 根目录项的 cid 是数字 0，统一成字符串，避免下游用真值判断时被丢弃
-      path.value = res.path.map((item) => ({ ...item, cid: normalizeCid(item.cid) }));
-      // 记忆排序时，根据接口返回的排序信息更新展示
-      if (settingStore.generalSetting.customOrder === 0) {
-        sortConfig.value = {
-          field: res.order,
-          direction: res.is_asc === 1 ? 'asc' : 'desc',
-        };
-      }
+      path.value = res.path.map((item) => ({
+        ...item,
+        cid: normalizeCid(item.cid),
+        name: props.starred ? '星标文件' : item.name,
+      }));
       clearSelection();
     } finally {
-      loading.value = false;
+      if (request === listRequest) loading.value = false;
     }
   };
 
@@ -384,6 +384,7 @@
 
   /** 执行搜索请求 */
   async function executeSearch(offset: number) {
+    const request = ++listRequest;
     loading.value = true;
     try {
       const res = await fileSearch({
@@ -393,10 +394,11 @@
         offset,
         fc: 1,
       });
+      if (request !== listRequest) return;
       data.value = res.data.map(searchFileToMyFile);
       pagination.itemCount = res.count;
     } finally {
-      loading.value = false;
+      if (request === listRequest) loading.value = false;
     }
   }
 
@@ -429,6 +431,13 @@
 
   // ============ 视图控制 ============
 
+  function handleTypeChange(type: number) {
+    params.type = type || undefined;
+    pagination.page = 1;
+    clearSelection();
+    getFileList();
+  }
+
   function toggleViewMode() {
     viewMode.value = viewMode.value === 'grid' ? 'list' : 'grid';
   }
@@ -436,58 +445,39 @@
   function setSort(field: SortField) {
     if (isSearching.value) return;
 
-    // 记忆排序由 115 服务端控制：开放平台未提供排序接口，本地排序请求不会生效。
-    if (settingStore.generalSetting.customOrder === 0) {
-      message.warning(
-        '记忆排序模式下无法手动调整排序：115 开放平台未提供排序接口，列表始终按其返回顺序展示。可在「设置 → 排序方式」中切换为「自定义排序」。',
-        { duration: 5000 },
-      );
-      return;
-    }
-
-    if (sortConfig.value.field === field) {
-      sortConfig.value = {
-        field,
-        direction: sortConfig.value.direction === 'asc' ? 'desc' : 'asc',
-      };
-    } else {
-      sortConfig.value = { field, direction: 'asc' };
-    }
-    params.o = sortConfig.value.field;
-    params.asc = sortConfig.value.direction === 'asc' ? 1 : 0;
+    const nextSort: SortConfig = {
+      field,
+      direction:
+        sortConfig.value.field === field && sortConfig.value.direction === 'asc' ? 'desc' : 'asc',
+    };
+    sortConfig.value = nextSort;
+    params.o = nextSort.field;
+    params.asc = nextSort.direction === 'asc' ? 1 : 0;
     getFileList();
   }
 
-  // ============ 收藏 ============
+  // ============ 星标 ============
 
-  /** 根目录与搜索模式下不提供收藏入口 */
-  const favoriteDisabled = computed(() => (params.cid || '0') === '0' || isSearching.value);
+  let starUpdating = false;
 
-  const currentFolderFavorited = computed(() => {
-    const currentCid = params.cid || '0';
-    return currentCid !== '0' && userStore.isFavorited(currentCid);
-  });
-
-  /** 收藏 / 取消收藏当前所在目录 */
-  function toggleFavorite() {
-    const currentCid = params.cid || '0';
-    if (currentCid === '0' || isSearching.value) return;
-
-    if (userStore.isFavorited(currentCid)) {
-      userStore.removeFavorite(currentCid);
-      message.success('已取消收藏');
-      return;
+  async function handleToggleStar() {
+    const item = contextMenuState.value.targetItem;
+    if (!item || starUpdating) return;
+    const star = item.ism === '1' ? 0 : 1;
+    starUpdating = true;
+    try {
+      await updateFile({ file_id: item.fid, star });
+      item.ism = String(star);
+      message.success(star ? '已添加星标' : '已取消星标');
+      if (props.starred) {
+        if (data.value.length === 1 && (pagination.page || 1) > 1) {
+          pagination.page = (pagination.page || 1) - 1;
+        }
+        await getFileList();
+      }
+    } finally {
+      starUpdating = false;
     }
-
-    const current = path.value[path.value.length - 1];
-    const parent = path.value[path.value.length - 2];
-    userStore.addFavorite(currentCid, current?.name || '未命名文件夹', String(parent?.cid || '0'));
-    message.success('已添加到收藏夹');
-  }
-
-  /** 展开 / 收起收藏夹面板 */
-  function toggleFavoritesPanel() {
-    favoritesCollapsed.value = !favoritesCollapsed.value;
   }
 
   // ============ 选择 ============
@@ -631,10 +621,6 @@
   const handleToFolder = (cid: string | number) => {
     requestFolderNavigation(cid);
   };
-
-  function handleNavigateToFavorite(cid: string) {
-    handleToFolder(cid);
-  }
 
   const handlePageChange = (page: number) => {
     pagination.page = page;
@@ -786,7 +772,7 @@
   // ============ 键盘快捷键 ============
 
   // 页面上可能同时存在多个 FileExplorer 实例（例如 FolderModal 弹窗内复用的列表），
-  // 快捷键只应由「最上层」实例响应；被弹窗遮挡的背景实例（如离线下载弹窗）同样不再响应。
+  // 快捷键只应由「最上层」实例响应；被弹窗遮挡的背景实例（如云下载弹窗）同样不再响应。
   const shortcutToken = Symbol('file-explorer');
   const explorerShortcuts = useExplorerShortcuts();
 
@@ -866,10 +852,11 @@
   // ============ 对外暴露 ============
 
   /** 目录切换入口：cid 兼容数字（接口根目录为 0）与空值，统一按字符串处理。 */
-  function navigate(cid?: string | number) {
+  function navigate(cid?: string | number, resetPage = false) {
     if (cid !== undefined && cid !== null) {
       params.cid = normalizeCid(cid);
-      pagination.page = forderTemp.value.get(params.cid) || 1;
+      params.type = undefined;
+      pagination.page = resetPage ? 1 : forderTemp.value.get(params.cid) || 1;
     }
     getFileList();
   }
@@ -882,5 +869,12 @@
     return data.value;
   }
 
-  defineExpose({ navigate, refresh, getItems });
+  function getMediaSource(): MediaSource {
+    return {
+      kind: 'files',
+      params: { ...getListParams(), cur: props.starred || params.type ? 0 : 1 },
+    };
+  }
+
+  defineExpose({ navigate, refresh, getItems, getMediaSource });
 </script>

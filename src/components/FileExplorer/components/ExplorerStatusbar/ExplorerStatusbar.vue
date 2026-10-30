@@ -1,11 +1,16 @@
 <script setup lang="ts">
-  defineProps<{
-    totalCount: number;
-    selectedCount: number;
-    currentPage: number;
-    totalPages: number;
-    pageSize: number;
-  }>();
+  withDefaults(
+    defineProps<{
+      totalCount: number;
+      selectedCount: number;
+      currentPage: number;
+      totalPages: number;
+      pageSize: number;
+      showSizePicker?: boolean;
+      showPagination?: boolean;
+    }>(),
+    { showSizePicker: true, showPagination: true },
+  );
 
   const emit = defineEmits<{
     'update:currentPage': [page: number];
@@ -23,13 +28,13 @@
         已选择 {{ selectedCount }} 项
       </span>
     </div>
-    <div class="flex items-center gap-2">
+    <div v-if="showPagination" class="flex items-center gap-2">
       <NPagination
         :page="currentPage"
         :page-count="totalPages"
         :page-size="pageSize"
         :page-sizes="[20, 50, 100, 200]"
-        show-size-picker
+        :show-size-picker="showSizePicker"
         show-quick-jumper
         @update:page="emit('update:currentPage', $event)"
         @update:page-size="emit('update:pageSize', $event)"

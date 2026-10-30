@@ -10,9 +10,11 @@ pub const DEFAULT_SEGMENT_COUNT: u16 = 16;
 
 /// 下载配置。
 ///
-/// 目前只暴露前端可调的分片数和全局限速；连接并发由队列层统一调度。
+/// 分片数、普通错误重试次数和全局限速；连接并发由队列层统一调度。
 #[derive(Debug, Clone)]
 pub struct DownloadConfig {
+    /// 普通网络错误的最大重试次数，不包含首次尝试。
+    pub max_retry: u32,
     /// 文件拆分的总分片数，对应 aria2 的 split 概念。
     pub split: u16,
     /// 全局下载速度上限，单位为 bytes/sec；0 表示不限速。
@@ -22,6 +24,7 @@ pub struct DownloadConfig {
 impl Default for DownloadConfig {
     fn default() -> Self {
         Self {
+            max_retry: 5,
             split: DEFAULT_SEGMENT_COUNT, // 16
             speed_limit: 0,
         }
@@ -95,6 +98,10 @@ pub enum DownloadError {
     InsufficientDiskSpace { needed: u64, available: u64 },
     #[error("未找到文件：{0}")]
     FileNotFound(String),
+    #[error("目标文件已存在，请更换保存位置：{0}")]
+    TargetExists(String),
+    #[error("已有下载任务正在写入该文件：{0}")]
+    TargetBusy(String),
     #[error("HTTP 请求失败：{0}")]
     Http(#[from] reqwest::Error),
     #[error("HTTP 状态异常（{status}）：{message}")]

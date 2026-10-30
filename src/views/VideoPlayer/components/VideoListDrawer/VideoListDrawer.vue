@@ -19,8 +19,9 @@
           :item-size="42"
           key-field="pc"
           class="h-full"
+          @scroll="handleScroll"
         >
-          <template #default="{ item }: { item: MyFile }">
+          <template #default="{ item }: { item: PreviewFile }">
             <div
               class="flex items-center gap-3 px-3 py-2.5 cursor-pointer rounded-md mx-1 my-0.5 transition-colors"
               :class="
@@ -46,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-  import type { MyFile } from '@/api/types/file';
+  import type { PreviewFile } from '@/utils/media';
   import { PlayCircleOutlined, VideoCameraOutlined, AimOutlined } from '@vicons/antd';
   import type { VirtualListInst } from 'naive-ui';
 
@@ -60,9 +61,26 @@
     default: '',
   });
 
-  defineProps<{
-    videoList: MyFile[];
-  }>();
+  const props = withDefaults(
+    defineProps<{
+      videoList: PreviewFile[];
+      hasMore?: boolean;
+      loading?: boolean;
+    }>(),
+    { hasMore: false, loading: false },
+  );
+  const emit = defineEmits<{ loadMore: [] }>();
+
+  const handleScroll = (event: Event) => {
+    const target = event.target as HTMLElement;
+    if (
+      props.hasMore &&
+      !props.loading &&
+      target.scrollTop + target.clientHeight >= target.scrollHeight - 100
+    ) {
+      emit('loadMore');
+    }
+  };
 
   const virtualListRef = ref<VirtualListInst | null>(null);
 

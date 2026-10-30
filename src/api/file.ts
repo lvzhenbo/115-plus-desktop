@@ -62,9 +62,9 @@ export const moveFile = (data: { file_ids: string; to_cid: string }) =>
   });
 
 /**
- * 重命名文件
+ * 更新文件名称或星标
  */
-export const updateFile = (data: { file_id: string; file_name: string }) =>
+export const updateFile = (data: { file_id: string; file_name?: string; star?: 0 | 1 }) =>
   alovaInst.Post<ResponseData<unknown>>(`${openBaseUrl}/open/ufile/update`, data, {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',

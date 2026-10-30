@@ -137,6 +137,7 @@ pub struct TaskQueue {
     enqueue_tx: mpsc::Sender<EnqueueRequest>,
     control_tx: mpsc::Sender<ControlCommand>,
     max_concurrent: Arc<AtomicUsize>,
+    max_retry: Arc<AtomicUsize>,
     wake_notify: Arc<Notify>,
     folder_aggregator: Arc<FolderAggregator>,
     #[allow(dead_code)] // 仅供 PauseAll/ResumeAll 控制流使用，对外不暴露读取。
@@ -159,6 +160,7 @@ impl TaskQueue {
         let (completion_tx, completion_rx) = mpsc::channel::<TaskCompletion>(256);
         let (control_tx, control_rx) = mpsc::channel::<ControlCommand>(64);
         let max_concurrent = Arc::new(AtomicUsize::new(3));
+        let max_retry = Arc::new(AtomicUsize::new(5));
         let wake_notify = Arc::new(Notify::new());
         let frozen = Arc::new(AtomicBool::new(false));
 
@@ -168,6 +170,7 @@ impl TaskQueue {
             completion_rx,
             control_rx,
             max_concurrent.clone(),
+            max_retry.clone(),
             wake_notify.clone(),
             app,
             db,
@@ -184,6 +187,7 @@ impl TaskQueue {
             enqueue_tx,
             control_tx,
             max_concurrent,
+            max_retry,
             wake_notify,
             folder_aggregator,
             frozen,
@@ -314,6 +318,7 @@ async fn queue_loop(
     mut completion_rx: mpsc::Receiver<TaskCompletion>,
     mut control_rx: mpsc::Receiver<ControlCommand>,
     max_concurrent: Arc<AtomicUsize>,
+    max_retry: Arc<AtomicUsize>,
     wake_notify: Arc<Notify>,
     app: AppHandle,
     db: DbHandle,
@@ -346,6 +351,9 @@ async fn queue_loop(
         {
             if let Some(req) = waiting.pop_front() {
                 let gid = req.gid.clone();
+                if active.contains_key(&gid) {
+                    continue;
+                }
 
                 // 如果任务级全局连接数变化，重建分片并发控制器。
                 let new_limit = req.max_global_connections as usize;
@@ -366,6 +374,7 @@ async fn queue_loop(
 
                 let handle = spawn_download_task(
                     req,
+                    max_retry.load(Ordering::SeqCst) as u32,
                     completion_tx.clone(),
                     signal_rx,
                     app.clone(),
@@ -1119,6 +1128,7 @@ async fn persist_folder_progress(
 /// 内部会串联 URL 请求、状态切换、URL 刷新监控以及新任务/断点续传判定。
 fn spawn_download_task(
     req: EnqueueRequest,
+    max_retry: u32,
     completion_tx: mpsc::Sender<TaskCompletion>,
     signal_rx: watch::Receiver<DownloadSignal>,
     app: AppHandle,
@@ -1236,6 +1246,7 @@ fn spawn_download_task(
 
         // 5. 根据 .oofp 是否存在决定走新下载还是断点续传。
         let config = DownloadConfig {
+            max_retry,
             split: req.split,
             speed_limit: 0,
         };
@@ -1262,6 +1273,15 @@ fn spawn_download_task(
                     progress_registry.clone(),
                 )
                 .await
+            }
+            Ok(existing)
+                if !existing.matches_file(
+                    req.size as u64,
+                    &req.pick_code,
+                    req.expected_sha1.as_deref(),
+                ) =>
+            {
+                Err(DownloadError::TargetExists(req.save_path.clone()))
             }
             Ok(existing) => {
                 // .oofp 存在但 task_id 不匹配：接管旧断点，允许删除后重新添加继续续传。
@@ -1337,6 +1357,7 @@ fn spawn_download_task(
                     segment_semaphore,
                     conn_controller,
                     progress_registry.clone(),
+                    false,
                 )
                 .await
             }
@@ -2007,6 +2028,12 @@ pub fn download_set_max_concurrent(
     queue.set_max_concurrent(n);
     info!("[设置最大并发] 设置为 {}", n.clamp(1, 5));
     Ok(())
+}
+
+/// 设置后续启动（含恢复、重试）任务的普通网络错误重试次数。
+#[tauri::command]
+pub fn download_set_max_retry(n: usize, queue: tauri::State<'_, TaskQueue>) {
+    queue.max_retry.store(n.min(20), Ordering::SeqCst);
 }
 
 /// 动态调整全局下载限速。

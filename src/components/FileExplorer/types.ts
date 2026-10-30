@@ -1,4 +1,5 @@
 import type { MyFile, SortField } from '@/api/types/file';
+import fileIconPaths from '@/assets/file-icons/map.json';
 
 /** 视图模式 */
 export type ViewMode = 'grid' | 'list';
@@ -23,6 +24,7 @@ export type ToolbarAction =
   | 'move'
   | 'rename'
   | 'delete'
+  | 'filter'
   | 'viewToggle';
 
 /** 右键菜单可控制的功能项 */
@@ -37,41 +39,39 @@ export type ContextMenuAction =
   | 'batchRename'
   | 'detail'
   | 'delete'
-  | 'toggleFavorite';
+  | 'toggleStar';
 
 /** 列表模式可展示的列（name 始终展示） */
 export type ListColumn = 'size' | 'type' | 'createTime' | 'modifyTime';
 
-/** 文件图标：按类别分组 → 自动生成扩展名映射 */
-const iconCategories: [string, string[]][] = [
-  ['📕', ['pdf']],
-  ['📄', ['doc', 'docx']],
-  ['📊', ['xls', 'xlsx']],
-  ['📑', ['ppt', 'pptx']],
-  ['📝', ['txt', 'md']],
-  ['🖼️', ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'tiff', 'ico']],
-  ['🎬', ['mp4', 'avi', 'mov', 'mkv', 'webm', 'flv', 'wmv', 'rmvb']],
-  ['🎵', ['mp3', 'wav', 'flac', 'ogg', 'aac', 'wma', 'ape']],
-  ['📦', ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'zst']],
-  ['⚙️', ['js', 'ts', 'vue', 'json', 'xml', 'yaml', 'yml', 'toml']],
-  ['🌐', ['html', 'htm']],
-  ['🎨', ['css', 'scss', 'less']],
-  ['🐍', ['py']],
-  ['☕', ['java', 'kt']],
-  ['🔵', ['go']],
-  ['🦀', ['rs']],
-  ['💻', ['exe', 'msi', 'bat', 'sh']],
-  ['📱', ['apk', 'ipa']],
-  ['💿', ['iso', 'img', 'dmg']],
-  ['🧲', ['torrent']],
-];
+/** 文件行展示所需的数据，不要求调用方补齐完整接口字段。 */
+export type FileItemData = Pick<MyFile, 'fid' | 'fn' | 'fc' | 'ico'> &
+  Partial<Pick<MyFile, 'fs' | 'uppt' | 'uet' | 'thumb' | 'ism' | 'isv' | 'def2'>>;
 
-const iconMap = new Map<string, string>(
-  iconCategories.flatMap(([icon, exts]) => exts.map((ext) => [ext, icon] as const)),
-);
+const iconPaths: Record<string, string> = fileIconPaths;
+const icons = import.meta.glob<string>('/src/assets/file-icons/**/*.svg', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+});
 
-export function getFileIcon(file: MyFile): string {
-  if (file.fc === '0') return '📁';
-  const ext = file.ico?.toLowerCase() || '';
-  return iconMap.get(ext) || '📄';
+const videoQualities: Record<number, string> = {
+  1: 'video-sd',
+  2: 'video-hd',
+  3: 'video-fhd',
+  4: 'video-1080p',
+  5: 'video-4k',
+  100: 'video-origin',
+};
+
+/** 文件夹按接口类型识别；视频优先使用官方清晰度标记，其余按后缀映射。 */
+export function getFileIcon(
+  file: Pick<MyFile, 'fc' | 'ico'> & Partial<Pick<MyFile, 'isv' | 'def2'>>,
+): string {
+  const quality = file.isv === 1 ? videoQualities[file.def2 ?? 0] : undefined;
+  const type = file.fc === '0' ? 'folder' : quality || file.ico?.toLowerCase() || '';
+  const path = iconPaths[type];
+  return (
+    icons[`/src/assets/file-icons/${path}`] || icons['/src/assets/file-icons/other/unknown.svg']!
+  );
 }

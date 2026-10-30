@@ -3,9 +3,9 @@
   import type { SortConfig, ListColumn } from '../../types';
 
   defineProps<{
-    items: MyFile[];
+    items: Pick<MyFile, 'fid'>[];
     selectedItems: Set<string>;
-    sortConfig: SortConfig;
+    sortConfig?: SortConfig;
     showCheckbox: boolean;
     columns: ListColumn[];
     sortDisabled: boolean;
@@ -40,7 +40,7 @@
       @click.stop="!sortDisabled && emit('sort', 'file_name')"
     >
       名称
-      <span v-if="sortConfig.field === 'file_name'" class="ml-1">
+      <span v-if="sortConfig?.field === 'file_name'" class="ml-1">
         {{ sortConfig.direction === 'asc' ? '↑' : '↓' }}
       </span>
     </div>
@@ -51,7 +51,7 @@
       @click.stop="!sortDisabled && emit('sort', 'file_size')"
     >
       大小
-      <span v-if="sortConfig.field === 'file_size'" class="ml-1">
+      <span v-if="sortConfig?.field === 'file_size'" class="ml-1">
         {{ sortConfig.direction === 'asc' ? '↑' : '↓' }}
       </span>
     </div>
@@ -62,7 +62,7 @@
       @click.stop="!sortDisabled && emit('sort', 'file_type')"
     >
       种类
-      <span v-if="sortConfig.field === 'file_type'" class="ml-1">
+      <span v-if="sortConfig?.field === 'file_type'" class="ml-1">
         {{ sortConfig.direction === 'asc' ? '↑' : '↓' }}
       </span>
     </div>
@@ -73,7 +73,7 @@
       @click.stop="!sortDisabled && emit('sort', 'user_ptime')"
     >
       创建时间
-      <span v-if="sortConfig.field === 'user_ptime'" class="ml-1">
+      <span v-if="sortConfig?.field === 'user_ptime'" class="ml-1">
         {{ sortConfig.direction === 'asc' ? '↑' : '↓' }}
       </span>
     </div>
@@ -84,9 +84,10 @@
       @click.stop="!sortDisabled && emit('sort', 'user_utime')"
     >
       修改时间
-      <span v-if="sortConfig.field === 'user_utime'" class="ml-1">
+      <span v-if="sortConfig?.field === 'user_utime'" class="ml-1">
         {{ sortConfig.direction === 'asc' ? '↑' : '↓' }}
       </span>
     </div>
+    <slot name="after" />
   </div>
 </template>

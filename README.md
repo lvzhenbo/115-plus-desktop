@@ -6,7 +6,7 @@
 
 ## 下载
 
-前往 [Releases](https://github.com/lvzhenbo/115-plus-desktop/releases) 下载最新稳定版本安装包，也可到 [GitHub Actions](https://github.com/lvzhenbo/115-plus-desktop/actions) 下载 CI 流水线产物。
+安装包以 [Releases](https://github.com/lvzhenbo/115-plus-desktop/releases) 为准，也可到 [GitHub Actions](https://github.com/lvzhenbo/115-plus-desktop/actions) 下载 CI 测试产物。
 
 支持 Windows、macOS 和 Linux 平台，**目前非 Windows 平台正在处于测试状态，欢迎有相关环境和设备的用户使用CI构建测试，一起来推进 1.1.0 版本。**
 
@@ -26,6 +26,8 @@
 - [x] 文件详情查看
 - [x] 新建文件夹
 - [x] 文件搜索
+- [x] 星标文件（与 115 网盘同步）
+- [x] 文件分类筛选
 
 ### 文件下载
 
@@ -49,10 +51,10 @@
 - [x] 播放进度记忆与恢复
 - [x] 视频字幕
 
-### 云下载（离线下载）
+### 云下载
 
-- [x] 链接离线下载
-- [ ] BT 种子解析下载
+- [x] 链接云下载
+- [x] BT 种子解析下载
 - [x] 云下载任务列表与管理
 - [x] 下载配额查看
 - [x] 任务文件直接打开
@@ -100,7 +102,7 @@ src/                          # 前端源码
 │   └── RenameModal/          # 重命名
 ├── composables/              # 组合式函数（下载/上传管理、更新检查、字幕控制等）
 ├── layout/                   # 布局组件
-│   └── components/           # 布局子组件（离线下载弹窗、搜索弹窗）
+│   └── components/           # 布局子组件（云下载弹窗、搜索弹窗）
 ├── router/                   # 路由配置
 ├── store/                    # Pinia 状态管理
 ├── styles/                   # 样式文件（Tailwind CSS）
@@ -109,7 +111,7 @@ src/                          # 前端源码
 │   └── subtitles/            # 字幕解析与渲染（ASS/文本）
 └── views/                    # 页面视图
     ├── About/                # 关于
-    ├── CloudDownload/        # 云下载（离线下载）
+    ├── CloudDownload/        # 云下载
     ├── Download/             # 下载管理
     ├── Home/                 # 首页（文件列表）
     ├── Login/                # 登录
@@ -177,3 +179,4 @@ QQ群：[978180785](https://qm.qq.com/q/s2vhxOL8uk)
 ## 许可证
 
 [MIT](LICENSE)
+

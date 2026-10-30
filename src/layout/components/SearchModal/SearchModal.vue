@@ -16,7 +16,7 @@
         </template>
         搜索
       </NButton>
-      <NButton type="error" :disabled="loading" @click="handleClear">
+      <NButton type="error" @click="handleClear">
         <template #icon>
           <NIcon>
             <ClearOutlined />
@@ -25,18 +25,57 @@
         清除
       </NButton>
     </NInputGroup>
-    <NDataTable
-      ref="tableRef"
-      remote
-      flex-height
-      :columns
-      :data
-      :row-key="(row: SearchFile) => row.file_id"
-      :loading
-      class="h-120!"
-      @scroll="handleScroll"
-    />
+    <NEl class="h-120 flex flex-col overflow-hidden text-(--text-color-2)">
+      <ListHeader
+        v-if="items.length"
+        :items
+        :selected-items="selectedItems"
+        :show-checkbox="false"
+        :columns
+        sort-disabled
+      />
+      <NEmpty v-if="!items.length && !loading" class="flex-1 flex items-center justify-center" />
+      <NSpin v-else :show="loading" class="flex-1 min-h-0 overflow-hidden" content-class="h-full">
+        <NScrollbar class="h-full" @scroll="handleScroll">
+          <FileItemView
+            v-for="item in items"
+            :key="item.fid"
+            :item
+            :selected="false"
+            :show-checkbox="false"
+            :columns
+            view-mode="list"
+            @contextmenu="(_item, event) => handleContextMenu(item.source, event)"
+          >
+            <template #name>
+              <a
+                href="#"
+                class="text-inherit no-underline"
+                :aria-disabled="openingId !== null"
+                :aria-busy="openingId === item.fid"
+                @click.prevent.stop="openingId === null && handleOpen(item.source)"
+              >
+                <NHighlight
+                  :text="item.fn"
+                  :patterns="[activeQuery?.search_value || '']"
+                  auto-escape
+                />
+              </a>
+            </template>
+          </FileItemView>
+        </NScrollbar>
+      </NSpin>
+    </NEl>
   </NModal>
+  <NDropdown
+    trigger="manual"
+    :show="contextMenu.show"
+    :x="contextMenu.x"
+    :y="contextMenu.y"
+    :options="contextMenuOptions"
+    @select="handleContextSelect"
+    @clickoutside="closeContextMenu"
+  />
   <DetailModal v-model:show="detailModalShow" :file-detail-data />
   <RenameModal
     v-model:show="renameModalShow"
@@ -48,7 +87,7 @@
 
 <script setup lang="tsx">
   import type { FileDetail, FileSearchRequestParams, SearchFile } from '@/api/types/file';
-  import type { DataTableColumns, SelectOption } from 'naive-ui';
+  import type { DropdownOption, SelectOption } from 'naive-ui';
   import {
     FolderOutlined,
     InfoCircleOutlined,
@@ -57,7 +96,11 @@
     EditOutlined,
   } from '@vicons/antd';
   import { fileDetail, fileSearch } from '@/api/file';
-  import { format } from 'date-fns';
+  import { useFilePreview } from '@/composables/useFilePreview';
+  import { searchPreviewFile } from '@/utils/media';
+  import type { ListColumn } from '@/components/FileExplorer/types';
+  import FileItemView from '@/components/FileExplorer/components/FileItemView/FileItemView.vue';
+  import ListHeader from '@/components/FileExplorer/components/ListHeader/ListHeader.vue';
 
   const show = defineModel('show', {
     type: Boolean,
@@ -66,6 +109,7 @@
 
   const message = useMessage();
   const router = useRouter();
+  const { openFile } = useFilePreview();
   const searchParams = reactive<FileSearchRequestParams>({
     search_value: '',
     limit: 20,
@@ -84,123 +128,99 @@
   const loading = ref(false);
   const data = ref<SearchFile[]>([]);
   const count = ref(0);
+  const columns: ListColumn[] = ['createTime', 'modifyTime'];
+  const selectedItems = new Set<string>();
+  const items = computed(() =>
+    data.value.map((row) => ({
+      fid: row.file_id,
+      fn: row.file_name,
+      fc: row.file_category,
+      ico: row.ico || '',
+      uppt: Number(row.user_ptime),
+      uet: Number(row.user_utime),
+      source: row,
+    })),
+  );
+  const activeQuery = shallowRef<FileSearchRequestParams | null>(null);
+  const openingId = ref<string | null>(null);
+  let searchVersion = 0;
+  let nextOffset = 0;
   const detailModalShow = ref(false);
   const renameModalShow = ref(false);
   const renameTarget = ref<SearchFile | null>(null);
   const fileDetailData = ref<FileDetail | null>(null);
-  const columns: DataTableColumns<SearchFile> = [
+  const contextTarget = shallowRef<SearchFile | null>(null);
+  const contextMenu = reactive({ show: false, x: 0, y: 0 });
+  const contextMenuOptions = computed<DropdownOption[]>(() => [
+    ...(contextTarget.value?.file_category === '1'
+      ? [
+          {
+            label: '打开所在文件夹',
+            key: 'folder',
+            icon: () => (
+              <NIcon>
+                <FolderOutlined />
+              </NIcon>
+            ),
+          },
+        ]
+      : []),
     {
-      title: '文件夹',
-      key: 'file_name',
-      ellipsis: {
-        tooltip: {
-          width: 'trigger',
-        },
-      },
-      render(row) {
-        return (
-          <NHighlight text={row.file_name} patterns={[searchParams.search_value]} autoEscape />
-        );
-      },
+      label: '重命名',
+      key: 'rename',
+      icon: () => (
+        <NIcon>
+          <EditOutlined />
+        </NIcon>
+      ),
     },
     {
-      title: '种类',
-      key: 'file_category',
-      width: 100,
-      render(row) {
-        if (row.file_category === '0') {
-          return '文件夹';
-        } else if (row.file_category === '1') {
-          return `${row.ico}文件`;
-        }
-      },
+      label: '详情',
+      key: 'detail',
+      icon: () => (
+        <NIcon>
+          <InfoCircleOutlined />
+        </NIcon>
+      ),
     },
-    {
-      title: '创建时间',
-      key: 'user_ptime',
-      width: 170,
-      render(row) {
-        return row.user_ptime
-          ? format(new Date(Number(row.user_ptime) * 1000), 'yyyy-MM-dd HH:mm:ss')
-          : '';
-      },
-    },
-    {
-      title: '修改时间',
-      key: 'user_utime',
-      width: 170,
-      render(row) {
-        return row.user_utime
-          ? format(new Date(Number(row.user_utime) * 1000), 'yyyy-MM-dd HH:mm:ss')
-          : '';
-      },
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 220,
-      render: (row) => {
-        return (
-          <NSpace>
-            <NButton text type="primary" onClick={() => handleOpen(row)}>
-              {{
-                icon: () => (
-                  <NIcon>
-                    <FolderOutlined />
-                  </NIcon>
-                ),
-                default: () => '打开',
-              }}
-            </NButton>
-            <NButton
-              text
-              type="primary"
-              onClick={() => {
-                renameTarget.value = row;
-                renameModalShow.value = true;
-              }}
-            >
-              {{
-                icon: () => (
-                  <NIcon>
-                    <EditOutlined />
-                  </NIcon>
-                ),
-                default: () => '重命名',
-              }}
-            </NButton>
-            <NButton
-              text
-              type="info"
-              onClick={async () => {
-                const res = await fileDetail({
-                  file_id: row.file_id,
-                });
-                fileDetailData.value = res.data;
-                detailModalShow.value = true;
-              }}
-            >
-              {{
-                icon: () => (
-                  <NIcon>
-                    <InfoCircleOutlined />
-                  </NIcon>
-                ),
-                default: () => '详情',
-              }}
-            </NButton>
-          </NSpace>
-        );
-      },
-    },
-  ];
+  ]);
+
+  function handleContextMenu(row: SearchFile, event: MouseEvent) {
+    contextTarget.value = row;
+    Object.assign(contextMenu, { show: true, x: event.clientX, y: event.clientY });
+  }
+
+  function closeContextMenu() {
+    contextMenu.show = false;
+    contextTarget.value = null;
+  }
+
+  async function handleContextSelect(key: string) {
+    const row = contextTarget.value;
+    closeContextMenu();
+    if (!row) return;
+    if (key === 'folder') {
+      await handleOpenFolder(row);
+    } else if (key === 'rename') {
+      renameTarget.value = row;
+      renameModalShow.value = true;
+    } else if (key === 'detail') {
+      try {
+        const res = await fileDetail({ file_id: row.file_id });
+        fileDetailData.value = res.data;
+        detailModalShow.value = true;
+      } catch (error) {
+        console.error('获取文件详情失败:', error);
+      }
+    }
+  }
 
   /**
    * 打开搜索结果：目录由主页路由承载（URL 变化后 HomeView 驱动列表加载）。
    * 必须等导航完成后再关闭弹窗——弹窗关闭会触发 query 清理（replace），
    * 与本次 push 同帧发出时会取消导航，导致「打开」失效。
    */
-  const handleOpen = async (row: SearchFile) => {
+  const handleOpenFolder = async (row: SearchFile) => {
     try {
       await router.push({
         name: 'Home',
@@ -215,48 +235,86 @@
     }
   };
 
+  const handleOpen = async (row: SearchFile) => {
+    closeContextMenu();
+    if (row.file_category === '0') return handleOpenFolder(row);
+    if (openingId.value || !activeQuery.value) return;
+    const query = { ...activeQuery.value };
+    openingId.value = row.file_id;
+    try {
+      if (await openFile(searchPreviewFile(row, query.type), { kind: 'search', params: query })) {
+        show.value = false;
+      }
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '文件打开失败');
+    } finally {
+      openingId.value = null;
+    }
+  };
+
   const handleSearch = async () => {
-    if (!searchParams.search_value) {
+    closeContextMenu();
+    if (!searchParams.search_value.trim()) {
       message.warning('请输入搜索内容');
       return;
     }
-    if (loading.value) return;
+    searchVersion++;
+    activeQuery.value = {
+      ...searchParams,
+      search_value: searchParams.search_value.trim(),
+      offset: 0,
+    };
     data.value = [];
-    searchParams.offset = 0;
+    count.value = 0;
+    nextOffset = 0;
     getList();
   };
 
   const getList = async () => {
+    if (!activeQuery.value) return;
+    const version = searchVersion;
+    const query = { ...activeQuery.value, offset: nextOffset };
     try {
       loading.value = true;
-      const res = await fileSearch(searchParams);
+      const res = await fileSearch(query);
+      if (version !== searchVersion) return;
       data.value = [...data.value, ...res.data];
-      count.value = res.count;
+      nextOffset += res.data.length;
+      count.value = res.data.length ? Math.min(res.count, 10000) : nextOffset;
     } catch (error) {
       console.error('Error during search:', error);
     } finally {
-      loading.value = false;
+      if (version === searchVersion) loading.value = false;
     }
   };
 
   const handleScroll = (e: Event) => {
+    closeContextMenu();
     const target = e.target as HTMLDivElement;
     if (target.scrollTop + target.clientHeight >= target.scrollHeight) {
-      if (loading.value || count.value <= data.value.length) return;
-      if (searchParams.offset !== undefined) {
-        searchParams.offset += 20;
-        getList();
-      }
+      if (loading.value || !activeQuery.value || nextOffset >= count.value) return;
+      getList();
     }
   };
 
   const handleClear = () => {
+    closeContextMenu();
+    searchVersion++;
+    activeQuery.value = null;
+    loading.value = false;
+    nextOffset = 0;
     searchParams.search_value = '';
     searchParams.type = 0;
     searchParams.offset = 0;
     data.value = [];
     count.value = 0;
   };
-</script>
 
-<style scoped></style>
+  watch(show, (value) => {
+    if (!value) {
+      closeContextMenu();
+      searchVersion++;
+      loading.value = false;
+    }
+  });
+</script>

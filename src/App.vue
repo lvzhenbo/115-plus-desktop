@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { zhCN, dateZhCN, darkTheme, lightTheme } from 'naive-ui';
+  import { themeOverrides } from '@/theme';
   import { useDownloadManager } from '@/composables/useDownloadManager';
   import { useUploadManager } from '@/composables/useUploadManager';
   import { useProxyManager } from '@/composables/useProxyManager';
@@ -41,7 +42,7 @@
 </script>
 
 <template>
-  <NConfigProvider :locale="zhCN" :date-locale="dateZhCN" :theme>
+  <NConfigProvider :locale="zhCN" :date-locale="dateZhCN" :theme :theme-overrides="themeOverrides">
     <NLoadingBarProvider>
       <NDialogProvider>
         <NMessageProvider>

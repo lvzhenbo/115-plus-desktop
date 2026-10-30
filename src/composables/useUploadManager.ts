@@ -239,7 +239,7 @@ const logUploadManagerError = (message: string, error: unknown) => {
  * - 用户操作转发为 `upload_*` command
  * - 115 上传接口仍由前端调用，再把结果回填给 Rust 调度器
  */
-export const useUploadManager = createSharedComposable(() => {
+const useSharedUploadManager = createSharedComposable(() => {
   const settingStore = useSettingStore();
 
   // `displayList` 是当前 UI 的唯一来源；progressCache 只用于填补 state-sync 间隙。
@@ -534,12 +534,13 @@ export const useUploadManager = createSharedComposable(() => {
     fileSize: number,
     targetCid: string,
   ) => {
-    await uploadFiles([{ path: filePath, name: fileName, size: fileSize }], targetCid);
+    const ids = await uploadFiles([{ path: filePath, name: fileName, size: fileSize }], targetCid);
+    return ids[0];
   };
 
   const uploadFiles = async (files: LocalUploadFileInput[], targetCid: string) => {
     ensureNoBatchActionInFlight();
-    await invokeUploadCommand('upload_enqueue_files', { files, targetCid });
+    return invokeUploadCommand<string[]>('upload_enqueue_files', { files, targetCid });
   };
 
   // 文件夹上传真正的目录扫描和远端建目录都在 Rust 调度器里完成。
@@ -654,3 +655,11 @@ export const useUploadManager = createSharedComposable(() => {
     hasActiveUploads,
   };
 });
+
+// 热更新业务组件时保留同一上传管理器，避免新旧实例分别持有任务状态和事件监听。
+export const useUploadManager: typeof useSharedUploadManager =
+  import.meta.hot?.data.useUploadManager ?? useSharedUploadManager;
+
+if (import.meta.hot) {
+  import.meta.hot.data.useUploadManager = useUploadManager;
+}

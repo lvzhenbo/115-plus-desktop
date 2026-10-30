@@ -12,7 +12,6 @@
     StarFilled,
   } from '@vicons/antd';
   import { DriveFileMoveOutlined, DriveFileRenameOutlineOutlined } from '@vicons/material';
-  import { useUserStore } from '@/store/user';
   import type { DropdownOption } from 'naive-ui';
   import type { MyFile } from '@/api/types/file';
   import type { ContextMenuAction } from '../../types';
@@ -39,17 +38,10 @@
     move: [];
     delete: [];
     detail: [];
+    toggleStar: [];
   }>();
 
   const themeVars = useThemeVars();
-  const userStore = useUserStore();
-  const message = useMessage();
-
-  const isTargetFavorited = computed(() => {
-    if (!props.targetItem || props.targetItem.fc !== '0') return false;
-    return userStore.isFavorited(props.targetItem.fid);
-  });
-
   const fileMenuOptions = computed<DropdownOption[]>(() => {
     const items: DropdownOption[] = [
       {
@@ -127,20 +119,15 @@
           </NIcon>
         ),
       },
-      ...(props.targetItem?.fc === '0'
-        ? [
-            { type: 'divider', key: 'd3' },
-            {
-              label: isTargetFavorited.value ? '取消收藏' : '添加到收藏夹',
-              key: 'toggleFavorite',
-              icon: () => (
-                <NIcon color={isTargetFavorited.value ? 'var(--warning-color)' : undefined}>
-                  {isTargetFavorited.value ? <StarFilled /> : <StarOutlined />}
-                </NIcon>
-              ),
-            },
-          ]
-        : []),
+      {
+        label: props.targetItem?.ism === '1' ? '取消星标' : '添加星标',
+        key: 'toggleStar',
+        icon: () => (
+          <NIcon color={props.targetItem?.ism === '1' ? 'var(--warning-color)' : undefined}>
+            {props.targetItem?.ism === '1' ? <StarFilled /> : <StarOutlined />}
+          </NIcon>
+        ),
+      },
       { type: 'divider', key: 'd4' },
       {
         label: '详情',
@@ -167,7 +154,7 @@
 
   /**
    * 多选（>1）时的菜单：只保留可作用于整个选区的项，
-   * 打开 / 重命名 / 详情 / 收藏等单文件项不展示，避免"高亮多个却只操作一个"。
+   * 打开 / 重命名 / 详情 / 星标等单文件项不展示，避免"高亮多个却只操作一个"。
    */
   const multiMenuOptions = computed<DropdownOption[]>(() => {
     const count = props.selectedCount;
@@ -303,16 +290,7 @@
       move: () => emit('move'),
       rename: () => emit('rename'),
       batchRename: () => emit('batchRename'),
-      toggleFavorite: () => {
-        if (!props.targetItem || props.targetItem.fc !== '0') return;
-        if (isTargetFavorited.value) {
-          userStore.removeFavorite(props.targetItem.fid);
-          message.success('已取消收藏');
-        } else {
-          userStore.addFavorite(props.targetItem.fid, props.targetItem.fn, props.targetItem.pid);
-          message.success('已添加到收藏夹');
-        }
-      },
+      toggleStar: () => emit('toggleStar'),
       detail: () => emit('detail'),
       delete: () => emit('delete'),
     };

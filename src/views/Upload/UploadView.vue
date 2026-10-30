@@ -1,221 +1,239 @@
 <template>
-  <div class="flex flex-col h-[calc(100vh-59px)]">
-    <NSpace class="px-4 pt-4" align="center">
-      <NButton type="primary" :disabled="isBatchOperating" @click="handleClear">
-        <template #icon>
-          <NIcon>
-            <ClearOutlined />
-          </NIcon>
+  <NEl class="flex flex-col h-[calc(100vh-59px)] text-(--text-color-2)">
+    <ExplorerToolbarLayout>
+      <NTooltip>
+        <template #trigger>
+          <NButton size="small" quaternary :disabled="isBatchOperating" @click="handleClear">
+            <template #icon>
+              <NIcon>
+                <ClearOutlined />
+              </NIcon>
+            </template>
+          </NButton>
         </template>
         清除已完成
-      </NButton>
-      <NButton
-        :disabled="isBatchOperating || !hasPausableTasks"
-        :loading="isPausingAll"
-        @click="handlePauseAll"
-      >
-        <template #icon>
-          <NIcon>
-            <PauseCircleOutlined />
-          </NIcon>
+      </NTooltip>
+      <NTooltip>
+        <template #trigger>
+          <NButton
+            size="small"
+            quaternary
+            :disabled="isBatchOperating || !hasPausableTasks"
+            :loading="isPausingAll"
+            @click="handlePauseAll"
+          >
+            <template #icon>
+              <NIcon>
+                <PauseCircleOutlined />
+              </NIcon>
+            </template>
+          </NButton>
         </template>
         全部暂停
-      </NButton>
-      <NButton
-        :disabled="isBatchOperating || !hasResumableTasks"
-        :loading="isResumingAll"
-        @click="handleResumeAll"
-      >
-        <template #icon>
-          <NIcon>
-            <PlayCircleOutlined />
-          </NIcon>
+      </NTooltip>
+      <NTooltip>
+        <template #trigger>
+          <NButton
+            size="small"
+            quaternary
+            :disabled="isBatchOperating || !hasResumableTasks"
+            :loading="isResumingAll"
+            @click="handleResumeAll"
+          >
+            <template #icon>
+              <NIcon>
+                <PlayCircleOutlined />
+              </NIcon>
+            </template>
+          </NButton>
         </template>
         全部继续
-      </NButton>
-      <div v-if="uploadStats.activeCount > 0" class="ml-4 text-sm text-gray-500">
+      </NTooltip>
+      <div class="flex-1" />
+      <div v-if="uploadStats.activeCount > 0" class="text-sm text-(--text-color-2)">
         上传中 {{ uploadStats.activeCount }} 个 ·
         {{ formatSpeed(uploadStats.totalSpeed) }}
       </div>
-      <div v-if="queueStatus.queueLength > 0" class="ml-2 text-sm text-gray-400">
+      <div v-if="queueStatus.queueLength > 0" class="text-sm text-(--text-color-3)">
         队列等待 {{ queueStatus.queueLength }} 个
       </div>
-    </NSpace>
-
-    <!-- 卡片列表（滚动条贴边，边距由内容自添） -->
-    <NScrollbar v-if="displayList.length > 0" class="flex-1 min-h-0">
-      <NSpace vertical class="p-4">
-        <NCard
-          v-for="item in displayList"
-          :key="item.id"
-          hoverable
-          size="small"
-          :theme-overrides="cardThemeOverrides"
-        >
-          <template #header>
-            <div class="min-w-0 flex items-center gap-1">
-              <NIcon v-if="item.isFolder" class="shrink-0">
-                <FolderOutlined />
-              </NIcon>
-              <NEllipsis
-                ><span class="font-bold">{{ item.fileName }}</span></NEllipsis
-              >
-            </div>
-          </template>
-          <template #header-extra>
-            <div class="flex items-center gap-2">
-              <NTag v-if="item.status === 'uploading'" size="small" type="info">上传中</NTag>
-              <NTag v-else-if="item.status === 'hashing'" size="small" type="info">计算哈希</NTag>
-              <NTag v-else-if="item.status === 'pausing'" size="small" type="warning">暂停中</NTag>
-              <NTag v-else-if="item.status === 'paused'" size="small" type="warning">已暂停</NTag>
-              <NTag v-else-if="item.status === 'pending'" size="small" type="default">等待中</NTag>
-              <NTag v-else-if="item.status === 'complete'" size="small" type="success">已完成</NTag>
-              <NTooltip v-else-if="item.status === 'error'">
-                <template #trigger>
-                  <NTag size="small" type="error">上传失败</NTag>
-                </template>
-                {{ item.errorMessage || '未知错误' }}
-              </NTooltip>
-              <NTag v-else-if="item.status === 'cancelled'" size="small" type="warning"
-                >已取消</NTag
-              >
-
-              <NTooltip
-                v-if="
-                  item.status === 'uploading' ||
-                  item.status === 'hashing' ||
-                  item.status === 'pending' ||
-                  item.status === 'pausing'
-                "
-              >
-                <template #trigger>
-                  <NButton
-                    size="tiny"
-                    type="warning"
-                    circle
-                    :disabled="isBatchOperating || item.status === 'pausing'"
-                    @click="handlePauseItem(item)"
-                  >
-                    <template #icon
-                      ><NIcon size="14"><PauseCircleOutlined /></NIcon
-                    ></template>
-                  </NButton>
-                </template>
-                暂停
-              </NTooltip>
-              <NTooltip v-else-if="item.status === 'paused'">
-                <template #trigger>
-                  <NButton
-                    size="tiny"
-                    type="primary"
-                    circle
-                    :disabled="isBatchOperating"
-                    @click="handleResumeItem(item)"
-                  >
-                    <template #icon
-                      ><NIcon size="14"><PlayCircleOutlined /></NIcon
-                    ></template>
-                  </NButton>
-                </template>
-                继续
-              </NTooltip>
-              <NTooltip v-else-if="item.status === 'error'">
-                <template #trigger>
-                  <NButton
-                    size="tiny"
-                    type="info"
-                    circle
-                    :disabled="isBatchOperating"
-                    @click="handleRetry(item)"
-                  >
-                    <template #icon
-                      ><NIcon size="14"><ReloadOutlined /></NIcon
-                    ></template>
-                  </NButton>
-                </template>
-                重试
-              </NTooltip>
-              <NTooltip>
-                <template #trigger>
-                  <NButton size="tiny" quaternary circle @click="handleOpenLocal(item)">
-                    <template #icon
-                      ><NIcon size="14"><FolderOutlined /></NIcon
-                    ></template>
-                  </NButton>
-                </template>
-                打开本地
-              </NTooltip>
-              <NTooltip v-if="item.status === 'complete'">
-                <template #trigger>
-                  <NButton size="tiny" type="primary" circle @click="handleOpenRemote(item)">
-                    <template #icon
-                      ><NIcon size="14"><CloudOutlined /></NIcon
-                    ></template>
-                  </NButton>
-                </template>
-                打开远程
-              </NTooltip>
-              <NTooltip>
-                <template #trigger>
-                  <NButton
-                    size="tiny"
-                    type="error"
-                    circle
-                    :disabled="isBatchOperating"
-                    @click="handleDeleteItem(item)"
-                  >
-                    <template #icon
-                      ><NIcon size="14"><DeleteOutlined /></NIcon
-                    ></template>
-                  </NButton>
-                </template>
-                删除任务
-              </NTooltip>
-            </div>
-          </template>
-
-          <div class="flex flex-col gap-1">
-            <!-- 信息行 -->
-            <div class="flex items-center justify-between">
-              <NText depth="2">{{
-                item.fileSize
-                  ? `${formatUploadedSize(item)} / ${filesize(item.fileSize, { standard: 'jedec' })}`
-                  : ''
-              }}</NText>
-              <span v-if="item.isFolder && item.totalFiles">
-                <NText depth="3">{{ item.completedFiles || 0 }}/{{ item.totalFiles }} 个文件</NText>
-                <NText v-if="item.failedFiles" type="error"
-                  >（{{ item.failedFiles }} 个失败）</NText
-                >
-              </span>
-            </div>
-
-            <!-- 进度条：始终渲染 -->
-            <NProgress
-              type="line"
-              :percentage="progressValue(item)"
-              :status="progressStatus(item)"
-              :processing="item.status === 'uploading' || item.status === 'hashing'"
-            />
-
-            <!-- 详情行：始终渲染 -->
-            <div class="flex items-center justify-between text-xs min-h-4">
-              <NText :type="detailTextType(item)" depth="2">{{ detailLeft(item) }}</NText>
-              <NText depth="3">{{ detailRight(item) }}</NText>
-            </div>
+    </ExplorerToolbarLayout>
+    <ListHeader
+      v-if="items.length"
+      :items
+      :selected-items="selectedItems"
+      :show-checkbox="false"
+      :columns="['size']"
+      sort-disabled
+    >
+      <template #after>
+        <div class="w-64 shrink-0 px-2">进度</div>
+        <div class="w-40 shrink-0 px-2">操作</div>
+      </template>
+    </ListHeader>
+    <NScrollbar v-if="items.length" class="flex-1 min-h-0">
+      <FileItemView
+        v-for="item in items"
+        :key="item.fid"
+        :item
+        :selected="false"
+        :show-checkbox="false"
+        :columns="['size']"
+        view-mode="list"
+      >
+        <template #size="{ size }">{{ size }}</template>
+        <template #after>
+          <div class="w-64 shrink-0 px-2 flex items-center gap-3 self-stretch">
+            <NTooltip>
+              <template #trigger>
+                <TaskStatus
+                  class="shrink-0"
+                  :type="item.taskStatus.type"
+                  :text="item.taskStatus.text"
+                />
+              </template>
+              {{ formatUploadedSize(item.source) }} /
+              {{ filesize(item.source.fileSize, { standard: 'jedec' }) }}
+              <div v-if="item.source.status === 'error'">{{
+                item.source.errorMessage || '未知错误'
+              }}</div>
+              <template v-if="item.source.isFolder && item.source.totalFiles">
+                · {{ item.source.completedFiles || 0 }}/{{ item.source.totalFiles }} 个文件
+                <span v-if="item.source.failedFiles">（{{ item.source.failedFiles }} 个失败）</span>
+              </template>
+            </NTooltip>
+            <NText
+              v-if="
+                item.detail && !['pending', 'hashing', 'cancelled'].includes(item.source.status)
+              "
+              :type="detailTextType(item.source)"
+              depth="2"
+              class="min-w-0 truncate text-xs leading-5"
+              :title="item.detail"
+              >{{ item.detail }}</NText
+            >
           </div>
-        </NCard>
-      </NSpace>
+          <div class="w-40 shrink-0 px-2 flex items-center gap-1 self-stretch" @click.stop>
+            <NTooltip
+              v-if="
+                item.source.status === 'uploading' ||
+                item.source.status === 'hashing' ||
+                item.source.status === 'pending' ||
+                item.source.status === 'pausing'
+              "
+            >
+              <template #trigger>
+                <NButton
+                  quaternary
+                  size="small"
+                  type="warning"
+                  :disabled="isBatchOperating || item.source.status === 'pausing'"
+                  @click="handlePauseItem(item.source)"
+                >
+                  <template #icon
+                    ><NIcon size="14"><PauseCircleOutlined /></NIcon
+                  ></template>
+                </NButton>
+              </template>
+              暂停
+            </NTooltip>
+            <NTooltip v-else-if="item.source.status === 'paused'">
+              <template #trigger>
+                <NButton
+                  quaternary
+                  size="small"
+                  type="primary"
+                  :disabled="isBatchOperating"
+                  @click="handleResumeItem(item.source)"
+                >
+                  <template #icon
+                    ><NIcon size="14"><PlayCircleOutlined /></NIcon
+                  ></template>
+                </NButton>
+              </template>
+              继续
+            </NTooltip>
+            <NTooltip v-else-if="item.source.status === 'error'">
+              <template #trigger>
+                <NButton
+                  quaternary
+                  size="small"
+                  type="info"
+                  :disabled="isBatchOperating"
+                  @click="handleRetry(item.source)"
+                >
+                  <template #icon
+                    ><NIcon size="14"><ReloadOutlined /></NIcon
+                  ></template>
+                </NButton>
+              </template>
+              重试
+            </NTooltip>
+            <NTooltip>
+              <template #trigger>
+                <NButton size="small" quaternary @click="handleOpenLocal(item.source)">
+                  <template #icon
+                    ><NIcon size="14"><FolderOutlined /></NIcon
+                  ></template>
+                </NButton>
+              </template>
+              打开本地
+            </NTooltip>
+            <NTooltip v-if="item.source.status === 'complete'">
+              <template #trigger>
+                <NButton
+                  quaternary
+                  size="small"
+                  type="primary"
+                  @click="handleOpenRemote(item.source)"
+                >
+                  <template #icon
+                    ><NIcon size="14"><CloudOutlined /></NIcon
+                  ></template>
+                </NButton>
+              </template>
+              打开远程
+            </NTooltip>
+            <NTooltip>
+              <template #trigger>
+                <NButton
+                  quaternary
+                  size="small"
+                  type="error"
+                  :disabled="isBatchOperating"
+                  @click="handleDeleteItem(item.source)"
+                >
+                  <template #icon
+                    ><NIcon size="14"><DeleteOutlined /></NIcon
+                  ></template>
+                </NButton>
+              </template>
+              删除任务
+            </NTooltip>
+          </div>
+        </template>
+      </FileItemView>
     </NScrollbar>
-
-    <!-- 空状态 -->
-    <div v-else class="flex-1 flex items-center justify-center">
-      <NEmpty description="暂无上传任务" />
-    </div>
-  </div>
+    <div v-else class="flex-1 flex items-center justify-center"
+      ><NEmpty description="暂无上传任务"
+    /></div>
+    <ExplorerStatusbar
+      :total-count="items.length"
+      :selected-count="0"
+      :current-page="1"
+      :total-pages="1"
+      :page-size="items.length || 50"
+      :show-pagination="false"
+    />
+  </NEl>
 </template>
 
-<script setup lang="tsx">
+<script setup lang="ts">
+  import TaskStatus, { type TaskStatusType } from '@/components/TaskStatus/TaskStatus.vue';
+  import ExplorerToolbarLayout from '@/components/FileExplorer/components/ExplorerToolbarLayout/ExplorerToolbarLayout.vue';
+  import ListHeader from '@/components/FileExplorer/components/ListHeader/ListHeader.vue';
+  import FileItemView from '@/components/FileExplorer/components/FileItemView/FileItemView.vue';
+  import ExplorerStatusbar from '@/components/FileExplorer/components/ExplorerStatusbar/ExplorerStatusbar.vue';
   import { useUploadManager } from '@/composables/useUploadManager';
   import type { UploadFile } from '@/composables/useUploadManager';
   import {
@@ -261,6 +279,20 @@
   } = useUploadManager();
   const message = useMessage();
   const dialog = useDialog();
+  const selectedItems = new Set<string>();
+  const items = computed(() =>
+    displayList.value.map((source) => ({
+      fid: source.id,
+      fn: source.fileName,
+      fc: source.isFolder ? '0' : '1',
+      ico: source.fileName.split('.').pop()?.toLowerCase() || '',
+      fs: source.fileSize,
+      taskStatus: getTaskStatus(source),
+      detail: [detailLeft(source), detailRight(source)].filter(Boolean).join(' · '),
+      source,
+    })),
+  );
+
   const router = useRouter();
 
   const hasPausableTasks = computed(() =>
@@ -281,39 +313,38 @@
     return fallback;
   };
 
-  /** NCard 紧凑主题覆盖 */
-  const cardThemeOverrides = {
-    paddingSmall: '8px 12px 8px',
-  };
-
   /** 根据进度百分比计算已上传字节数并格式化 */
   const formatUploadedSize = (item: UploadFile) => {
     const uploaded = Math.round(((item.progress || 0) / 100) * (item.fileSize || 0));
     return filesize(uploaded, { standard: 'jedec' });
   };
 
-  /** 进度条百分比：已完成固定 100%，其余取实际值 */
+  /** 已完成固定 100%，其余取实际进度。 */
   const progressValue = (item: UploadFile) => {
     if (item.status === 'complete') return 100;
-    return Math.floor(item.progress || 0);
+    return Math.max(0, Math.min(100, Math.round(item.progress || 0)));
   };
 
-  /** 进度条状态色 */
-  const progressStatus = (
-    item: UploadFile,
-  ): 'success' | 'warning' | 'error' | 'info' | undefined => {
+  function getTaskStatus(item: UploadFile): { type: TaskStatusType; text: string } {
     switch (item.status) {
       case 'complete':
-        return 'success';
-      case 'pausing':
-      case 'paused':
-        return 'warning';
+        return { type: 'success', text: '已完成' };
       case 'error':
-        return 'error';
+        return { type: 'failure', text: '上传失败' };
+      case 'hashing':
+        return { type: 'analysis', text: '计算哈希' };
+      case 'uploading':
+        return { type: 'downloading', text: `${progressValue(item)}%` };
+      case 'pausing':
+        return { type: 'downloading', text: '暂停中' };
+      case 'paused':
+        return { type: 'downloading', text: '已暂停' };
+      case 'cancelled':
+        return { type: 'downloading', text: '已取消' };
       default:
-        return undefined;
+        return { type: 'downloading', text: '等待中' };
     }
-  };
+  }
 
   /** 详情行左侧文字类型：错误状态用 error 色，其余用默认 */
   const detailTextType = (item: UploadFile): 'error' | undefined => {
@@ -332,7 +363,7 @@
         return '正在计算文件哈希...';
       case 'pausing':
       case 'paused':
-        return `${Math.floor(item.progress || 0)}%`;
+        return `${progressValue(item)}%`;
       case 'complete':
         return '';
       case 'error':

@@ -203,7 +203,11 @@ export const useDownloadManager = createSharedComposable(() => {
   };
 
   const syncDownloadSettings = async () => {
-    await Promise.all([syncMaxConcurrent(), syncSpeedLimit()]);
+    await Promise.all([syncMaxConcurrent(), syncSpeedLimit(), syncMaxRetry()]);
+  };
+
+  const syncMaxRetry = async (n = settingStore.downloadSetting.maxRetry) => {
+    await invokeDownloadCommand('download_set_max_retry', { n });
   };
 
   const updateTask = (gid: string, updater: (task: DownLoadFile) => void) => {
@@ -684,6 +688,14 @@ export const useDownloadManager = createSharedComposable(() => {
     }
 
     stopHandles.push(
+      watch(
+        () => settingStore.downloadSetting.maxRetry,
+        (n) => {
+          void syncMaxRetry(n).catch((error) => {
+            logDownloadManagerError('同步下载重试设置失败:', error);
+          });
+        },
+      ),
       watch(
         () => settingStore.downloadSetting.maxConcurrent,
         (n) => {

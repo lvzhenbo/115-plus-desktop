@@ -11,14 +11,14 @@
               error-correction-level="H"
             />
             <div
-              v-if="isQrCodeExpired"
+              v-if="isCencel"
               class="absolute top-0 w-full h-full flex flex-col justify-center items-center backdrop-blur-sm font-bold text-xl cursor-pointer"
               :style="{
                 color: themeVars.errorColor,
               }"
               @click="init"
             >
-              <div>二维码失效</div>
+              <div>已取消登录</div>
               <div>请点击刷新</div>
             </div>
             <div
@@ -39,14 +39,20 @@
               }"
               @click="init"
             >
-              <div>已取消登录</div>
+              <div>二维码失效</div>
               <div>请点击刷新</div>
             </div>
           </div>
 
           <div class="mt-2">使用 115APP 扫一扫登录</div>
+          <NButton text type="primary" :disabled="isInitializing" @click="init">
+            刷新二维码
+          </NButton>
         </div>
       </NCard>
+    </div>
+    <div v-if="loginError" class="max-w-120 mx-auto mt-4 px-4">
+      <NAlert type="error" title="登录未完成">{{ loginError }}</NAlert>
     </div>
   </NLayout>
 </template>
@@ -70,18 +76,48 @@
   const isQrCodeExpired = ref(false);
   const isScanSuccess = ref(false);
   const isCencel = ref(false);
+  const isInitializing = ref(false);
+  const loginError = ref('');
+  let loginGeneration = 0;
+  let pendingStatus: ReturnType<typeof qrCodeStatus> | undefined;
   const userStore = useUserStore();
   const message = useMessage();
   const router = useRouter();
 
-  onMounted(async () => {
-    init();
+  onMounted(() => {
+    void init();
   });
 
+  onUnmounted(() => {
+    loginGeneration++;
+    pendingStatus?.abort();
+  });
+
+  const showLoginError = (error: unknown) => {
+    const detail = error as { code?: number; message?: string; error?: string };
+    const text = detail?.message || detail?.error || '网络请求失败，请刷新二维码重试';
+    loginError.value = detail?.code ? `${text}（错误码 ${detail.code}）` : text;
+    console.warn('[login]', { step: 'failed', code: detail?.code, message: text });
+  };
+
   const init = async () => {
-    await getCodeChallenge();
-    await getQrCodeData();
-    getQrCodeStatus();
+    if (isInitializing.value) return;
+    const generation = ++loginGeneration;
+    pendingStatus?.abort();
+    loginError.value = '';
+    isScanSuccess.value = false;
+    isQrCodeExpired.value = false;
+    isCencel.value = false;
+    isInitializing.value = true;
+    try {
+      await getCodeChallenge();
+      await getQrCodeData();
+      if (generation === loginGeneration) void getQrCodeStatus(generation);
+    } catch (error) {
+      if (generation === loginGeneration) showLoginError(error);
+    } finally {
+      isInitializing.value = false;
+    }
   };
 
   const getCodeChallenge = async () => {
@@ -100,28 +136,39 @@
     isScanSuccess.value = false;
   };
 
-  const getQrCodeStatus = async () => {
+  const getQrCodeStatus = async (generation: number) => {
     try {
-      const res = await qrCodeStatus({
-        uid: qrCodeData.value.uid,
-        sign: qrCodeData.value.sign,
-        time: qrCodeData.value.time,
-      });
-      if (!res.data.status) {
-        getQrCodeStatus();
-      } else if (res.data.status === 1) {
-        isScanSuccess.value = true;
-        getQrCodeStatus();
-      } else if (res.data.status === 2) {
-        await getToken();
-        await getUserInfo();
-      } else {
-        isCencel.value = true;
+      while (generation === loginGeneration) {
+        pendingStatus = qrCodeStatus({
+          uid: qrCodeData.value.uid,
+          sign: qrCodeData.value.sign,
+          time: qrCodeData.value.time,
+        });
+        const res = await pendingStatus;
+        if (generation !== loginGeneration) return;
+        console.info('[login]', { step: 'scan-status', status: res.data.status ?? 0 });
+        if (!res.data.status) continue;
+        if (res.data.status === 1) {
+          isScanSuccess.value = true;
+        } else if (res.data.status === 2) {
+          console.info('[login]', { step: 'exchange-token' });
+          await getToken();
+          if (generation !== loginGeneration) return;
+          await getUserInfo();
+          return;
+        } else {
+          isScanSuccess.value = false;
+          isCencel.value = true;
+          return;
+        }
       }
-    } catch (error: any) {
-      if (error.code === 40199002) {
-        isScanSuccess.value = false;
+    } catch (error) {
+      if (generation !== loginGeneration) return;
+      isScanSuccess.value = false;
+      if ((error as { code?: number })?.code === 40199002) {
         isQrCodeExpired.value = true;
+      } else {
+        showLoginError(error);
       }
     }
   };
@@ -134,12 +181,10 @@
   };
 
   const getUserInfo = async () => {
-    try {
-      const res = await userInfo();
-      userStore.userInfo = res.data;
-      message.success('登录成功！');
-      router.replace({ name: 'Home' });
-    } catch (_error) {}
+    const res = await userInfo();
+    userStore.userInfo = res.data;
+    message.success('登录成功！');
+    await router.replace({ name: 'Home' });
   };
 
   const generateRandomString = (length: number) => {

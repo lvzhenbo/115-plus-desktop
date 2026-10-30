@@ -1,12 +1,12 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="T extends FileItemData">
   import { filesize } from 'filesize';
   import { format } from 'date-fns';
-  import type { MyFile } from '@/api/types/file';
+  import { StarFilled } from '@vicons/antd';
   import { getFileIcon } from '../../types';
-  import type { ListColumn } from '../../types';
+  import type { FileItemData, ListColumn } from '../../types';
 
   const props = defineProps<{
-    item: MyFile;
+    item: T;
     selected: boolean;
     viewMode: 'grid' | 'list';
     showCheckbox: boolean;
@@ -14,10 +14,10 @@
   }>();
 
   const emit = defineEmits<{
-    click: [item: MyFile, event: MouseEvent];
-    dblclick: [item: MyFile];
-    contextmenu: [item: MyFile, event: MouseEvent];
-    check: [item: MyFile, event: MouseEvent];
+    click: [item: T, event: MouseEvent];
+    dblclick: [item: T];
+    contextmenu: [item: T, event: MouseEvent];
+    check: [item: T, event: MouseEvent];
   }>();
 
   const icon = computed(() => getFileIcon(props.item));
@@ -69,16 +69,16 @@
     <!-- 图标 -->
     <div class="w-16 h-16 flex items-center justify-center mb-2">
       <img v-if="item.thumb" :src="item.thumb" class="w-full h-full object-cover rounded" />
-      <span v-else class="text-4xl leading-none">{{ icon }}</span>
+      <img v-else :src="icon" class="w-full h-full object-contain" alt="" draggable="false" />
     </div>
 
     <!-- 文件名 -->
     <div class="text-xs text-center w-full truncate px-1" :title="item.fn">
-      {{ item.fn }}
+      <NIcon v-if="item.ism === '1'" class="mr-1 text-(--warning-color)" title="已星标">
+        <StarFilled />
+      </NIcon>
+      <slot name="name" :item="item">{{ item.fn }}</slot>
     </div>
-
-    <!-- 视频标记 -->
-    <div v-if="item.isv" class="absolute top-1 right-1 text-[10px] text-(--text-color-3)">🎬</div>
   </div>
 
   <!-- 列表视图 -->
@@ -105,17 +105,20 @@
     <!-- 图标 -->
     <div class="w-8 h-8 flex items-center justify-center shrink-0">
       <img v-if="item.thumb" :src="item.thumb" class="w-full h-full object-cover rounded" />
-      <span v-else class="text-xl leading-none">{{ icon }}</span>
+      <img v-else :src="icon" class="w-full h-full object-contain" alt="" draggable="false" />
     </div>
 
     <!-- 名称 -->
     <div class="flex-1 min-w-0 px-2 text-sm truncate" :title="item.fn">
-      {{ item.fn }}
+      <NIcon v-if="item.ism === '1'" class="mr-1 text-(--warning-color)" title="已星标">
+        <StarFilled />
+      </NIcon>
+      <slot name="name" :item="item">{{ item.fn }}</slot>
     </div>
 
     <!-- 大小 -->
     <div v-if="columns.includes('size')" class="w-24 text-sm shrink-0 px-2 text-(--text-color-3)">
-      {{ item.fc === '0' ? '-' : size }}
+      <slot name="size" :item="item" :size="size">{{ item.fc === '0' ? '-' : size }}</slot>
     </div>
 
     <!-- 种类 -->
@@ -138,5 +141,6 @@
     >
       {{ modifyDate }}
     </div>
+    <slot name="after" :item="item" />
   </div>
 </template>

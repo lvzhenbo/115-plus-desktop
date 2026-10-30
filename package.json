@@ -19,7 +19,11 @@
     "tauri:prebuild": "tauri build --bundles nsis",
     "release": "release-it",
     "prerelease": "release-it",
-    "prepare": "husky"
+    "prepare": "husky",
+    "lint:check": "eslint .",
+    "test": "node --test tests/*.test.mjs",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --lib --locked",
+    "check": "run-s lint:check test type-check"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

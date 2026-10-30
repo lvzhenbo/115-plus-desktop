@@ -110,7 +110,10 @@
       v-model:show="videoListShow"
       v-model:pick-code="pickCode"
       :video-list
+      :has-more="hasMoreVideos"
+      :loading="playlistLoading"
       @update:pick-code="handleChangeVideo"
+      @load-more="loadMoreVideos"
     />
   </div>
 </template>
@@ -119,9 +122,8 @@
   import Hls from 'hls.js';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { emit, listen } from '@tauri-apps/api/event';
-  import type { MyFile } from '@/api/types/file';
   import { saveVideoHistory, videoHistory, videoPlayUrl, videoSubtitle } from '@/api/video';
-  import { fileList } from '@/api/file';
+  import { createMediaList, type PreviewFile, type VideoPlayback } from '@/utils/media';
   import type { SubtitleItem } from '@/api/types/video';
   import { type SelectOption } from 'naive-ui';
   import CustomLoader from './customLoader';
@@ -172,9 +174,14 @@
   const resolutions = ref<SelectOption[]>([]);
   const currentResolution = ref<number>(0);
   let hls: Hls | null = null;
-  const file = ref<MyFile | null>(null);
+  const file = ref<PreviewFile | null>(null);
   const pickCode = ref('');
-  const videoList = ref<MyFile[]>([]);
+  const videoList = ref<PreviewFile[]>([]);
+  const hasMoreVideos = ref(false);
+  const playlistLoading = ref(false);
+  let playlist: ReturnType<typeof createMediaList> | undefined;
+  let playlistVersion = 0;
+  let videoVersion = 0;
   const videoUrlList = ref<VideoURL[]>([]);
   const historyTime = ref(0);
   const videoListShow = ref(false);
@@ -244,7 +251,9 @@
   // 是否有上一个/下一个视频
   const hasPreviousVideo = computed(() => currentVideoIndex.value > 0);
   const hasNextVideo = computed(
-    () => videoList.value.length > 0 && currentVideoIndex.value < videoList.value.length - 1,
+    () =>
+      currentVideoIndex.value >= 0 &&
+      (currentVideoIndex.value < videoList.value.length - 1 || hasMoreVideos.value),
   );
 
   // 当前 Tauri 窗口实例
@@ -258,11 +267,35 @@
     },
   });
 
-  const unlisten = listen('set-video-list', async (event) => {
-    file.value = event.payload as MyFile;
-    pickCode.value = file.value.pc;
-    await changeVideoUrl();
-    getFileList();
+  const unlisten = listen<VideoPlayback>('set-video-list', (event) => {
+    playlist?.cancel();
+    const version = ++playlistVersion;
+    const current = event.payload.file;
+    const list = createMediaList(event.payload.source, 4);
+    playlist = list;
+    file.value = current;
+    pickCode.value = current.pc;
+    videoList.value = [current];
+    hasMoreVideos.value = false;
+    playlistLoading.value = true;
+    void changeVideoUrl().catch((error) => {
+      if (version === playlistVersion)
+        message.error(error instanceof Error ? error.message : '视频加载失败');
+    });
+    void list
+      .locate(current)
+      .then(() => {
+        if (version !== playlistVersion) return;
+        videoList.value = [...list.items];
+        hasMoreVideos.value = list.hasMore();
+      })
+      .catch((error) => {
+        if (version === playlistVersion)
+          message.error(error instanceof Error ? error.message : '视频列表加载失败');
+      })
+      .finally(() => {
+        if (version === playlistVersion) playlistLoading.value = false;
+      });
   });
 
   let unlistenCloseRequested: (() => void) | null = null;
@@ -289,6 +322,9 @@
   });
 
   onBeforeUnmount(() => {
+    playlistVersion++;
+    videoVersion++;
+    playlist?.cancel();
     destroyHls();
     // 清理事件监听器，忽略资源已失效的错误
     unlisten.then((f) => f()).catch(() => {});
@@ -322,11 +358,11 @@
     }
   };
 
-  const getVideoPlayUrl = async () => {
-    if (!file.value) return;
+  const getVideoPlayUrl = async (current: PreviewFile, version: number) => {
     const res = await videoPlayUrl({
-      pick_code: file.value.pc,
+      pick_code: current.pc,
     });
+    if (version !== videoVersion) return;
     videoUrlList.value = res.data.video_url;
     resolutions.value = res.data.video_url.map((item) => ({
       label: item.title,
@@ -334,19 +370,23 @@
     }));
   };
 
-  const getVideoHistory = async () => {
-    if (!file.value || !settingStore.videoPlayerSetting.isHistory) return;
+  const getVideoHistory = async (current: PreviewFile, version: number) => {
+    if (!settingStore.videoPlayerSetting.isHistory) {
+      historyTime.value = 0;
+      return;
+    }
     const res = await videoHistory({
-      pick_code: file.value.pc,
+      pick_code: current.pc,
     });
+    if (version !== videoVersion) return;
     historyTime.value = res.data.time || 0;
   };
 
   // 获取字幕列表
-  const getSubtitleList = async () => {
-    if (!file.value) return;
+  const getSubtitleList = async (current: PreviewFile, version: number) => {
     try {
-      const res = await videoSubtitle({ pick_code: file.value.pc });
+      const res = await videoSubtitle({ pick_code: current.pc });
+      if (version !== videoVersion) return;
       subtitleList.value = res.data.list || [];
       // 根据设置决定是否默认启用字幕
       const shouldEnable = settingStore.subtitleStyleSetting.defaultEnabled;
@@ -361,6 +401,7 @@
         subtitleEnabled.value = false;
       }
     } catch (e) {
+      if (version !== videoVersion) return;
       console.warn('获取字幕列表失败', e);
       subtitleList.value = [];
       currentSubtitleSid.value = undefined;
@@ -432,24 +473,21 @@
     settingStore.videoPlayerSetting.defaultVolume = val;
   });
 
-  // 迭代式获取文件列表，避免递归调用栈溢出
-  const getFileList = async () => {
-    let offset = 0;
-    const limit = 1150;
-    videoList.value = [];
-
-    while (true) {
-      const res = await fileList({
-        cid: file.value?.pid,
-        show_dir: 0,
-        offset,
-        type: 4,
-        limit,
-        cur: 1,
-      });
-      videoList.value.push(...res.data);
-      if (videoList.value.length >= res.count) break;
-      offset += limit;
+  const loadMoreVideos = async () => {
+    if (!playlist || playlistLoading.value || !playlist.hasMore()) return;
+    const version = playlistVersion;
+    const list = playlist;
+    playlistLoading.value = true;
+    try {
+      await list.loadMore();
+      if (version !== playlistVersion) return;
+      videoList.value = [...list.items];
+      hasMoreVideos.value = list.hasMore();
+    } catch (error) {
+      if (version === playlistVersion)
+        message.error(error instanceof Error ? error.message : '视频列表加载失败');
+    } finally {
+      if (version === playlistVersion) playlistLoading.value = false;
     }
   };
 
@@ -757,6 +795,10 @@
   };
 
   const handleNextVideo = async () => {
+    if (playlistLoading.value) return;
+    if (currentVideoIndex.value === videoList.value.length - 1 && hasMoreVideos.value) {
+      await loadMoreVideos();
+    }
     if (!hasNextVideo.value) {
       message.warning('已经是最后一个视频了');
       return;
@@ -781,9 +823,14 @@
   };
 
   const changeVideoUrl = async () => {
+    const current = file.value;
+    if (!current) return;
+    const version = ++videoVersion;
     pauseHistorySave();
-    await getVideoPlayUrl();
-    await Promise.all([getVideoHistory(), getSubtitleList()]);
+    await getVideoPlayUrl(current, version);
+    if (version !== videoVersion) return;
+    await Promise.all([getVideoHistory(current, version), getSubtitleList(current, version)]);
+    if (version !== videoVersion) return;
     if (videoUrlList.value.length === 0) {
       message.error('无可用的视频源');
       return;
@@ -796,6 +843,7 @@
 
     // 加载字幕
     await nextTick();
+    if (version !== videoVersion) return;
     if (subtitleEnabled.value) {
       subtitleLayerRef.value?.loadSubtitle();
     }

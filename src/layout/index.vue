@@ -82,7 +82,7 @@
                   <LinkOutlined />
                 </NIcon>
               </template>
-              离线下载
+              云下载
             </NButton>
           </NSpace>
           <NButton round secondary @click="searchShow = true">
@@ -116,12 +116,20 @@
   </NLayout>
   <OfflineDownloadModal v-model:show="offlineDownloadShow" />
   <SearchModal v-model:show="searchShow" />
+  <NImageGroup
+    v-model:show="imageShow"
+    :current="imageIndex"
+    :src-list="imageUrls"
+    :render-toolbar="renderImageToolbar"
+    @preview-next="stepImage(1)"
+    @preview-prev="stepImage(-1)"
+  />
 </template>
 
 <script setup lang="tsx">
   import { userInfo } from '@/api/user';
   import { useUserStore } from '@/store/user';
-  import type { MenuOption } from 'naive-ui';
+  import type { ImageRenderToolbarProps, MenuOption } from 'naive-ui';
   import {
     CloudServerOutlined,
     DeleteOutlined,
@@ -134,6 +142,7 @@
     InfoCircleOutlined,
     MenuFoldOutlined,
     MenuUnfoldOutlined,
+    StarOutlined,
   } from '@vicons/antd';
   import OfflineDownloadModal from './components/OfflineDownloadModal/OfflineDownloadModal.vue';
   import SearchModal from './components/SearchModal/SearchModal.vue';
@@ -143,18 +152,39 @@
   import { useModalQuerySync } from '@/composables/useModalQuerySync';
   import { useUploadManager } from '@/composables/useUploadManager';
   import { useCheckUpdate } from '@/composables/useCheckUpdate';
+  import { useFilePreview } from '@/composables/useFilePreview';
 
   const route = useRoute();
   const userStore = useUserStore();
   const collapsed = ref(false);
+  const { imageShow, imageIndex, imageUrls, stepImage } = useFilePreview();
+  const renderImageToolbar = ({ nodes }: ImageRenderToolbarProps) => [
+    nodes.prev,
+    nodes.next,
+    nodes.rotateCounterclockwise,
+    nodes.rotateClockwise,
+    nodes.resizeToOriginalSize,
+    nodes.zoomOut,
+    nodes.zoomIn,
+    nodes.close,
+  ];
   // 侧边栏入口和路由一一对应，保持应用级导航收口在布局层。
   const menuOptions: MenuOption[] = [
     {
-      label: () => <RouterLink to="/home">我的文件</RouterLink>,
+      label: () => <RouterLink to="/home">全部文件</RouterLink>,
       key: 'Home',
       icon: () => (
         <NIcon>
           <CloudServerOutlined />
+        </NIcon>
+      ),
+    },
+    {
+      label: () => <RouterLink to="/home?star=1">星标文件</RouterLink>,
+      key: 'StarredFiles',
+      icon: () => (
+        <NIcon>
+          <StarOutlined />
         </NIcon>
       ),
     },
@@ -213,7 +243,9 @@
       ),
     },
   ];
-  const selectMenu = ref<string>(route.name as string);
+  const activeMenu = () =>
+    route.name === 'Home' && route.query.star === '1' ? 'StarredFiles' : (route.name as string);
+  const selectMenu = ref<string>(activeMenu());
   const percentage = computed(() => {
     if (userStore.userInfo) {
       return Math.round(
@@ -244,12 +276,9 @@
   };
 
   // 保持菜单高亮与当前路由一致。
-  watch(
-    () => route.name,
-    (newVal) => {
-      selectMenu.value = newVal as string;
-    },
-  );
+  watch(activeMenu, (newVal) => {
+    selectMenu.value = newVal as string;
+  });
 
   onMounted(async () => {
     getUserInfo();

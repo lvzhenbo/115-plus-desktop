@@ -21,6 +21,13 @@ async function bootstrap() {
   // 等待所有 store 加载完成
   await Promise.all([userStore.$tauri.start(), settingStore.$tauri.start()]);
 
+  // 旧的记忆排序配置迁移为创建时间倒序，保留已有的自定义排序。
+  if (settingStore.generalSetting.customOrder === 0) {
+    settingStore.generalSetting.customOrder = 1;
+    userStore.homeSortConfig = { field: 'user_ptime', direction: 'desc' };
+    userStore.folderModalSortConfig = { field: 'user_ptime', direction: 'desc' };
+  }
+
   app.use(router);
 
   app.mount('#app');

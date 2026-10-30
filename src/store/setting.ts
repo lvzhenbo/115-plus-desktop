@@ -8,11 +8,11 @@ export const useSettingStore = defineStore(
     const generalSetting = ref({
       /**
        * 排序方式
-       * - 0 使用记忆排序，自定义排序失效
-       * - 1 使用自定义排序，不使用记忆排序
+       * - 0 仅兼容旧配置，启动时迁移为 1
+       * - 1 自定义排序
        * - 2 自定义排序，非文件夹置顶
        */
-      customOrder: 0 as 0 | 1 | 2,
+      customOrder: 1 as 0 | 1 | 2,
       /** 关闭窗口时自动暂停任务并关闭，不弹出确认框 */
       skipExitConfirm: false,
       /** 启动时自动检查更新 */

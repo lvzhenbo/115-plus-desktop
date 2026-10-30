@@ -4,21 +4,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use tokio::time::{Duration, interval};
 
-use super::super::types::{SegmentStatus, TaskStatus};
-
-/// 下载进度事件。
-///
-/// 下载过程中每 500ms 发射一次，用于刷新前端速度和剩余时间。
-#[derive(Debug, Clone, Serialize)]
-pub struct DownloadProgressEvent {
-    pub task_id: String,
-    pub downloaded_bytes: u64,
-    pub total_bytes: u64,
-    /// 平滑后的下载速度，单位 bytes/sec。
-    pub speed: f64,
-    /// 预计剩余秒数；速度为 0 时为 None。
-    pub eta_secs: Option<f64>,
-}
+use super::super::types::SegmentStatus;
 
 /// 分片状态变更事件。
 ///
@@ -29,15 +15,6 @@ pub struct DownloadSegmentEvent {
     pub segment_index: u16,
     pub status: SegmentStatus,
     pub downloaded: u64,
-}
-
-/// 任务状态变更事件。
-///
-/// 任务进入完成、失败、暂停等终态时立即发射。
-#[derive(Debug, Clone, Serialize)]
-pub struct DownloadTaskEvent {
-    pub task_id: String,
-    pub status: TaskStatus,
 }
 
 /// 基于 EMA 的速度平滑器。
@@ -112,16 +89,8 @@ impl SpeedCalculator {
     }
 }
 
-pub fn emit_progress(app: &AppHandle, event: &DownloadProgressEvent) {
-    let _ = app.emit("download:progress", event);
-}
-
 pub fn emit_segment_status(app: &AppHandle, event: &DownloadSegmentEvent) {
     let _ = app.emit("download:segment-status", event);
-}
-
-pub fn emit_task_status(app: &AppHandle, event: &DownloadTaskEvent) {
-    let _ = app.emit("download:task-status", event);
 }
 
 /// 下载地址失效事件。
@@ -208,5 +177,33 @@ pub async fn progress_loop(
         if !items.is_empty() {
             let _ = app.emit("download:progress", &items);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progress_payload_matches_frontend_batch_contract() {
+        let payload = serde_json::to_value(vec![ProgressItem {
+            task_id: "task".to_string(),
+            downloaded_bytes: 25,
+            total_bytes: 100,
+            speed: 5.0,
+            eta_secs: Some(15.0),
+            status: "active".to_string(),
+            name: "file".to_string(),
+            is_folder: false,
+            completed_files: None,
+            failed_files: None,
+            total_files: None,
+        }])
+        .unwrap();
+        assert_eq!(payload[0]["taskId"], "task");
+        assert_eq!(payload[0]["downloadedBytes"], 25);
+        assert_eq!(payload[0]["totalBytes"], 100);
+        assert_eq!(payload[0]["etaSecs"], 15.0);
+        assert!(payload[0].get("task_id").is_none());
     }
 }

@@ -19,9 +19,8 @@ use super::types::{
 };
 use super::writer::FileWriter;
 use crate::download::events::{
-    DownloadProgressEvent, DownloadSegmentEvent, DownloadTaskEvent, ProgressItem, ProgressRegistry,
-    SpeedCalculator, UrlExpiredEvent, emit_progress, emit_segment_status, emit_task_status,
-    emit_url_expired,
+    DownloadSegmentEvent, ProgressItem, ProgressRegistry, SpeedCalculator, UrlExpiredEvent,
+    emit_segment_status, emit_url_expired,
 };
 
 /// 下载信号枚举，控制任务的运行、暂停、取消
@@ -616,13 +615,12 @@ pub async fn download_segment(
 
     Ok(total_written)
 }
-const MAX_SEGMENT_RETRIES: u32 = 3;
 /// 重试基准延迟 (ms)，指数退避 1s → 2s → 4s
 const RETRY_BASE_DELAY_MS: u64 = 1000;
 
 /// 分片下载 + 指数退避重试
 ///
-/// 对瞬态错误（网络异常、5xx）最多重试 MAX_SEGMENT_RETRIES 次。
+/// 对瞬态错误（网络异常、5xx）按用户配置的次数重试。
 /// 不重试：用户信号中断、磁盘 I/O 错误、4xx 客户端错误。
 /// 重试时携带已下载进度，从断点继续。
 pub async fn download_segment_with_retry(
@@ -633,6 +631,7 @@ pub async fn download_segment_with_retry(
     segment: &Segment,
     writer: &FileWriter,
     supports_range: bool,
+    max_retries: u32,
     progress_tx: Option<tokio::sync::mpsc::Sender<ProgressUpdate>>,
     task_id: &str,
     pick_code: &str,
@@ -865,10 +864,10 @@ pub async fn download_segment_with_retry(
                     }
                     sync_partial_progress(supports_range, &last_downloaded, &mut local_seg);
                     retry_count += 1;
-                    if retry_count > MAX_SEGMENT_RETRIES {
+                    if retry_count > max_retries {
                         error!(
                             "[分片{}][{}] 重试耗尽 ({}/{}): {:?}",
-                            local_seg.index, task_id, retry_count, MAX_SEGMENT_RETRIES, e
+                            local_seg.index, task_id, retry_count, max_retries, e
                         );
                         break 'retry_loop Err(e);
                     }
@@ -904,36 +903,17 @@ fn is_retryable_error(err: &DownloadError) -> bool {
 ///
 /// 匹配或未提供期望值返回 Ok(true)，不匹配返回 Ok(false)。
 async fn verify_file_sha1(
-    file_path: &str,
+    writer: &FileWriter,
     expected_sha1: Option<&str>,
 ) -> Result<bool, DownloadError> {
     let Some(expected) = expected_sha1 else {
-        return Ok(true); // 未提供期望 SHA1，跳过校验
+        return Ok(true);
     };
     let expected = expected.to_uppercase();
-    let path = file_path.to_string();
-    let computed = tokio::task::spawn_blocking(move || -> Result<String, DownloadError> {
-        use sha1::{Digest, Sha1};
-        use std::io::Read;
-        let mut file = std::fs::File::open(&path).map_err(DownloadError::Io)?;
-        let mut hasher = Sha1::new();
-        let mut buffer = vec![0u8; 8 * 1024 * 1024]; // 8MB 读取缓冲
-        loop {
-            let n = file.read(&mut buffer).map_err(DownloadError::Io)?;
-            if n == 0 {
-                break;
-            }
-            hasher.update(&buffer[..n]);
-        }
-        let hash: String = hasher
-            .finalize()
-            .iter()
-            .map(|b| format!("{:02X}", b))
-            .collect();
-        Ok(hash)
-    })
-    .await
-    .map_err(|e| DownloadError::JoinError(e.to_string()))??;
+    let writer = writer.clone();
+    let computed = tokio::task::spawn_blocking(move || writer.sha1())
+        .await
+        .map_err(|error| DownloadError::JoinError(error.to_string()))??;
     Ok(computed == expected)
 }
 
@@ -1010,7 +990,6 @@ fn reallocate_failed_segment(
 /// - 通道关闭时执行最终 sync_data，确保数据一致性
 fn spawn_flush_task(
     db: Arc<ProgressFile>,
-    app: AppHandle,
     task_id: String,
     file_size: u64,
     file_name: String,
@@ -1061,13 +1040,6 @@ fn spawn_flush_task(
                         );
                     }
 
-                    emit_progress(&app, &DownloadProgressEvent {
-                        task_id: task_id.clone(),
-                        downloaded_bytes: cumulative_downloaded,
-                        total_bytes: file_size,
-                        speed,
-                        eta_secs: eta,
-                    });
                     progress_registry.update(ProgressItem {
                         task_id: task_id.clone(),
                         downloaded_bytes: cumulative_downloaded,
@@ -1120,10 +1092,10 @@ fn spawn_flush_task(
 ///
 /// 避免在两个函数中重复声明和管理相同的变量集合
 struct DownloadContext<'a> {
+    max_retry: u32,
     task_id: &'a str,
     file_name: &'a str,
     file_size: u64,
-    save_path: &'a str,
     pick_code: &'a str,
     expected_sha1: Option<&'a str>,
     supports_range: bool,
@@ -1141,6 +1113,7 @@ struct DownloadContext<'a> {
 
 /// 分片 spawn 参数包 — 避免 spawn 闭包捕获过多局部变量
 struct SegmentSpawnParams {
+    max_retry: u32,
     client: reqwest::Client,
     url_rx: watch::Receiver<String>,
     token: String,
@@ -1187,6 +1160,7 @@ fn spawn_segment_task(
             &params.segment,
             &params.writer,
             params.supports_range,
+            params.max_retry,
             Some(params.progress_tx),
             &params.task_id,
             &params.pick_code,
@@ -1402,6 +1376,7 @@ fn respawn_cdn_segment(
     let url_refresh_req = ctx.url_refresh_requested.clone();
     let app_clone = ctx.app.clone();
     let supports_range = ctx.supports_range;
+    let max_retry = ctx.max_retry;
 
     join_set.spawn(async move {
         tokio::select! {
@@ -1450,6 +1425,7 @@ fn respawn_cdn_segment(
             &seg,
             &writer,
             supports_range,
+            max_retry,
             Some(tx),
             &tid,
             &pick_code,
@@ -1627,6 +1603,11 @@ async fn collect_results<'a>(
                     "[{}][{}] 分片{} 失败: {:?}",
                     log_prefix, ctx.task_id, failed_seg.index, _e
                 );
+                // 普通网络错误已在分片内耗尽重试，不能拆成新分片重置重试次数。
+                if is_retryable_error(&_e) {
+                    has_failure = true;
+                    continue;
+                }
                 match handle_segment_failure(
                     &failed_seg,
                     ctx.progress_snapshot,
@@ -1676,6 +1657,7 @@ async fn collect_results<'a>(
                             match ctx.semaphore.clone().acquire_owned().await {
                                 Ok(_permit) => {
                                     let params = SegmentSpawnParams {
+                                        max_retry: ctx.max_retry,
                                         client: client.clone(),
                                         url_rx: ctx.url_rx.clone(),
                                         token: token.to_string(),
@@ -1719,7 +1701,7 @@ async fn collect_results<'a>(
     finalize_download(is_paused, is_cancelled, has_failure, ctx, flush_handle).await?;
 
     // SHA1 完整性校验
-    let sha1_ok = verify_file_sha1(ctx.save_path, ctx.expected_sha1)
+    let sha1_ok = verify_file_sha1(ctx.writer, ctx.expected_sha1)
         .await
         .unwrap_or(false);
     if sha1_ok {
@@ -1791,6 +1773,7 @@ async fn spawn_segments_with_stagger(
         );
 
         let params = SegmentSpawnParams {
+            max_retry: ctx.max_retry,
             client: client.clone(),
             url_rx: ctx.url_rx.clone(),
             token: token.to_string(),
@@ -1826,6 +1809,7 @@ pub async fn download_file(
     segment_semaphore: Arc<Semaphore>,
     conn_controller: Arc<ConnectionController>,
     progress_registry: Arc<ProgressRegistry>,
+    restart_existing: bool,
 ) -> Result<(), DownloadError> {
     FileWriter::check_disk_space(&task.save_path, task.file_size)?;
     if config.speed_limit > 0 {
@@ -1843,16 +1827,19 @@ pub async fn download_file(
     task.segments = compute_segments(task.file_size, split);
 
     info!(
-        "[任务][{}] 开始下载 文件={} 大小={:.1}MB 分片={} 支持断点={} url={}...",
+        "[任务][{}] 开始下载 文件={} 大小={:.1}MB 分片={} 支持断点={}",
         task.task_id,
         task.file_name,
         task.file_size as f64 / 1024.0 / 1024.0,
         task.segments.len(),
-        range_info.supports_range,
-        &task.url[..task.url.len().min(80)]
+        range_info.supports_range
     );
 
-    let writer = FileWriter::create(&task.save_path, task.file_size)?;
+    let writer = if restart_existing && std::path::Path::new(&task.save_path).exists() {
+        FileWriter::restart(&task.save_path, task.file_size)?
+    } else {
+        FileWriter::create(&task.save_path, task.file_size)?
+    };
     db.save_task(
         &task.task_id,
         &task.file_name,
@@ -1870,7 +1857,6 @@ pub async fn download_file(
     let progress_snapshot: Arc<Mutex<HashMap<u16, u64>>> = Arc::new(Mutex::new(HashMap::new()));
     let mut flush_handle = spawn_flush_task(
         Arc::clone(db),
-        app.clone(),
         task.task_id.clone(),
         task.file_size,
         task.file_name.clone(),
@@ -1881,20 +1867,13 @@ pub async fn download_file(
     );
 
     task.status = TaskStatus::Active;
-    emit_task_status(
-        app,
-        &DownloadTaskEvent {
-            task_id: task.task_id.clone(),
-            status: TaskStatus::Active,
-        },
-    );
 
     let task_start_time = std::time::Instant::now();
     let mut ctx = DownloadContext {
+        max_retry: config.max_retry,
         task_id: &task.task_id,
         file_name: &task.file_name,
         file_size: task.file_size,
-        save_path: &task.save_path,
         pick_code: &task.pick_code,
         expected_sha1: task.expected_sha1.as_deref(),
         supports_range: range_info.supports_range,
@@ -2010,6 +1989,7 @@ pub async fn resume_download(
             segment_semaphore,
             conn_controller,
             progress_registry,
+            true,
         )
         .await;
     }
@@ -2038,13 +2018,6 @@ pub async fn resume_download(
         task_meta.file_size as f64 / 1024.0 / 1024.0,
     );
     db.update_task_status(task_id, "active")?;
-    emit_task_status(
-        app,
-        &DownloadTaskEvent {
-            task_id: task_id.to_string(),
-            status: TaskStatus::Active,
-        },
-    );
 
     let (progress_tx, progress_rx) = mpsc::channel::<ProgressUpdate>(1024);
     let progress_snapshot: Arc<Mutex<HashMap<u16, u64>>> = Arc::new(Mutex::new(
@@ -2056,7 +2029,6 @@ pub async fn resume_download(
     ));
     let mut flush_handle = spawn_flush_task(
         Arc::clone(db),
-        app.clone(),
         task_id.to_string(),
         task_meta.file_size,
         task_meta.file_name.clone(),
@@ -2068,10 +2040,10 @@ pub async fn resume_download(
 
     let task_start_time = std::time::Instant::now();
     let mut ctx = DownloadContext {
+        max_retry: config.max_retry,
         task_id,
         file_name: &task_meta.file_name,
         file_size: task_meta.file_size,
-        save_path: &task_meta.save_path,
         pick_code: &task_meta.pick_code,
         expected_sha1: task_meta.expected_sha1.as_deref(),
         supports_range,

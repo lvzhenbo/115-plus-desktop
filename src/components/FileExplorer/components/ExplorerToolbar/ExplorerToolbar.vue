@@ -1,4 +1,5 @@
 <script setup lang="ts">
+  import ExplorerToolbarLayout from '../ExplorerToolbarLayout/ExplorerToolbarLayout.vue';
   import {
     ReloadOutlined,
     FolderAddOutlined,
@@ -23,6 +24,7 @@
     show: ToolbarAction[];
     isSearching: boolean;
     enableSearch?: boolean;
+    fileType?: number;
   }>();
 
   const emit = defineEmits<{
@@ -38,9 +40,20 @@
     batchRename: [];
     batchDelete: [];
     search: [];
+    filter: [type: number];
   }>();
 
   const searchKeyword = defineModel<string>('searchKeyword', { default: '' });
+
+  const fileTypeOptions = [
+    { label: '全部', value: 0 },
+    { label: '文档', value: 1 },
+    { label: '图片', value: 2 },
+    { label: '音乐', value: 3 },
+    { label: '视频', value: 4 },
+    { label: '压缩包', value: 5 },
+    { label: '应用', value: 6 },
+  ];
 
   const uploadOptions: DropdownOption[] = [
     {
@@ -63,7 +76,7 @@
 </script>
 
 <template>
-  <div class="flex items-center gap-2 px-3 py-2 border-b border-(--border-color) bg-(--card-color)">
+  <ExplorerToolbarLayout>
     <!-- 返回上一级 -->
     <NTooltip v-if="show.includes('up')">
       <template #trigger>
@@ -209,6 +222,18 @@
       </template>
     </NInput>
 
+    <!-- 文件分类 -->
+    <NSelect
+      v-if="show.includes('filter')"
+      :value="fileType ?? 0"
+      :options="fileTypeOptions"
+      :disabled="loading || isSearching"
+      size="small"
+      class="w-30!"
+      aria-label="文件分类"
+      @update:value="emit('filter', $event)"
+    />
+
     <!-- 视图切换 -->
     <NButtonGroup v-if="show.includes('viewToggle')" size="small">
       <NTooltip>
@@ -245,5 +270,5 @@
         列表视图
       </NTooltip>
     </NButtonGroup>
-  </div>
+  </ExplorerToolbarLayout>
 </template>

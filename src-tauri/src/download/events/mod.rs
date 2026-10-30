@@ -6,9 +6,8 @@ pub mod url;
 // 重新导出公共 API，兼容旧模块引用路径。
 pub use folder::FolderAggregator;
 pub use progress::{
-    DownloadProgressEvent, DownloadSegmentEvent, DownloadTaskEvent, ProgressItem, ProgressRegistry,
-    SpeedCalculator, UrlExpiredEvent, emit_progress, emit_segment_status, emit_task_status,
-    emit_url_expired,
+    DownloadSegmentEvent, ProgressItem, ProgressRegistry, SpeedCalculator, UrlExpiredEvent,
+    emit_segment_status, emit_url_expired,
 };
 pub use sync::emit_download_task_status;
 pub use url::UrlResolver;

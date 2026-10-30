@@ -1,35 +1,115 @@
 <template>
-  <div class="p-4">
-    <NSpace class="mb-4">
-      <NButton type="primary" :loading="loading" @click="getTaskList">
-        <template #icon>
-          <NIcon>
-            <ReloadOutlined />
-          </NIcon>
+  <NEl class="flex flex-col h-[calc(100vh-59px)] text-(--text-color-2)">
+    <ExplorerToolbarLayout>
+      <NTooltip>
+        <template #trigger>
+          <NButton size="small" quaternary :loading="loading" @click="getTaskList">
+            <template #icon
+              ><NIcon><ReloadOutlined /></NIcon
+            ></template>
+          </NButton>
         </template>
         刷新
-      </NButton>
-    </NSpace>
-    <NDataTable
-      ref="tableRef"
-      remote
-      flex-height
-      :columns
-      :data
-      :pagination="(pagination as PaginationProps)"
-      :row-key="(row: Task) => row.info_hash"
-      :loading
-      class="h-[calc(100vh-141px)]"
-      @update:page="handlePageChange"
+      </NTooltip>
+    </ExplorerToolbarLayout>
+    <ListHeader
+      v-if="items.length"
+      :items
+      :selected-items="selectedItems"
+      :show-checkbox="false"
+      :columns="['size']"
+      sort-disabled
+    >
+      <template #after>
+        <div class="w-48 shrink-0 px-2">进度</div>
+        <div class="w-40 shrink-0 px-2 whitespace-nowrap">添加时间</div>
+        <div class="w-52 shrink-0 px-2">操作</div>
+      </template>
+    </ListHeader>
+    <NEmpty v-if="!items.length && !loading" class="flex-1 flex items-center justify-center" />
+    <NSpin v-else :show="loading" class="flex-1 min-h-0 overflow-hidden" content-class="h-full">
+      <NScrollbar class="h-full">
+        <FileItemView
+          v-for="item in items"
+          :key="item.fid"
+          :item
+          :selected="false"
+          :show-checkbox="false"
+          :columns="['size']"
+          view-mode="list"
+        >
+          <template #name>
+            <a
+              v-if="canOpen(item.task)"
+              href="#"
+              class="text-inherit no-underline"
+              @click.prevent.stop="handleOpen(item.task)"
+              >{{ item.fn }}</a
+            >
+            <template v-else>{{ item.fn }}</template>
+          </template>
+          <template #size="{ size }">{{ size }}</template>
+          <template #after>
+            <div class="w-48 shrink-0 px-2 flex items-center self-stretch">
+              <TaskStatus
+                :type="item.downloadStatus.type"
+                :text="item.downloadStatus.text"
+                :title="item.downloadStatus.text"
+              />
+            </div>
+            <div class="w-40 shrink-0 px-2 text-sm whitespace-nowrap text-(--text-color-3)">
+              {{
+                item.task.add_time
+                  ? format(new Date(item.task.add_time * 1000), 'yyyy-MM-dd HH:mm:ss')
+                  : ''
+              }}
+            </div>
+            <div class="w-52 shrink-0 px-2 flex items-center gap-3 self-stretch" @click.stop>
+              <NButton v-if="canOpen(item.task)" text type="primary" @click="handleOpen(item.task)">
+                <template #icon
+                  ><NIcon><FolderOutlined /></NIcon
+                ></template>
+                查看
+              </NButton>
+              <NButton text type="info" @click="handleCopy(item.task)">
+                <template #icon
+                  ><NIcon><CopyOutlined /></NIcon
+                ></template>
+                复制
+              </NButton>
+              <NButton text type="error" @click="confirmDelete(item.task)">
+                <template #icon
+                  ><NIcon><DeleteOutlined /></NIcon
+                ></template>
+                删除
+              </NButton>
+            </div>
+          </template>
+        </FileItemView>
+      </NScrollbar>
+    </NSpin>
+    <ExplorerStatusbar
+      :total-count="count"
+      :selected-count="0"
+      :current-page="pagination.page || 1"
+      :total-pages="pagination.pageCount || 0"
+      :page-size="30"
+      :show-size-picker="false"
+      @update:current-page="handlePageChange"
     />
-  </div>
+  </NEl>
 </template>
 
-<script setup lang="tsx">
+<script setup lang="ts">
   import { taskDelete, taskList } from '@/api/cloud';
+  import TaskStatus, { type TaskStatusType } from '@/components/TaskStatus/TaskStatus.vue';
   import type { Task } from '@/api/types/cloud';
-  import { filesize } from 'filesize';
-  import type { DataTableColumns, PaginationProps } from 'naive-ui';
+  import { format } from 'date-fns';
+  import { NCheckbox, type PaginationProps } from 'naive-ui';
+  import FileItemView from '@/components/FileExplorer/components/FileItemView/FileItemView.vue';
+  import ExplorerToolbarLayout from '@/components/FileExplorer/components/ExplorerToolbarLayout/ExplorerToolbarLayout.vue';
+  import ListHeader from '@/components/FileExplorer/components/ListHeader/ListHeader.vue';
+  import ExplorerStatusbar from '@/components/FileExplorer/components/ExplorerStatusbar/ExplorerStatusbar.vue';
   import { ReloadOutlined, CopyOutlined, DeleteOutlined, FolderOutlined } from '@vicons/antd';
   import { useSettingStore } from '@/store/setting';
 
@@ -40,126 +120,90 @@
   const { copy } = useClipboard();
   const data = ref<Task[]>([]);
   const loading = ref(false);
+  const count = ref(0);
+  const selectedItems = new Set<string>();
+  const items = computed(() =>
+    data.value.map((task) => ({
+      fid: task.info_hash,
+      fn: task.name,
+      fc: String(task.file_category ?? ''),
+      ico: task.file_icon || task.name.split('.').pop()?.toLowerCase() || '',
+      fs: task.size,
+      def2: task.def2,
+      isv: task.def2 > 0 ? 1 : undefined,
+      downloadStatus: getDownloadStatus(task),
+      task,
+    })),
+  );
   const pagination = reactive<PaginationProps>({
     page: 1,
     pageCount: 0,
   });
   const flag = ref<1 | 0>(0);
-  const columns: DataTableColumns<Task> = [
-    {
-      title: '文件名',
-      key: 'name',
-      ellipsis: {
-        tooltip: {
-          width: 'trigger',
-        },
+  const canOpen = (task: Task) => Boolean(task.file_id && task.file_id !== '0');
+
+  function getDownloadStatus(task: Task): { type: TaskStatusType; text: string } {
+    if (task.status === 2 && task.move === 1) {
+      return { type: 'success', text: task.status_text || '下载成功' };
+    }
+    if (task.status === -1 || (task.status === 2 && task.move === -1)) {
+      return {
+        type: 'failure',
+        text: task.status_text || (task.status === 2 ? '空间不足' : '下载失败'),
+      };
+    }
+    const percentage = Math.round(task.display_percent ?? task.percentDone);
+    const text =
+      task.status === 0
+        ? percentage === 100
+          ? '99%'
+          : '正在分配服务器'
+        : task.status === 2
+          ? '99%'
+          : `${Math.max(0, Math.min(100, percentage))}%`;
+    return {
+      type: 'downloading',
+      text: task.status_text && task.status_text !== '下载中' ? task.status_text : text,
+    };
+  }
+
+  const handleOpen = (task: Task) => {
+    if (!canOpen(task)) return;
+    router.push({
+      name: 'Home',
+      query: {
+        fid: String(task.file_category) === '1' ? task.wp_path_id || '0' : task.file_id,
       },
-    },
-    {
-      title: '大小',
-      key: 'size',
-      width: 100,
-      render(row) {
-        return row.size ? filesize(row.size, { standard: 'jedec' }) : '';
-      },
-    },
-    {
-      title: '进度',
-      key: 'percentDone',
-      width: 300,
-      render(row) {
-        if (row.status === -1) {
-          return <NText type="error">下载失败</NText>;
-        } else if (row.status === 0) {
-          return <NText type="warning">分配中</NText>;
-        } else if (row.status === 1) {
-          return <NProgress type="line" percentage={Math.floor(row.percentDone)} processing />;
-        } else if (row.status === 2) {
-          return <NText type="success">下载完成</NText>;
-        }
-      },
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 210,
-      render: (row) => {
-        return (
-          <NSpace>
-            {row.file_id ? (
-              <NButton
-                text
-                type="primary"
-                onClick={() =>
-                  router.push({
-                    name: 'Home',
-                    query: {
-                      fid: row.file_id,
-                    },
-                  })
-                }
-              >
-                {{
-                  icon: () => (
-                    <NIcon>
-                      <FolderOutlined />
-                    </NIcon>
-                  ),
-                  default: () => '查看',
-                }}
-              </NButton>
-            ) : null}
-            <NButton
-              text
-              type="info"
-              onClick={async () => {
-                await copy(row.url);
-                message.success('复制成功！');
-              }}
-            >
-              {{
-                icon: () => (
-                  <NIcon>
-                    <CopyOutlined />
-                  </NIcon>
-                ),
-                default: () => '复制',
-              }}
-            </NButton>
-            <NButton
-              text
-              type="error"
-              onClick={() => {
-                flag.value = settingStore.cloudDownloadSetting.deleteSourceFile ? 1 : 0;
-                dialog.warning({
-                  title: '是否确认删除该下载任务？',
-                  content: () => (
-                    <NCheckbox v-model:checked={flag.value} checked-value={1} unchecked-value={0}>
-                      删除源文件
-                    </NCheckbox>
-                  ),
-                  positiveText: '确定',
-                  negativeText: '取消',
-                  onPositiveClick: () => {
-                    handleDelete(row.info_hash);
-                  },
-                });
-              }}
-            >
-              {{
-                icon: () => (
-                  <NIcon>
-                    <DeleteOutlined />
-                  </NIcon>
-                ),
-                default: () => '删除',
-              }}
-            </NButton>
-          </NSpace>
-        );
-      },
-    },
-  ];
+    });
+  };
+
+  const handleCopy = async (task: Task) => {
+    await copy(task.url);
+    message.success('复制成功！');
+  };
+
+  const confirmDelete = (task: Task) => {
+    flag.value = settingStore.cloudDownloadSetting.deleteSourceFile ? 1 : 0;
+    dialog.warning({
+      title: '是否确认删除该下载任务？',
+      content: () =>
+        h(
+          NCheckbox,
+          {
+            checked: flag.value,
+            checkedValue: 1,
+            uncheckedValue: 0,
+            'onUpdate:checked': (value: 1 | 0) => {
+              flag.value = value;
+            },
+          },
+          { default: () => '删除源文件' },
+        ),
+      positiveText: '确定',
+      negativeText: '取消',
+      onPositiveClick: () => handleDelete(task.info_hash),
+    });
+  };
 
   onMounted(() => {
     getTaskList();
@@ -169,18 +213,22 @@
     getTaskList();
   });
 
+  let listRequest = 0;
   const getTaskList = async () => {
+    const request = ++listRequest;
     try {
       loading.value = true;
       const res = await taskList({
         page: pagination.page!,
       });
+      if (request !== listRequest) return;
       data.value = res.data.tasks;
+      count.value = res.data.count;
       pagination.pageCount = res.data.page_count;
     } catch (error) {
       console.error('Error fetching task list:', error);
     } finally {
-      loading.value = false;
+      if (request === listRequest) loading.value = false;
     }
   };
 
@@ -202,5 +250,3 @@
     }
   };
 </script>
-
-<style scoped></style>

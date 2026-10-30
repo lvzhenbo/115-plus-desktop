@@ -35,6 +35,21 @@ pub struct IncompleteTask {
     pub segments: Vec<Segment>,
 }
 
+impl IncompleteTask {
+    pub fn matches_file(&self, size: u64, pick_code: &str, expected_sha1: Option<&str>) -> bool {
+        self.file_size == size
+            && match (
+                self.expected_sha1
+                    .as_deref()
+                    .filter(|hash| !hash.is_empty()),
+                expected_sha1.filter(|hash| !hash.is_empty()),
+            ) {
+                (Some(old), Some(new)) => old.eq_ignore_ascii_case(new),
+                _ => self.pick_code == pick_code,
+            }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct TaskProgressSnapshot {
     pub downloaded_bytes: u64,
@@ -436,6 +451,8 @@ impl ProgressFile {
         pick_code: &str,
         expected_sha1: Option<&str>,
     ) -> Result<(), DownloadError> {
+        // 转移断点归属前确认没有任务仍持有目标文件，防止接管正在写入的断点。
+        let _writer = super::writer::FileWriter::open(save_path)?;
         self.update_cached(save_path, |data| {
             data.task_id = new_task_id.to_string();
             data.file_name = file_name.to_string();
@@ -500,5 +517,70 @@ impl ProgressFile {
             total_bytes: data.file_size,
             progress,
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::download::writer::FileWriter;
+
+    #[test]
+    fn only_matching_unlocked_partial_files_can_be_rebound() {
+        let dir = std::env::temp_dir().join(format!("115-resume-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("partial.bin");
+        let path = path.to_str().unwrap();
+        let writer = FileWriter::create(path, 4).unwrap();
+        let progress = ProgressFile::new();
+        progress
+            .save_task(
+                "old",
+                "partial.bin",
+                4,
+                path,
+                "https://fixture.invalid",
+                None,
+                "pick",
+                Some("ABC"),
+                0,
+            )
+            .unwrap();
+        let existing = progress.load_task(path).unwrap();
+        assert!(existing.matches_file(4, "pick", None));
+        assert!(existing.matches_file(4, "other-pick", Some("abc")));
+        assert!(!existing.matches_file(5, "pick", Some("ABC")));
+        assert!(!existing.matches_file(4, "pick", Some("different")));
+        assert!(!existing.matches_file(4, "other-pick", None));
+        let mut no_hash = existing.clone();
+        no_hash.expected_sha1 = Some(String::new());
+        assert!(!no_hash.matches_file(4, "other-pick", Some("")));
+        assert!(matches!(
+            progress.rebind_task(
+                path,
+                "old",
+                "new",
+                "partial.bin",
+                "https://fixture.invalid",
+                "pick",
+                Some("ABC")
+            ),
+            Err(DownloadError::TargetBusy(_))
+        ));
+        assert_eq!(progress.load_task(path).unwrap().task_id, "old");
+        drop(writer);
+        progress
+            .rebind_task(
+                path,
+                "old",
+                "new",
+                "partial.bin",
+                "https://fixture.invalid",
+                "pick",
+                Some("ABC"),
+            )
+            .unwrap();
+        assert_eq!(progress.load_task(path).unwrap().task_id, "new");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

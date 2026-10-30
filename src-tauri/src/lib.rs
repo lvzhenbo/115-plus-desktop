@@ -221,6 +221,7 @@ pub fn run() {
             download::events::url::download_provide_url,
             download::queue::download_enqueue_file,
             download::queue::download_set_max_concurrent,
+            download::queue::download_set_max_retry,
             download::queue::download_set_speed_limit,
             download::queue::download_pause_task,
             download::queue::download_cancel_task,

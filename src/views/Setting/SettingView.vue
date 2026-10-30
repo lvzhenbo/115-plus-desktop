@@ -9,7 +9,6 @@
               name="customOrderGroup"
             >
               <NSpace>
-                <NRadio :value="0"> 记忆排序 </NRadio>
                 <NRadio :value="1"> 自定义排序 </NRadio>
                 <NRadio :value="2"> 自定义排序（非文件夹置顶） </NRadio>
               </NSpace>

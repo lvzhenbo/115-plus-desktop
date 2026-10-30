@@ -1782,7 +1782,8 @@ pub async fn upload_enqueue_files(
     db: tauri::State<'_, DbHandle>,
     sync: tauri::State<'_, UploadStateSync>,
     queue: tauri::State<'_, UploadQueue>,
-) -> Result<(), UploadQueueError> {
+) -> Result<Vec<String>, UploadQueueError> {
+    let mut task_ids = Vec::with_capacity(files.len());
     for file in files {
         let id = format!("upload-{}-{}", now_ms(), Uuid::new_v4());
         db.insert_task(UploadTask {
@@ -1817,13 +1818,14 @@ pub async fn upload_enqueue_files(
         .await?;
         queue
             .enqueue(PendingTask {
-                id,
+                id: id.clone(),
                 parent_id: None,
             })
             .await?;
+        task_ids.push(id);
     }
     sync.notify_state_change();
-    Ok(())
+    Ok(task_ids)
 }
 
 /// 创建一个文件夹上传任务并进入目录编排流程。

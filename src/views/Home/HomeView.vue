@@ -21,7 +21,30 @@
       v-model:cid="cid"
       v-model:view-mode="userStore.homeViewMode"
       v-model:sort-config="userStore.homeSortConfig"
-      v-model:favorites-collapsed="userStore.homeFavoritesCollapsed"
+      :columns="['size', 'createTime', 'modifyTime']"
+      :starred="starred"
+      :show-breadcrumb="!starred && cid !== '0'"
+      :toolbar="
+        starred
+          ? ['refresh', 'download', 'copy', 'move', 'rename', 'delete', 'filter', 'viewToggle']
+          : true
+      "
+      :context-menu="
+        starred
+          ? [
+              'open',
+              'reload',
+              'download',
+              'copy',
+              'move',
+              'rename',
+              'batchRename',
+              'detail',
+              'delete',
+              'toggleStar',
+            ]
+          : true
+      "
       defer-navigation
       class="h-[calc(100vh-59px)]"
       @navigate-request="handleExplorerNavigate"
@@ -31,30 +54,23 @@
       @upload-folder="handleUploadFolder"
       @open-file="handleOpenFile"
     />
-    <NImageGroup
-      v-model:show="imgPreviewVisible"
-      v-model:current="imgPreviewIndex"
-      :src-list="imgPreviewList"
-      :render-toolbar="renderToolbar"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-  import type { ImageRenderToolbarProps } from 'naive-ui';
   import { open } from '@tauri-apps/plugin-dialog';
-  import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { emit, listen } from '@tauri-apps/api/event';
   import { CloudUploadOutlined } from '@vicons/antd';
   import type { MyFile } from '@/api/types/file';
   import { useDownloadManager } from '@/composables/useDownloadManager';
   import { useUploadManager } from '@/composables/useUploadManager';
   import { useUserStore } from '@/store/user';
   import { useSettingStore } from '@/store/setting';
+  import { useFilePreview } from '@/composables/useFilePreview';
 
   const route = useRoute();
   const router = useRouter();
+  const starred = computed(() => route.query.star === '1');
   const message = useMessage();
   const userStore = useUserStore();
   const settingStore = useSettingStore();
@@ -62,25 +78,18 @@
   // 目录由路由 query 承载：初次加载时从 URL 恢复，之后的目录切换都会写回 URL，
   // 使浏览器 / 鼠标侧键的回退能逐级返回浏览过的目录。
   const cid = ref(route.query.fid ? String(route.query.fid) : '0');
-  const imgPreviewVisible = ref(false);
-  const imgPreviewList = ref<string[]>([]);
-  const imgPreviewIndex = ref(0);
   const isDragging = ref(false);
 
   const { download: downloadFile, batchDownload: batchDownloadFiles } = useDownloadManager();
 
   const { uploadFiles: uploadFilesToCloud, uploadFolder: uploadFolderToCloud } = useUploadManager();
 
-  const selectFile = ref<MyFile | null>(null);
-
-  const unlisten = listen('get-video-list', () => {
-    emit('set-video-list', selectFile.value);
-  });
+  const { openFile } = useFilePreview();
 
   // ============ 拖拽上传 ============
 
   const unlistenDragDrop = getCurrentWindow().onDragDropEvent(async (event) => {
-    if (route.name !== 'Home') return;
+    if (route.name !== 'Home' || starred.value) return;
     if (event.payload.type === 'over') {
       isDragging.value = true;
     } else if (event.payload.type === 'leave') {
@@ -95,25 +104,26 @@
   });
 
   onUnmounted(() => {
-    unlisten.then((f) => f());
     unlistenDragDrop.then((f) => f());
   });
 
   // 目录导航委托给路由（见 FileExplorer 的 defer-navigation）：URL 变化后再驱动列表加载。
   // 无 fid 的历史条目对应根目录；从其它页面切回主页（fid 无变化）时不会触发，从而保留当前目录。
   watch(
-    () => route.query.fid,
-    (fid) => {
+    () => [route.query.fid, starred.value] as const,
+    ([fid, star], [, previousStar]) => {
       if (route.name !== 'Home') return;
-      explorerRef.value?.navigate(fid ? String(fid) : '0');
+      explorerRef.value?.navigate(fid ? String(fid) : '0', star !== previousStar);
     },
+    { flush: 'post' },
   );
 
   /** FileExplorer 请求导航到目标目录：写入路由，由上面的 watch 统一加载。 */
   const handleExplorerNavigate = (targetCid: string) => {
-    if (String(route.query.fid ?? '0') === targetCid) return;
+    if (!starred.value && String(route.query.fid ?? '0') === targetCid) return;
 
     const query = { ...route.query };
+    delete query.star;
     if (targetCid === '0') delete query.fid;
     else query.fid = targetCid;
     router.push({ name: 'Home', query });
@@ -122,47 +132,12 @@
   // ============ 打开文件 ============
 
   const handleOpenFile = async (file: MyFile) => {
-    selectFile.value = file;
-    if (file.isv) {
-      try {
-        const existingWindow = await WebviewWindow.getByLabel('video-player');
-        if (existingWindow) {
-          emit('set-video-list', file);
-          await existingWindow.setFocus();
-        } else {
-          const videoPlayerWindow = new WebviewWindow('video-player', {
-            url: '/videoPlayer',
-            title: file.fn,
-            width: 1280,
-            height: 720,
-            minWidth: 1280,
-            minHeight: 720,
-            center: true,
-            visible: false,
-          });
-
-          videoPlayerWindow.once('tauri://error', (e) => {
-            console.error('窗口创建失败', e);
-            message.error('视频窗口创建失败');
-          });
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    } else if (file.uo) {
-      // 收集当前目录下所有图片文件，支持多图预览
-      const allItems = explorerRef.value?.getItems() || [];
-      const imageFiles = allItems.filter((f) => f.uo);
-      if (imageFiles.length > 0) {
-        imgPreviewList.value = imageFiles.map((f) => f.uo!);
-        const idx = imageFiles.findIndex((f) => f.fid === file.fid);
-        imgPreviewIndex.value = idx >= 0 ? idx : 0;
-      } else {
-        // 兜底：至少预览当前点击的图片
-        imgPreviewList.value = [file.uo];
-        imgPreviewIndex.value = 0;
-      }
-      imgPreviewVisible.value = true;
+    const source = explorerRef.value?.getMediaSource();
+    if (!source) return;
+    try {
+      await openFile(file, source);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '文件打开失败');
     }
   };
 
@@ -284,18 +259,5 @@
         message.error('上传任务添加失败');
       }
     }
-  };
-
-  const renderToolbar = ({ nodes }: ImageRenderToolbarProps) => {
-    return [
-      nodes.prev,
-      nodes.next,
-      nodes.rotateCounterclockwise,
-      nodes.rotateClockwise,
-      nodes.resizeToOriginalSize,
-      nodes.zoomOut,
-      nodes.zoomIn,
-      nodes.close,
-    ];
   };
 </script>

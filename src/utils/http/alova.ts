@@ -84,7 +84,6 @@ export const alovaInst = createAlova({
     if (authRole === undefined) {
       await getApiLimiter().acquire();
     }
-    console.log(method);
   }),
   responded: onResponseRefreshToken({
     onSuccess: async (response, _method) => {
@@ -94,7 +93,6 @@ export const alovaInst = createAlova({
         throw new Error(response.statusText);
       }
       const json: ResponseData<unknown> = await response.clone().json();
-      console.log(json);
 
       // 限流自动重试（在通用错误处理之前拦截）
       if (json.code === 20130827 || json.errno === 20130827) {
@@ -127,7 +125,8 @@ export const alovaInst = createAlova({
       return json;
     },
     onError: (err, _method) => {
-      message.error(JSON.stringify(err));
+      message.error(err instanceof Error ? err.message : JSON.stringify(err));
+      throw err;
     },
     onComplete: async (_method) => {
       // 处理请求完成逻辑
